@@ -5,13 +5,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/service"
 )
 
 type RegisterHandler struct {
+	RegisterService *service.RegisterService
 }
 
-func NewRegisterHandler() *RegisterHandler {
-	return &RegisterHandler{}
+func NewRegisterHandler(registerService *service.RegisterService) *RegisterHandler {
+	return &RegisterHandler{
+		RegisterService: registerService,
+	}
 }
 
 func (h *RegisterHandler) Register(c *gin.Context) {
@@ -19,6 +23,7 @@ func (h *RegisterHandler) Register(c *gin.Context) {
 	var req dto.RegisterData
 
 	err := c.ShouldBindJSON(&req)
+
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid request body",
@@ -26,8 +31,17 @@ func (h *RegisterHandler) Register(c *gin.Context) {
 		return
 	}
 
+	err = h.RegisterService.Register(req)
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
 	c.JSON(http.StatusCreated, gin.H{
-		"message":  "registration request received",
+		"message":  "user registered successfully",
 		"username": req.Username,
 	})
 }
