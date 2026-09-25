@@ -29,7 +29,7 @@ func (h *LoginHandler) Login(c *gin.Context) {
 		return
 	}
 
-	err = h.LoginService.Login(req)
+	accessToken, err := h.LoginService.Login(req)
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": err.Error(),
@@ -37,8 +37,9 @@ func (h *LoginHandler) Login(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"message":  "login successful",
-		"username": req.Username,
+		"message":      "login successful",
+		"username":     req.Username,
+		"access_token": accessToken,
 	})
 
 }
