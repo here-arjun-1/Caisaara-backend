@@ -5,6 +5,7 @@ import (
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -18,18 +19,18 @@ func NewLoginService(userRepository *repository.UserRepository) *LoginService {
 	}
 }
 
-func (h *LoginService) Login(req dto.LoginData) error {
+func (h *LoginService) Login(req dto.LoginData) (string, error) {
 	if req.Username == "" {
-		return errors.New("username is required")
+		return "", errors.New("username is required")
 	}
 	if req.Password == "" {
-		return errors.New("password is required")
+		return "", errors.New("password is required")
 	}
 
 	user, err := h.UserRepository.FindUserByUsername(req.Username)
 
 	if err != nil {
-		return errors.New("invalid username and password")
+		return "", errors.New("invalid username and password")
 	}
 
 	err = bcrypt.CompareHashAndPassword(
@@ -38,8 +39,13 @@ func (h *LoginService) Login(req dto.LoginData) error {
 	)
 
 	if err != nil {
-		return errors.New("invalid username and password")
+		return "", errors.New("invalid username and password")
 	}
 
-	return nil
+	accessToken, err := token.GenerateAccessToken(user.ID)
+	if err != nil {
+		return "", errors.New("failed to generate access token")
+	}
+
+	return accessToken, nil
 }
