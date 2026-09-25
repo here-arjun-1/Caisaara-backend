@@ -28,3 +28,23 @@ func (r *UserRepository) CreateUser(user *model.User) error {
 
 	return err
 }
+
+func (r *UserRepository) FindUserByUsername(username string) (*model.User, error) {
+	var user model.User
+
+	err := r.DB.QueryRow(
+		context.Background(),
+		"SELECT id, username, password FROM users WHERE username =$1",
+		username,
+	).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Password,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}
