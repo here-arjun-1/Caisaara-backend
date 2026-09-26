@@ -41,15 +41,16 @@ func main() {
 		sessionRepository,
 	)
 	loginHandler := handler.NewLoginHandler(loginService)
-	refreshService := service.NewRefreshService(
-		sessionRepository,
-	)
+	refreshService := service.NewRefreshService(sessionRepository)
 	refreshHandler := handler.NewRefreshHandler(refreshService)
+	logoutService := service.NewLogoutService(sessionRepository)
+	logoutHandler := handler.NewLogoutHandler(logoutService)
+
 	r := gin.Default()
 	r.POST("/register", registerHandler.Register)
 	r.POST("/login", loginHandler.Login)
 	r.POST("/refresh", refreshHandler.Refresh)
-
+	r.POST("/logout", logoutHandler.Logout)
 	protected := r.Group("/api")
 	protected.Use(middleware.JWTMiddleware())
 	{
