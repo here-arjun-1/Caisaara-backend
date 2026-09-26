@@ -1,6 +1,7 @@
 package token
 
 import (
+	"errors"
 	"os"
 	"time"
 
@@ -9,6 +10,10 @@ import (
 
 func GenerateAccessToken(userID int64) (string, error) {
 	secret := os.Getenv("JWT_SECRET")
+
+	if secret == "" {
+		return "", errors.New("JWT_SECRET is not set")
+	}
 
 	claims := jwt.MapClaims{
 		"user_id": userID,
