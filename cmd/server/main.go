@@ -8,6 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/database"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/handler"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/service"
 	"github.com/joho/godotenv"
 )
 
@@ -24,7 +26,9 @@ func main() {
 	defer conn.Close(context.Background())
 
 	r := gin.Default()
-	registerHandler := handler.NewRegisterHandler()
+	userRepository := repository.NewUserRepository(conn)
+	registerService := service.NewRegisterService(userRepository)
+	registerHandler := handler.NewRegisterHandler(registerService)
 	loginHandler := handler.NewLoginHandler()
 	r.POST("/register", registerHandler.Register)
 	r.POST("/login", loginHandler.Login)

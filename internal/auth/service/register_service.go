@@ -6,6 +6,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
+	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -23,6 +24,15 @@ func (s *RegisterService) Register(req dto.RegisterData) error {
 
 	if req.Username == "" {
 		return errors.New("username is required")
+	}
+	existingUser, err := s.UserRepository.FindByUsername(req.Username)
+
+	if err == nil && existingUser != nil {
+		return errors.New("username already exists")
+	}
+
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return errors.New("failed to check username")
 	}
 
 	if req.Password == "" {
