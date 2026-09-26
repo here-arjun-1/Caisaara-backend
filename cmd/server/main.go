@@ -35,6 +35,8 @@ func main() {
 
 	registerService := service.NewRegisterService(userRepository)
 	registerHandler := handler.NewRegisterHandler(registerService)
+	verifyEmailService := service.NewVerifyEmailService(userRepository)
+	verifyEmailHandler := handler.NewVerifyEmailHandler(verifyEmailService)
 
 	loginService := service.NewLoginService(
 		userRepository,
@@ -49,6 +51,7 @@ func main() {
 	r.POST("/register", registerHandler.Register)
 	r.POST("/login", loginHandler.Login)
 	r.POST("/refresh", refreshHandler.Refresh)
+	r.GET("/verify-email", verifyEmailHandler.VerifyEmail)
 
 	protected := r.Group("/api")
 	protected.Use(middleware.JWTMiddleware())
