@@ -24,7 +24,11 @@ func main() {
 		log.Fatal("Database connection failed:", err)
 	}
 	fmt.Println("db connected")
-	defer conn.Close(context.Background())
+	defer func() {
+		if err := conn.Close(context.Background()); err != nil {
+			log.Printf("failed to close database connection: %v", err)
+		}
+	}()
 
 	userRepository := repository.NewUserRepository(conn)
 	sessionRepository := repository.NewSessionRepository(conn)
@@ -51,5 +55,7 @@ func main() {
 	{
 		protected.GET("/profile", handler.GetProfile)
 	}
-	r.Run(":8050")
+	if err := r.Run(":8050"); err != nil {
+		log.Printf("server failed to start: %v", err)
+	}
 }
