@@ -27,14 +27,24 @@ func main() {
 	defer conn.Close(context.Background())
 
 	userRepository := repository.NewUserRepository(conn)
+	sessionRepository := repository.NewSessionRepository(conn)
+
 	registerService := service.NewRegisterService(userRepository)
 	registerHandler := handler.NewRegisterHandler(registerService)
-	loginService := service.NewLoginService(userRepository)
-	loginHandler := handler.NewLoginHandler(loginService)
 
+	loginService := service.NewLoginService(
+		userRepository,
+		sessionRepository,
+	)
+	loginHandler := handler.NewLoginHandler(loginService)
+	refreshService := service.NewRefreshService(
+		sessionRepository,
+	)
+	refreshHandler := handler.NewRefreshHandler(refreshService)
 	r := gin.Default()
 	r.POST("/register", registerHandler.Register)
 	r.POST("/login", loginHandler.Login)
+	r.POST("/refresh", refreshHandler.Refresh)
 
 	protected := r.Group("/api")
 	protected.Use(middleware.JWTMiddleware())
