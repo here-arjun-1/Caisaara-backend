@@ -56,3 +56,13 @@ func (h *SessionRepository) FindSessionByRefreshTokenHash(refreshTokenHash strin
 	}
 	return &session, nil
 }
+
+func (h *SessionRepository) RevokeSession(refreshTokenHash string) error {
+	_, err := h.DB.Exec(context.Background(),
+		`UPDATE sessions
+		SET revoked_at = CURRENT_TIMESTAMP
+		WHERE refresh_token_hash = $1`,
+		refreshTokenHash,
+	)
+	return err
+}
