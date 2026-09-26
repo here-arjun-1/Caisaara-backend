@@ -20,11 +20,61 @@ func NewRegisterService(userRepository *repository.UserRepository) *RegisterServ
 	}
 }
 
+func ValidatePassword(password string) error {
+
+	if len(password) < 8 {
+		return errors.New("password must be at least 8 characters")
+	}
+
+	var hasUpper bool
+	var hasLower bool
+	var hasNumber bool
+	var hasSpecial bool
+
+	for _, char := range password {
+
+		switch {
+		case char >= 'A' && char <= 'Z':
+			hasUpper = true
+
+		case char >= 'a' && char <= 'z':
+			hasLower = true
+
+		case char >= '0' && char <= '9':
+			hasNumber = true
+
+		case char == '!' || char == '@' || char == '#' ||
+			char == '$' || char == '%' || char == '^' ||
+			char == '&' || char == '*':
+			hasSpecial = true
+		}
+	}
+
+	if !hasUpper {
+		return errors.New("password must contain an uppercase letter")
+	}
+
+	if !hasLower {
+		return errors.New("password must contain a lowercase letter")
+	}
+
+	if !hasNumber {
+		return errors.New("password must contain a number")
+	}
+
+	if !hasSpecial {
+		return errors.New("password must contain a special character")
+	}
+
+	return nil
+}
+
 func (s *RegisterService) Register(req dto.RegisterData) error {
 
 	if req.Username == "" {
 		return errors.New("username is required")
 	}
+
 	existingUser, err := s.UserRepository.FindByUsername(req.Username)
 
 	if err == nil && existingUser != nil {
@@ -37,6 +87,12 @@ func (s *RegisterService) Register(req dto.RegisterData) error {
 
 	if req.Password == "" {
 		return errors.New("password is required")
+	}
+
+	err = ValidatePassword(req.Password)
+
+	if err != nil {
+		return err
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword(
