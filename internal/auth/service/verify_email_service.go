@@ -13,12 +13,15 @@ type VerifyEmailService struct {
 func NewVerifyEmailService(
 	userRepository *repository.UserRepository,
 ) *VerifyEmailService {
+
 	return &VerifyEmailService{
 		UserRepository: userRepository,
 	}
 }
 
-func (s *VerifyEmailService) VerifyEmail(token string) error {
+func (s *VerifyEmailService) VerifyEmail(
+	token string,
+) error {
 
 	if token == "" {
 		return errors.New("verification token is required")

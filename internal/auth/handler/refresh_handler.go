@@ -15,18 +15,19 @@ type RefreshHandler struct {
 func NewRefreshHandler(
 	refreshService *service.RefreshService,
 ) *RefreshHandler {
+
 	return &RefreshHandler{
 		RefreshService: refreshService,
 	}
 }
 
-func (h *RefreshHandler) Refresh(c *gin.Context) {
+func (h *RefreshHandler) Refresh(
+	c *gin.Context,
+) {
 
 	var req dto.RefreshData
 
-	err := c.ShouldBindJSON(&req)
-
-	if err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "invalid request body",
 		})

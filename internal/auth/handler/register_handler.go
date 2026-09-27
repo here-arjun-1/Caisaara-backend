@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -31,7 +32,15 @@ func (h *RegisterHandler) Register(c *gin.Context) {
 		return
 	}
 
-	err = h.RegisterService.Register(req)
+	accessToken, refreshToken, err := h.RegisterService.Register(req)
+
+	if errors.Is(err, service.ErrUsernameTaken) ||
+		errors.Is(err, service.ErrEmailTaken) {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
 
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -41,7 +50,9 @@ func (h *RegisterHandler) Register(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"message":  "user registered successfully",
-		"username": req.Username,
+		"message":       "user registered successfully",
+		"username":      req.Username,
+		"access_token":  accessToken,
+		"refresh_token": refreshToken,
 	})
 }
