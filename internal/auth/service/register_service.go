@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
@@ -34,17 +35,7 @@ func (s *RegisterService) Register(
 	req dto.RegisterData,
 ) (string, string, error) {
 
-	if req.Username == "" {
-		return "", "", errors.New("username is required")
-	}
-
-	if req.Email == "" {
-		return "", "", errors.New("email is required")
-	}
-
-	if req.Password == "" {
-		return "", "", errors.New("password is required")
-	}
+	req.Email = strings.ToLower(req.Email)
 
 	hashedPassword, err := bcrypt.GenerateFromPassword(
 		[]byte(req.Password),
