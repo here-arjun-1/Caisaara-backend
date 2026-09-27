@@ -2,16 +2,25 @@ package database
 
 import (
 	"context"
+	"errors"
 	"os"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func ConnectDB() (*pgx.Conn, error) {
+func ConnectDB() (*pgxpool.Pool, error) {
 	databaseURL := os.Getenv("dbURL")
-	conn, err := pgx.Connect(context.Background(), databaseURL)
+	if databaseURL == "" {
+		return nil, errors.New("dbURL is not set")
+	}
+
+	pool, err := pgxpool.New(context.Background(), databaseURL)
 	if err != nil {
 		return nil, err
 	}
-	return conn, nil
+	if err := pool.Ping(context.Background()); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	return pool, nil
 }

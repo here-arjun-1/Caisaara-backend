@@ -5,17 +5,18 @@ import (
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type UserRepository struct {
-	DB *pgx.Conn
+	DB *pgxpool.Pool
 }
 
 func (r *UserRepository) FindUserByID(d int64) (any, error) {
 	panic("unimplemented")
 }
 
-func NewUserRepository(db *pgx.Conn) *UserRepository {
+func NewUserRepository(db *pgxpool.Pool) *UserRepository {
 	return &UserRepository{
 		DB: db,
 	}

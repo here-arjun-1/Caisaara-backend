@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-	"fmt"
 	"log"
 
 	"github.com/gin-gonic/gin"
@@ -28,16 +26,8 @@ func main() {
 		log.Fatal("Database connection failed:", err)
 	}
 
-	fmt.Println("db connected")
+	defer conn.Close()
 
-	defer func() {
-		if err := conn.Close(context.Background()); err != nil {
-			log.Printf(
-				"failed to close database connection: %v",
-				err,
-			)
-		}
-	}()
 	userRepository := repository.NewUserRepository(conn)
 	sessionRepository := repository.NewSessionRepository(conn)
 
