@@ -3,15 +3,11 @@ package service
 import (
 	"errors"
 	"log"
-	"os"
 	"strings"
-	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
-	"github.com/here-arjun-1/Caisaara-backend/internal/auth/email"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
-	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
 	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -49,20 +45,10 @@ func (s *RegisterService) Register(req dto.RegisterData) (string, string, error)
 		return "", "", ErrInternal
 	}
 
-	verificationToken, err := token.GenerateEmailVerificationToken()
-
-	if err != nil {
-		log.Printf("generate verification token failed: %v", err)
-		return "", "", ErrInternal
-	}
-
 	user := &model.User{
-		Username:                   req.Username,
-		Email:                      req.Email,
-		Password:                   string(hashedPassword),
-		EmailVerified:              false,
-		EmailVerificationToken:     verificationToken,
-		EmailVerificationExpiresAt: time.Now().Add(15 * time.Minute),
+		Username: req.Username,
+		Email:    req.Email,
+		Password: string(hashedPassword),
 	}
 
 	err = s.UserRepository.CreateUser(user)
@@ -82,25 +68,6 @@ func (s *RegisterService) Register(req dto.RegisterData) (string, string, error)
 		log.Printf("create user failed: %v", err)
 
 		return "", "", ErrInternal
-	}
-
-	baseURL := strings.TrimRight(os.Getenv("--"), "/")
-
-	if baseURL == "" {
-		baseURL = "http://localhost:8050"
-	}
-
-	verificationLink :=
-		baseURL + "/verify-email?token=" +
-			verificationToken
-
-	err = email.SendVerificationEmail(
-		req.Email,
-		verificationLink,
-	)
-
-	if err != nil {
-		log.Printf("send verification email failed: %v", err)
 	}
 
 	return createSessionTokens(s.SessionRepository, user.ID)

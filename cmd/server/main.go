@@ -39,13 +39,6 @@ func main() {
 	registerHandler := handler.NewRegisterHandler(
 		registerService,
 	)
-	verifyEmailService := service.NewVerifyEmailService(
-		userRepository,
-	)
-
-	verifyEmailHandler := handler.NewVerifyEmailHandler(
-		verifyEmailService,
-	)
 	loginService := service.NewLoginService(
 		userRepository,
 		sessionRepository,
@@ -75,7 +68,6 @@ func main() {
 	r.POST("/register", registerHandler.Register)
 	r.POST("/login", loginHandler.Login)
 	r.POST("/refresh", refreshHandler.Refresh)
-	r.GET("/verify-email", verifyEmailHandler.VerifyEmail)
 
 	r.POST("/logout", logoutHandler.Logout)
 	r.POST("/logout-all", logoutHandler.LogoutAll)
