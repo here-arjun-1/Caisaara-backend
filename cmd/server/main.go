@@ -63,6 +63,16 @@ func main() {
 		logoutService,
 	)
 
+	passwordResetRepository := repository.NewPasswordResetRepository(conn)
+	passwordResetService := service.NewPasswordResetService(
+		userRepository,
+		passwordResetRepository,
+		sessionRepository,
+	)
+	passwordResetHandler := handler.NewPasswordResetHandler(
+		passwordResetService,
+	)
+
 	r := gin.Default()
 
 	r.POST("/register", registerHandler.Register)
@@ -71,6 +81,11 @@ func main() {
 
 	r.POST("/logout", logoutHandler.Logout)
 	r.POST("/logout-all", logoutHandler.LogoutAll)
+
+	r.POST("/auth/forgot-password", passwordResetHandler.ForgotPassword)
+	r.POST("/auth/verify-reset-code", passwordResetHandler.VerifyCode)
+	r.POST("/auth/reset-password", passwordResetHandler.ResetPassword)
+
 	protected := r.Group("/api")
 
 	protected.Use(middleware.JWTMiddleware())
