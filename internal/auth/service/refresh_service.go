@@ -2,11 +2,13 @@ package service
 
 import (
 	"errors"
+	"log"
 	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
+	"github.com/jackc/pgx/v5"
 )
 
 type RefreshService struct {
@@ -35,8 +37,12 @@ func (h *RefreshService) Refresh(req dto.RefreshData) (string, error) {
 		refreshTokenHash,
 	)
 
-	if err != nil {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return "", errors.New("invalid refresh token")
+	}
+	if err != nil {
+		log.Printf("find session failed: %v", err)
+		return "", ErrInternal
 	}
 
 	if session.RevokedAt != nil {
@@ -52,7 +58,8 @@ func (h *RefreshService) Refresh(req dto.RefreshData) (string, error) {
 	)
 
 	if err != nil {
-		return "", errors.New("failed to generate access token")
+		log.Printf("generate access token failed: %v", err)
+		return "", ErrInternal
 	}
 
 	return accessToken, nil

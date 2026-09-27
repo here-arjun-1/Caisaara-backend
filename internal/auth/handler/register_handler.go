@@ -34,6 +34,13 @@ func (h *RegisterHandler) Register(c *gin.Context) {
 
 	accessToken, refreshToken, err := h.RegisterService.Register(req)
 
+	if errors.Is(err, service.ErrInternal) {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
 	if errors.Is(err, service.ErrUsernameTaken) ||
 		errors.Is(err, service.ErrEmailTaken) {
 		c.JSON(http.StatusConflict, gin.H{

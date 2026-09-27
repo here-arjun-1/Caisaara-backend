@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -34,7 +35,16 @@ func (h *LogoutHandler) Logout(
 		return
 	}
 
-	if err := h.LogoutService.Logout(req); err != nil {
+	err := h.LogoutService.Logout(req)
+
+	if errors.Is(err, service.ErrInternal) {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": err.Error(),
 		})
@@ -59,7 +69,16 @@ func (h *LogoutHandler) LogoutAll(
 		return
 	}
 
-	if err := h.LogoutService.LogoutAll(req); err != nil {
+	err := h.LogoutService.LogoutAll(req)
+
+	if errors.Is(err, service.ErrInternal) {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": err.Error(),
 		})

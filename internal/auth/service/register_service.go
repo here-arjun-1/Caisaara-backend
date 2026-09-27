@@ -14,11 +14,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-var (
-	ErrUsernameTaken = errors.New("username already taken")
-	ErrEmailTaken    = errors.New("email already registered")
-)
-
 type RegisterService struct {
 	UserRepository    *repository.UserRepository
 	SessionRepository *repository.SessionRepository
@@ -57,13 +52,15 @@ func (s *RegisterService) Register(
 	)
 
 	if err != nil {
-		return "", "", errors.New("failed to process password")
+		log.Printf("hash password failed: %v", err)
+		return "", "", ErrInternal
 	}
 
 	verificationToken, err := token.GenerateEmailVerificationToken()
 
 	if err != nil {
-		return "", "", errors.New("failed to generate verification token")
+		log.Printf("generate verification token failed: %v", err)
+		return "", "", ErrInternal
 	}
 
 	user := &model.User{
@@ -91,7 +88,7 @@ func (s *RegisterService) Register(
 
 		log.Printf("create user failed: %v", err)
 
-		return "", "", errors.New("failed to create user")
+		return "", "", ErrInternal
 	}
 
 	verificationLink :=

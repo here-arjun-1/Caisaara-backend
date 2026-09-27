@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"log"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
@@ -45,7 +46,8 @@ func (s *LogoutService) Logout(
 	}
 
 	if err != nil {
-		return errors.New("failed to logout")
+		log.Printf("revoke session failed: %v", err)
+		return ErrInternal
 	}
 
 	return nil
@@ -67,8 +69,12 @@ func (s *LogoutService) LogoutAll(
 		refreshTokenHash,
 	)
 
-	if err != nil {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return errors.New("invalid refresh token")
+	}
+	if err != nil {
+		log.Printf("find session failed: %v", err)
+		return ErrInternal
 	}
 
 	if session.RevokedAt != nil {
@@ -80,7 +86,8 @@ func (s *LogoutService) LogoutAll(
 	)
 
 	if err != nil {
-		return errors.New("failed to logout all sessions")
+		log.Printf("revoke all sessions failed: %v", err)
+		return ErrInternal
 	}
 
 	return nil
