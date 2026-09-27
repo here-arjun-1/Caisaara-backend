@@ -62,3 +62,40 @@ func (r *UserRepository) FindUserByUsername(username string) (*model.User, error
 
 	return &user, nil
 }
+
+func (r *UserRepository) FindUserByEmail(email string) (*model.User, error) {
+	var user model.User
+
+	err := r.DB.QueryRow(
+		context.Background(),
+		`SELECT
+			id,
+			username,
+			email,
+			password
+		FROM users
+		WHERE email = $1`,
+		email,
+	).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+		&user.Password,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}
+
+func (r *UserRepository) UpdatePassword(email, hashedPassword string) error {
+	_, err := r.DB.Exec(
+		context.Background(),
+		`UPDATE users SET password = $1 WHERE email = $2`,
+		hashedPassword,
+		email,
+	)
+	return err
+}
