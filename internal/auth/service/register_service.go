@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -82,8 +83,14 @@ func (s *RegisterService) Register(
 		return "", "", ErrInternal
 	}
 
+	baseURL := strings.TrimRight(os.Getenv("--"), "/")
+
+	if baseURL == "" {
+		baseURL = "http://localhost:8050"
+	}
+
 	verificationLink :=
-		"http://localhost:8050/verify-email?token=" +
+		baseURL + "/verify-email?token=" +
 			verificationToken
 
 	err = email.SendVerificationEmail(
