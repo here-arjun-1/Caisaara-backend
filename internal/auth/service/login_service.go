@@ -3,8 +3,10 @@ package service
 import (
 	"errors"
 	"log"
+	"strings"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -27,23 +29,30 @@ func NewLoginService(
 
 func (h *LoginService) Login(
 	req dto.LoginData,
-) (string, string, error) {
+) (string, string, string, error) {
 
-	if req.Username == "" {
-		return "", "", errors.New("username is required")
+	usernameOrEmail := strings.TrimSpace(req.Email)
+	if usernameOrEmail == "" {
+		usernameOrEmail = strings.TrimSpace(req.Username)
 	}
 
-	if req.Password == "" {
-		return "", "", errors.New("password is required")
+	var user *model.User
+	var err error
+
+	if strings.Contains(usernameOrEmail, "@") {
+		user, err = h.UserRepository.FindUserByEmail(
+			strings.ToLower(usernameOrEmail),
+		)
+	} else {
+		user, err = h.UserRepository.FindUserByUsername(usernameOrEmail)
 	}
 
-	user, err := h.UserRepository.FindUserByUsername(req.Username)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", "", ErrInvalidCredentials
+		return "", "", "", ErrInvalidCredentials
 	}
 	if err != nil {
 		log.Printf("find user failed: %v", err)
-		return "", "", ErrInternal
+		return "", "", "", ErrInternal
 	}
 
 	err = bcrypt.CompareHashAndPassword(
@@ -52,8 +61,13 @@ func (h *LoginService) Login(
 	)
 
 	if err != nil {
-		return "", "", ErrInvalidCredentials
+		return "", "", "", ErrInvalidCredentials
 	}
 
-	return createSessionTokens(h.SessionRepository, user.ID)
+	accessToken, refreshToken, err := createSessionTokens(h.SessionRepository, user.ID)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	return user.Username, accessToken, refreshToken, nil
 }
