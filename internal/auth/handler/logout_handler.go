@@ -12,27 +12,29 @@ type LogoutHandler struct {
 	LogoutService *service.LogoutService
 }
 
-func NewLogoutHandler(logoutService *service.LogoutService) *LogoutHandler {
+func NewLogoutHandler(
+	logoutService *service.LogoutService,
+) *LogoutHandler {
+
 	return &LogoutHandler{
 		LogoutService: logoutService,
 	}
 }
 
-func (h *LogoutHandler) Logout(c *gin.Context) {
+func (h *LogoutHandler) Logout(
+	c *gin.Context,
+) {
+
 	var req dto.LogoutData
 
-	err := c.ShouldBindJSON(&req)
-
-	if err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"erroe": "invalid request body",
+			"error": "invalid request body",
 		})
 		return
 	}
 
-	err = h.LogoutService.Logout(req)
-
-	if err != nil {
+	if err := h.LogoutService.Logout(req); err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": err.Error(),
 		})
@@ -41,5 +43,30 @@ func (h *LogoutHandler) Logout(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "logout successful",
+	})
+}
+
+func (h *LogoutHandler) LogoutAll(
+	c *gin.Context,
+) {
+
+	var req dto.LogoutData
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid request body",
+		})
+		return
+	}
+
+	if err := h.LogoutService.LogoutAll(req); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "all sessions logged out successfully",
 	})
 }

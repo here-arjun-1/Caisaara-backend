@@ -17,8 +17,9 @@ func NewSessionRepository(db *pgx.Conn) *SessionRepository {
 	}
 }
 
-func (h *SessionRepository) CreateSession(session *model.Session) error {
-	_, err := h.DB.Exec(
+func (r *SessionRepository) CreateSession(session *model.Session) error {
+
+	_, err := r.DB.Exec(
 		context.Background(),
 		`INSERT INTO sessions
 		(user_id, refresh_token_hash, expires_at)
@@ -27,11 +28,17 @@ func (h *SessionRepository) CreateSession(session *model.Session) error {
 		session.RefreshTokenHash,
 		session.ExpiresAt,
 	)
+
 	return err
 }
-func (h *SessionRepository) FindSessionByRefreshTokenHash(refreshTokenHash string) (*model.Session, error) {
+
+func (r *SessionRepository) FindSessionByRefreshTokenHash(
+	refreshTokenHash string,
+) (*model.Session, error) {
+
 	var session model.Session
-	err := h.DB.QueryRow(
+
+	err := r.DB.QueryRow(
 		context.Background(),
 		`SELECT
 			id,
@@ -51,18 +58,50 @@ func (h *SessionRepository) FindSessionByRefreshTokenHash(refreshTokenHash strin
 		&session.CreatedAt,
 		&session.RevokedAt,
 	)
+
 	if err != nil {
 		return nil, err
 	}
+
 	return &session, nil
 }
 
-func (h *SessionRepository) RevokeSession(refreshTokenHash string) error {
-	_, err := h.DB.Exec(context.Background(),
+func (r *SessionRepository) RevokeSession(
+	refreshTokenHash string,
+) error {
+
+	result, err := r.DB.Exec(
+		context.Background(),
 		`UPDATE sessions
 		SET revoked_at = CURRENT_TIMESTAMP
-		WHERE refresh_token_hash = $1`,
+		WHERE refresh_token_hash = $1
+		AND revoked_at IS NULL`,
 		refreshTokenHash,
 	)
+
+	if err != nil {
+		return err
+	}
+
+	if result.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+
+	return nil
+}
+
+func (r *SessionRepository) RevokeAllSessions(
+	userID int64,
+) error {
+
+	_, err := r.DB.Exec(
+		context.Background(),
+		`UPDATE sessions
+		SET revoked_at = CURRENT_TIMESTAMP
+		WHERE user_id = $1
+		AND revoked_at IS NULL`,
+		userID,
+	)
+
 	return err
 }

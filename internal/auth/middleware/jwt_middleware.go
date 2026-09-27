@@ -1,12 +1,14 @@
 package middleware
 
 import (
+	"errors"
 	"net/http"
 	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
 )
 
 func JWTMiddleware() gin.HandlerFunc {
@@ -21,7 +23,8 @@ func JWTMiddleware() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		parts := strings.Split(authHeader, " ")
+
+		parts := strings.Fields(authHeader)
 
 		if len(parts) != 2 || parts[0] != "Bearer" {
 			c.JSON(http.StatusUnauthorized, gin.H{
@@ -31,18 +34,32 @@ func JWTMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		tokenString := parts[1]
+		secret := os.Getenv("JWT_SECRET")
 
-		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if secret == "" {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "JWT_SECRET is not configured",
+			})
+			c.Abort()
+			return
+		}
 
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, jwt.ErrSignatureInvalid
-			}
+		claims := &token.AccessTokenClaims{}
 
-			return []byte(os.Getenv("JWT_SECRET")), nil
-		})
+		jwtToken, err := jwt.ParseWithClaims(
+			parts[1],
+			claims,
+			func(t *jwt.Token) (interface{}, error) {
 
-		if err != nil || !token.Valid {
+				if t.Method != jwt.SigningMethodHS256 {
+					return nil, errors.New("unexpected signing method")
+				}
+
+				return []byte(secret), nil
+			},
+		)
+
+		if err != nil {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "invalid or expired token",
 			})
@@ -50,9 +67,15 @@ func JWTMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		claims, ok := token.Claims.(jwt.MapClaims)
+		if !jwtToken.Valid {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "invalid or expired token",
+			})
+			c.Abort()
+			return
+		}
 
-		if !ok {
+		if claims.UserID <= 0 {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "invalid token claims",
 			})
@@ -60,19 +83,8 @@ func JWTMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		userIDFloat, ok := claims["user_id"].(float64)
+		c.Set("user_id", claims.UserID)
 
-		if !ok {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "user id not found in token",
-			})
-			c.Abort()
-			return
-		}
-
-		userID := int64(userIDFloat)
-
-		c.Set("user_id", userID)
 		c.Next()
 	}
 }

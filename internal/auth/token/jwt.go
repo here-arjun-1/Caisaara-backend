@@ -5,8 +5,13 @@ import (
 	"os"
 	"time"
 
-	"github.com/golang-jwt/jwt"
+	"github.com/golang-jwt/jwt/v5"
 )
+
+type AccessTokenClaims struct {
+	UserID int64 `json:"user_id"`
+	jwt.RegisteredClaims
+}
 
 func GenerateAccessToken(userID int64) (string, error) {
 	secret := os.Getenv("JWT_SECRET")
