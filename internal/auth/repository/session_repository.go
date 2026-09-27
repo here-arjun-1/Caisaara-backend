@@ -5,13 +5,14 @@ import (
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type SessionRepository struct {
-	DB *pgx.Conn
+	DB *pgxpool.Pool
 }
 
-func NewSessionRepository(db *pgx.Conn) *SessionRepository {
+func NewSessionRepository(db *pgxpool.Pool) *SessionRepository {
 	return &SessionRepository{
 		DB: db,
 	}

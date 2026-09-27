@@ -2,8 +2,10 @@ package service
 
 import (
 	"errors"
+	"log"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
+	"github.com/jackc/pgx/v5"
 )
 
 type VerifyEmailService struct {
@@ -29,8 +31,12 @@ func (s *VerifyEmailService) VerifyEmail(
 
 	err := s.UserRepository.VerifyEmail(token)
 
-	if err != nil {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return errors.New("invalid or expired verification token")
+	}
+	if err != nil {
+		log.Printf("verify email failed: %v", err)
+		return ErrInternal
 	}
 
 	return nil

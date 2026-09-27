@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -28,6 +29,13 @@ func (h *LoginHandler) Login(c *gin.Context) {
 		return
 	}
 	accessToken, refreshToken, err := h.LoginService.Login(req)
+
+	if errors.Is(err, service.ErrInternal) {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": err.Error(),

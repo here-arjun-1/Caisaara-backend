@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -35,6 +36,13 @@ func (h *RefreshHandler) Refresh(
 	}
 
 	accessToken, err := h.RefreshService.Refresh(req)
+
+	if errors.Is(err, service.ErrInternal) {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
 
 	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{

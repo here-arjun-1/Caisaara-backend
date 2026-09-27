@@ -2,9 +2,11 @@ package service
 
 import (
 	"errors"
+	"log"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
+	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -36,8 +38,12 @@ func (h *LoginService) Login(
 	}
 
 	user, err := h.UserRepository.FindUserByUsername(req.Username)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", "", ErrInvalidCredentials
+	}
 	if err != nil {
-		return "", "", errors.New("invalid username and password")
+		log.Printf("find user failed: %v", err)
+		return "", "", ErrInternal
 	}
 
 	err = bcrypt.CompareHashAndPassword(
@@ -46,7 +52,7 @@ func (h *LoginService) Login(
 	)
 
 	if err != nil {
-		return "", "", errors.New("invalid username and password")
+		return "", "", ErrInvalidCredentials
 	}
 
 	return createSessionTokens(h.SessionRepository, user.ID)

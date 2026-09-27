@@ -3,6 +3,8 @@ package service
 import (
 	"errors"
 	"log"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
@@ -12,11 +14,6 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
 	"github.com/jackc/pgx/v5/pgconn"
 	"golang.org/x/crypto/bcrypt"
-)
-
-var (
-	ErrUsernameTaken = errors.New("username already taken")
-	ErrEmailTaken    = errors.New("email already registered")
 )
 
 type RegisterService struct {
@@ -39,17 +36,7 @@ func (s *RegisterService) Register(
 	req dto.RegisterData,
 ) (string, string, error) {
 
-	if req.Username == "" {
-		return "", "", errors.New("username is required")
-	}
-
-	if req.Email == "" {
-		return "", "", errors.New("email is required")
-	}
-
-	if req.Password == "" {
-		return "", "", errors.New("password is required")
-	}
+	req.Email = strings.ToLower(req.Email)
 
 	hashedPassword, err := bcrypt.GenerateFromPassword(
 		[]byte(req.Password),
@@ -57,13 +44,15 @@ func (s *RegisterService) Register(
 	)
 
 	if err != nil {
-		return "", "", errors.New("failed to process password")
+		log.Printf("hash password failed: %v", err)
+		return "", "", ErrInternal
 	}
 
 	verificationToken, err := token.GenerateEmailVerificationToken()
 
 	if err != nil {
-		return "", "", errors.New("failed to generate verification token")
+		log.Printf("generate verification token failed: %v", err)
+		return "", "", ErrInternal
 	}
 
 	user := &model.User{
@@ -91,11 +80,17 @@ func (s *RegisterService) Register(
 
 		log.Printf("create user failed: %v", err)
 
-		return "", "", errors.New("failed to create user")
+		return "", "", ErrInternal
+	}
+
+	baseURL := strings.TrimRight(os.Getenv("--"), "/")
+
+	if baseURL == "" {
+		baseURL = "http://localhost:8050"
 	}
 
 	verificationLink :=
-		"http://localhost:8050/verify-email?token=" +
+		baseURL + "/verify-email?token=" +
 			verificationToken
 
 	err = email.SendVerificationEmail(

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -24,6 +25,13 @@ func (h *VerifyEmailHandler) VerifyEmail(c *gin.Context) {
 	token := c.Query("token")
 
 	err := h.VerifyEmailService.VerifyEmail(token)
+
+	if errors.Is(err, service.ErrInternal) {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
 
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{

@@ -1,7 +1,7 @@
 package service
 
 import (
-	"errors"
+	"log"
 	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
@@ -16,12 +16,14 @@ func createSessionTokens(
 
 	accessToken, err := token.GenerateAccessToken(userID)
 	if err != nil {
-		return "", "", errors.New("failed to generate access token")
+		log.Printf("generate access token failed: %v", err)
+		return "", "", ErrInternal
 	}
 
 	refreshToken, err := token.GenerateRefreshToken()
 	if err != nil {
-		return "", "", errors.New("failed to generate refresh token")
+		log.Printf("generate refresh token failed: %v", err)
+		return "", "", ErrInternal
 	}
 
 	refreshTokenHash := token.HashRefreshToken(refreshToken)
@@ -34,7 +36,8 @@ func createSessionTokens(
 
 	err = sessionRepository.CreateSession(session)
 	if err != nil {
-		return "", "", errors.New("failed to create session")
+		log.Printf("create session failed: %v", err)
+		return "", "", ErrInternal
 	}
 
 	return accessToken, refreshToken, nil
