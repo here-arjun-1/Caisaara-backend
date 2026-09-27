@@ -32,9 +32,10 @@ func NewRegisterService(
 	}
 }
 
-func (s *RegisterService) Register(
-	req dto.RegisterData,
-) (string, string, error) {
+func (s *RegisterService) Register(req dto.RegisterData) (string, string, error) {
+	if !isValidUsername(req.Username) {
+		return "", "", ErrInvalidUsername
+	}
 
 	req.Email = strings.ToLower(req.Email)
 
@@ -103,4 +104,15 @@ func (s *RegisterService) Register(
 	}
 
 	return createSessionTokens(s.SessionRepository, user.ID)
+}
+
+func isValidUsername(username string) bool {
+	for _, char := range username {
+		isLetter := (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z')
+		isNumber := char >= '0' && char <= '9'
+		if !isLetter && !isNumber && char != '_' {
+			return false
+		}
+	}
+	return true
 }
