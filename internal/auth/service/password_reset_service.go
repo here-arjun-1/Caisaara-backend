@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
@@ -16,6 +17,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 )
+
+const maxOTPAttempts = 5
 
 type PasswordResetService struct {
 	UserRepository          *repository.UserRepository
@@ -36,45 +39,50 @@ func NewPasswordResetService(
 }
 
 func (s *PasswordResetService) ForgotPassword(req dto.ForgotPasswordRequest) error {
-	user, err := s.UserRepository.FindUserByEmail(req.Email)
+	userEmail := strings.ToLower(strings.TrimSpace(req.Email))
+
+	user, err := s.UserRepository.FindUserByEmail(userEmail)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil // Don't leak user existence
+		return nil
 	}
 	if err != nil {
 		log.Printf("find user by email failed: %v", err)
 		return ErrInternal
 	}
 
+	go s.sendResetCode(user.Email)
+
+	return nil
+}
+
+func (s *PasswordResetService) sendResetCode(userEmail string) {
 	otp, err := generateOTP()
 	if err != nil {
 		log.Printf("generate otp failed: %v", err)
-		return ErrInternal
+		return
 	}
 
 	otpHash, err := bcrypt.GenerateFromPassword([]byte(otp), bcrypt.DefaultCost)
 	if err != nil {
 		log.Printf("hash otp failed: %v", err)
-		return ErrInternal
+		return
 	}
 
 	expiresAt := time.Now().Add(15 * time.Minute)
-	err = s.PasswordResetRepository.SaveOTP(user.Email, string(otpHash), expiresAt)
-	if err != nil {
+	if err := s.PasswordResetRepository.SaveOTP(userEmail, string(otpHash), expiresAt); err != nil {
 		log.Printf("save otp failed: %v", err)
-		return ErrInternal
+		return
 	}
 
-	err = email.SendPasswordResetEmail(user.Email, otp)
-	if err != nil {
+	if err := email.SendPasswordResetEmail(userEmail, otp); err != nil {
 		log.Printf("send password reset email failed: %v", err)
-		return ErrInternal
 	}
-
-	return nil
 }
 
 func (s *PasswordResetService) VerifyCode(req dto.VerifyCodeRequest) (string, error) {
-	pr, err := s.PasswordResetRepository.FindByEmail(req.Email)
+	userEmail := strings.ToLower(strings.TrimSpace(req.Email))
+
+	pr, err := s.PasswordResetRepository.FindByEmail(userEmail)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", errors.New("invalid or expired verification code")
 	}
@@ -85,6 +93,15 @@ func (s *PasswordResetService) VerifyCode(req dto.VerifyCodeRequest) (string, er
 
 	if time.Now().After(pr.OTPExpiresAt) {
 		return "", errors.New("verification code expired")
+	}
+
+	attempts, err := s.PasswordResetRepository.IncrementAttempts(pr.Email)
+	if err != nil {
+		log.Printf("increment otp attempts failed: %v", err)
+		return "", ErrInternal
+	}
+	if attempts > maxOTPAttempts {
+		return "", errors.New("too many attempts, please request a new code")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(pr.OTPHash), []byte(req.Code)); err != nil {
@@ -110,40 +127,22 @@ func (s *PasswordResetService) VerifyCode(req dto.VerifyCodeRequest) (string, er
 }
 
 func (s *PasswordResetService) ResetPassword(req dto.ResetPasswordRequest) error {
-	tokenHash := hashResetToken(req.ResetToken)
-	pr, err := s.PasswordResetRepository.FindByResetTokenHash(tokenHash)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return errors.New("invalid or expired reset token")
-	}
-	if err != nil {
-		log.Printf("find password reset by token failed: %v", err)
-		return ErrInternal
-	}
-
-	if pr.ResetTokenExpiresAt == nil || time.Now().After(*pr.ResetTokenExpiresAt) {
-		return errors.New("reset token expired")
-	}
-
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
 		log.Printf("hash new password failed: %v", err)
 		return ErrInternal
 	}
 
-	err = s.UserRepository.UpdatePassword(pr.Email, string(hashedPassword))
+	err = s.PasswordResetRepository.ResetPasswordWithToken(
+		hashResetToken(req.ResetToken),
+		string(hashedPassword),
+	)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errors.New("invalid or expired reset token")
+	}
 	if err != nil {
-		log.Printf("update password failed: %v", err)
+		log.Printf("reset password failed: %v", err)
 		return ErrInternal
-	}
-
-	err = s.PasswordResetRepository.DeletePasswordReset(pr.Email)
-	if err != nil {
-		log.Printf("delete password reset failed: %v", err)
-	}
-
-	user, err := s.UserRepository.FindUserByEmail(pr.Email)
-	if err == nil {
-		_ = s.SessionRepository.RevokeAllSessions(user.ID)
 	}
 
 	return nil
