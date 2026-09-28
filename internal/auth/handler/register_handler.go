@@ -102,3 +102,42 @@ func (h *RegisterHandler) VerifyRegistration(c *gin.Context) {
 		"refresh_token": refreshToken,
 	})
 }
+
+func (h *RegisterHandler) GuestLogin(c *gin.Context) {
+	var req dto.GuestLoginData
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid request body",
+		})
+		return
+	}
+
+	accessToken, refreshToken, err := h.RegisterService.GuestLogin(req)
+
+	if errors.Is(err, service.ErrInternal) {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	if errors.Is(err, service.ErrUsernameTaken) {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message":       "guest logged in successfully",
+		"access_token":  accessToken,
+		"refresh_token": refreshToken,
+	})
+}

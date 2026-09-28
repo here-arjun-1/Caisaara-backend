@@ -10,3 +10,7 @@ type VerifyRegistrationData struct {
 	Email string `json:"email" binding:"required,email"`
 	Code  string `json:"code" binding:"required,len=6"`
 }
+
+type GuestLoginData struct {
+	Username string `json:"username" binding:"required,min=3,max=20"`
+}

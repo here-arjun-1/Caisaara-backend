@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -133,6 +134,43 @@ func (s *RegisterService) VerifyRegistration(req dto.VerifyRegistrationData) (st
 
 		log.Printf("create user failed: %v", err)
 
+		return "", "", ErrInternal
+	}
+
+	return createSessionTokens(s.SessionRepository, user.ID)
+}
+
+func (s *RegisterService) GuestLogin(req dto.GuestLoginData) (string, string, error) {
+	if !isValidUsername(req.Username) {
+		return "", "", ErrInvalidUsername
+	}
+
+	_, err := s.UserRepository.FindUserByUsername(req.Username)
+	if err == nil {
+		return "", "", ErrUsernameTaken
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		log.Printf("find user by username failed: %v", err)
+		return "", "", ErrInternal
+	}
+
+	dummyEmail := fmt.Sprintf("%s_%d@guest.local", req.Username, time.Now().UnixNano())
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("guest_password_dummy"), bcrypt.DefaultCost)
+	if err != nil {
+		log.Printf("hash password failed: %v", err)
+		return "", "", ErrInternal
+	}
+
+	user := &model.User{
+		Username: req.Username,
+		Email:    dummyEmail,
+		Password: string(hashedPassword),
+	}
+
+	err = s.UserRepository.CreateUser(user)
+	if err != nil {
+		log.Printf("create user failed: %v", err)
 		return "", "", ErrInternal
 	}
 
