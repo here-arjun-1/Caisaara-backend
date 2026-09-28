@@ -32,7 +32,47 @@ func (h *RegisterHandler) Register(c *gin.Context) {
 		return
 	}
 
-	accessToken, refreshToken, err := h.RegisterService.Register(req)
+	err = h.RegisterService.Register(req)
+
+	if errors.Is(err, service.ErrInternal) {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	if errors.Is(err, service.ErrUsernameTaken) ||
+		errors.Is(err, service.ErrEmailTaken) {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "verification email sent",
+	})
+}
+
+func (h *RegisterHandler) VerifyRegistration(c *gin.Context) {
+	var req dto.VerifyRegistrationData
+
+	err := c.ShouldBindJSON(&req)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid request body",
+		})
+		return
+	}
+
+	accessToken, refreshToken, err := h.RegisterService.VerifyRegistration(req)
 
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -58,7 +98,6 @@ func (h *RegisterHandler) Register(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message":       "user registered successfully",
-		"username":      req.Username,
 		"access_token":  accessToken,
 		"refresh_token": refreshToken,
 	})

@@ -99,6 +99,7 @@ func run() error {
 		})
 	})
 	r.POST("/register", registerLimiter.Limit, registerHandler.Register)
+	r.POST("/verify-registration", otpLimiter.Limit, registerHandler.VerifyRegistration)
 	r.POST("/login", loginLimiter.Limit, loginHandler.Login)
 	r.POST("/refresh", refreshHandler.Refresh)
 

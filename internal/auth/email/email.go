@@ -45,3 +45,42 @@ func SendPasswordResetEmail(to string, code string) error {
 		message,
 	)
 }
+
+func SendRegistrationEmail(to string, code string) error {
+	host := os.Getenv("SMTP_HOST")
+	port := os.Getenv("SMTP_PORT")
+	username := os.Getenv("SMTP_USERNAME")
+	password := os.Getenv("SMTP_PASSWORD")
+
+	auth := smtp.PlainAuth(
+		"",
+		username,
+		password,
+		host,
+	)
+
+	subject := "Registration Verification Code"
+
+	body := fmt.Sprintf(
+		"Hello,\n\nYour registration verification code is: %s\n\nThis code will expire in 15 minutes.\n",
+		code,
+	)
+
+	message := []byte(
+		"Subject: " + subject + "\r\n" +
+			"From: " + username + "\r\n" +
+			"To: " + to + "\r\n" +
+			"MIME-Version: 1.0\r\n" +
+			"Content-Type: text/plain; charset=\"UTF-8\"\r\n" +
+			"\r\n" +
+			body,
+	)
+
+	return smtp.SendMail(
+		host+":"+port,
+		auth,
+		username,
+		[]string{to},
+		message,
+	)
+}
