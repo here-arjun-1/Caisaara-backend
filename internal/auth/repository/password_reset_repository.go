@@ -28,6 +28,7 @@ func (r *PasswordResetRepository) SaveOTP(email, otpHash string, expiresAt time.
 		    otp_expires_at = EXCLUDED.otp_expires_at, 
 		    reset_token_hash = NULL, 
 		    reset_token_expires_at = NULL,
+		    attempts = 0,
 		    created_at = NOW()`,
 		email,
 		otpHash,
@@ -72,34 +73,62 @@ func (r *PasswordResetRepository) FindByEmail(email string) (*model.PasswordRese
 	return &pr, nil
 }
 
-func (r *PasswordResetRepository) FindByResetTokenHash(tokenHash string) (*model.PasswordReset, error) {
-	var pr model.PasswordReset
+func (r *PasswordResetRepository) IncrementAttempts(email string) (int, error) {
+	var attempts int
 	err := r.DB.QueryRow(
 		context.Background(),
-		`SELECT id, email, otp_hash, otp_expires_at, reset_token_hash, reset_token_expires_at, created_at
-		FROM password_resets
-		WHERE reset_token_hash = $1`,
-		tokenHash,
-	).Scan(
-		&pr.ID,
-		&pr.Email,
-		&pr.OTPHash,
-		&pr.OTPExpiresAt,
-		&pr.ResetTokenHash,
-		&pr.ResetTokenExpiresAt,
-		&pr.CreatedAt,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return &pr, nil
+		`UPDATE password_resets
+		SET attempts = attempts + 1
+		WHERE email = $1
+		RETURNING attempts`,
+		email,
+	).Scan(&attempts)
+	return attempts, err
 }
 
-func (r *PasswordResetRepository) DeletePasswordReset(email string) error {
-	_, err := r.DB.Exec(
-		context.Background(),
-		`DELETE FROM password_resets WHERE email = $1`,
+func (r *PasswordResetRepository) ResetPasswordWithToken(tokenHash, hashedPassword string) error {
+	ctx := context.Background()
+
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var email string
+	err = tx.QueryRow(
+		ctx,
+		`DELETE FROM password_resets
+		WHERE reset_token_hash = $1
+		AND reset_token_expires_at > NOW()
+		RETURNING email`,
+		tokenHash,
+	).Scan(&email)
+	if err != nil {
+		return err
+	}
+
+	var userID int64
+	err = tx.QueryRow(
+		ctx,
+		`UPDATE users SET password = $1 WHERE email = $2 RETURNING id`,
+		hashedPassword,
 		email,
+	).Scan(&userID)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(
+		ctx,
+		`UPDATE sessions
+		SET revoked_at = CURRENT_TIMESTAMP
+		WHERE user_id = $1
+		AND revoked_at IS NULL`,
+		userID,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
