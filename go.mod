@@ -1,6 +1,6 @@
 module github.com/here-arjun-1/Caisaara-backend
 
-go 1.27.1
+go 1.27.0
 
 require (
 	github.com/gin-gonic/gin v1.12.0

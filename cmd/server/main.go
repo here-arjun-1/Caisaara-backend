@@ -112,8 +112,32 @@ func run() error {
 		port = "8050"
 	}
 
-	if err := r.Run(":" + port); err != nil {
-		return fmt.Errorf("server failed to start: %w", err)
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: r,
 	}
-	return nil
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("server failed to start: %v", err)
+		}
+	}()
+
+	log.Printf("server started on port %s", port)
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("server forced to shutdown: %v", err)
+	}
+
+	log.Println("server exited")
 }
+
