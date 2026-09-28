@@ -79,7 +79,7 @@ func run() error {
 
 	r := gin.Default()
 
-	if err := r.SetTrustedProxies(nil); err != nil {
+	if err := r.SetTrustedProxies([]string{"127.0.0.1", "::1"}); err != nil {
 		return fmt.Errorf("set trusted proxies: %w", err)
 	}
 
