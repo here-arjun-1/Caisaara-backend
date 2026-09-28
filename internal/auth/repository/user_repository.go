@@ -117,3 +117,26 @@ func (r *UserRepository) UpdatePassword(email, hashedPassword string) error {
 	)
 	return err
 }
+
+func (r *UserRepository) FindUserByID(id int64) (*model.User, error) {
+	var user model.User
+	err := r.DB.QueryRow(
+		context.Background(),
+		`SELECT
+			id,
+			username,
+			email
+		FROM users
+		WHERE id = $1`,
+		id,
+	).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
+}

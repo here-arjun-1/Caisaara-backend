@@ -1,13 +1,9 @@
 package main
 
 import (
-	"context"
-	"errors"
+	"fmt"
 	"log"
-	"net/http"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -20,19 +16,20 @@ import (
 )
 
 func main() {
-
-	err := godotenv.Load()
-
+	err := run()
 	if err != nil {
-		log.Println("No .env file found, using environment variables")
+		log.Fatal(err)
 	}
-
+}
+func run() error {
+	if err := godotenv.Load(); err != nil {
+		log.Println("no .env file found, using system environment variables")
+	}
 	conn, err := database.ConnectDB()
 
 	if err != nil {
-		log.Fatal("Database connection failed:", err)
+		return fmt.Errorf("database connection failed: %w", err)
 	}
-
 	defer conn.Close()
 
 	userRepository := repository.NewUserRepository(conn)
@@ -82,19 +79,24 @@ func main() {
 
 	r := gin.Default()
 
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
+	if err := r.SetTrustedProxies([]string{"127.0.0.1", "::1"}); err != nil {
+		return fmt.Errorf("set trusted proxies: %w", err)
+	}
 
-	r.POST("/register", registerHandler.Register)
-	r.POST("/login", loginHandler.Login)
+	loginLimiter := middleware.NewFixedWindowLimiter(5, time.Minute)
+	registerLimiter := middleware.NewFixedWindowLimiter(3, 10*time.Minute)
+	forgotLimiter := middleware.NewFixedWindowLimiter(3, 15*time.Minute)
+	otpLimiter := middleware.NewFixedWindowLimiter(5, time.Minute)
+
+	r.POST("/register", registerLimiter.Limit, registerHandler.Register)
+	r.POST("/login", loginLimiter.Limit, loginHandler.Login)
 	r.POST("/refresh", refreshHandler.Refresh)
 
 	r.POST("/logout", logoutHandler.Logout)
 	r.POST("/logout-all", logoutHandler.LogoutAll)
 
-	r.POST("/auth/forgot-password", passwordResetHandler.ForgotPassword)
-	r.POST("/auth/verify-reset-code", passwordResetHandler.VerifyCode)
+	r.POST("/auth/forgot-password", forgotLimiter.Limit, passwordResetHandler.ForgotPassword)
+	r.POST("/auth/verify-reset-code", otpLimiter.Limit, passwordResetHandler.VerifyCode)
 	r.POST("/auth/reset-password", passwordResetHandler.ResetPassword)
 
 	protected := r.Group("/api")
