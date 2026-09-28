@@ -11,10 +11,6 @@ type UserRepository struct {
 	DB *pgxpool.Pool
 }
 
-func (r *UserRepository) FindUserByID(d int64) (any, error) {
-	panic("unimplemented")
-}
-
 func NewUserRepository(db *pgxpool.Pool) *UserRepository {
 	return &UserRepository{
 		DB: db,
@@ -98,4 +94,27 @@ func (r *UserRepository) UpdatePassword(email, hashedPassword string) error {
 		email,
 	)
 	return err
+}
+
+func (r *UserRepository) FindUserByID(id int64) (*model.User, error) {
+	var user model.User
+	err := r.DB.QueryRow(
+		context.Background(),
+		`SELECT
+			id,
+			username,
+			email
+		FROM users
+		WHERE id = $1`,
+		id,
+	).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &user, nil
 }
