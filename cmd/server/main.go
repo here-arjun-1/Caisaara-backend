@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"log"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/database"
@@ -13,18 +15,20 @@ import (
 )
 
 func main() {
-
-	err := godotenv.Load()
+	err := run()
 	if err != nil {
+		log.Fatal(err)
+	}
+}
+func run() error {
+	if err := godotenv.Load(); err != nil {
 		log.Println("no .env file found, using system environment variables")
 	}
-
 	conn, err := database.ConnectDB()
 
 	if err != nil {
-		log.Fatal("Database connection failed:", err)
+		return fmt.Errorf("database connection failed: %w", err)
 	}
-
 	defer conn.Close()
 
 	userRepository := repository.NewUserRepository(conn)
@@ -92,10 +96,14 @@ func main() {
 	{
 		protected.GET("/profile", handler.GetProfile)
 	}
-	if err := r.Run(":8050"); err != nil {
-		log.Printf(
-			"server failed to start: %v",
-			err,
-		)
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8050"
 	}
+
+	if err := r.Run(":" + port); err != nil {
+		return fmt.Errorf("server failed to start: %w", err)
+	}
+	return nil
 }
