@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/database"
@@ -78,15 +79,24 @@ func run() error {
 
 	r := gin.Default()
 
-	r.POST("/register", registerHandler.Register)
-	r.POST("/login", loginHandler.Login)
+	if err := r.SetTrustedProxies(nil); err != nil {
+		return fmt.Errorf("set trusted proxies: %w", err)
+	}
+
+	loginLimiter := middleware.NewFixedWindowLimiter(5, time.Minute)
+	registerLimiter := middleware.NewFixedWindowLimiter(3, 10*time.Minute)
+	forgotLimiter := middleware.NewFixedWindowLimiter(3, 15*time.Minute)
+	otpLimiter := middleware.NewFixedWindowLimiter(5, time.Minute)
+
+	r.POST("/register", registerLimiter.Limit, registerHandler.Register)
+	r.POST("/login", loginLimiter.Limit, loginHandler.Login)
 	r.POST("/refresh", refreshHandler.Refresh)
 
 	r.POST("/logout", logoutHandler.Logout)
 	r.POST("/logout-all", logoutHandler.LogoutAll)
 
-	r.POST("/auth/forgot-password", passwordResetHandler.ForgotPassword)
-	r.POST("/auth/verify-reset-code", passwordResetHandler.VerifyCode)
+	r.POST("/auth/forgot-password", forgotLimiter.Limit, passwordResetHandler.ForgotPassword)
+	r.POST("/auth/verify-reset-code", otpLimiter.Limit, passwordResetHandler.VerifyCode)
 	r.POST("/auth/reset-password", passwordResetHandler.ResetPassword)
 
 	protected := r.Group("/api")
