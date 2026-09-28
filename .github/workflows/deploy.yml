@@ -21,6 +21,7 @@ jobs:
         run: |
           docker build --no-cache -t caisaara-backend:latest .
           docker save -o caisaara-backend.tar caisaara-backend:latest
+          chmod 644 caisaara-backend.tar
 
       - name: Copy Docker Image to EC2
         uses: appleboy/scp-action@v0.1.7
