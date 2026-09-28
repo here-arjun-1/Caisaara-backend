@@ -1,9 +1,14 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -88,6 +93,11 @@ func run() error {
 	forgotLimiter := middleware.NewFixedWindowLimiter(3, 15*time.Minute)
 	otpLimiter := middleware.NewFixedWindowLimiter(5, time.Minute)
 
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status": "ok",
+		})
+	})
 	r.POST("/register", registerLimiter.Limit, registerHandler.Register)
 	r.POST("/login", loginLimiter.Limit, loginHandler.Login)
 	r.POST("/refresh", refreshHandler.Refresh)
@@ -135,9 +145,9 @@ func run() error {
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("server forced to shutdown: %v", err)
+		return fmt.Errorf("server forced to shutdown: %w", err)
 	}
 
 	log.Println("server exited")
+	return nil
 }
-
