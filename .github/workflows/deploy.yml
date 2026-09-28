@@ -9,17 +9,18 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Build Docker Image
         run: |
-          docker build -t caisaara-backend:latest .
+          docker build --no-cache -t caisaara-backend:latest .
           docker save -o caisaara-backend.tar caisaara-backend:latest
 
-      - name: Copy Docker image to EC2
-        uses: appleboy/scp-action@master
+      - name: Copy Docker Image to EC2
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
@@ -27,8 +28,8 @@ jobs:
           source: "caisaara-backend.tar"
           target: "/home/${{ secrets.EC2_USERNAME }}/app"
 
-      - name: Load and Run Docker Container on EC2
-        uses: appleboy/ssh-action@master
+      - name: Deploy Docker Container on EC2
+        uses: appleboy/ssh-action@v1.0.3
         env:
           ENV_FILE_CONTENT: ${{ secrets.ENV_FILE_CONTENT }}
         with:
@@ -36,24 +37,49 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           envs: ENV_FILE_CONTENT
+
           script: |
-            # Ensure the app directory exists
-            mkdir -p /home/${{ secrets.EC2_USERNAME }}/app
-            cd /home/${{ secrets.EC2_USERNAME }}/app
-            
-            # Write the GitHub secret to the .env file securely
-            echo "$ENV_FILE_CONTENT" > .env
-            
-            # Load the new Docker image
+            set -e
+
+            APP_DIR="/home/${{ secrets.EC2_USERNAME }}/app"
+
+            mkdir -p "$APP_DIR"
+            cd "$APP_DIR"
+
+            printf '%s\n' "$ENV_FILE_CONTENT" > .env
+
+            chmod 600 .env
+
             docker load -i caisaara-backend.tar
-            
-            # Stop and remove the existing container if it exists
+
             docker stop caisaara-backend || true
+
             docker rm caisaara-backend || true
-            
-            # Run the new container
-            # This assumes you have manually placed your .env file in the /home/${{ secrets.EC2_USERNAME }}/app directory
-            docker run -d --name caisaara-backend --env-file .env -p 8080:8080 caisaara-backend:latest
-            
-            # Clean up the tar file to save space
-            rm caisaara-backend.tar
+
+            docker run -d \
+              --name caisaara-backend \
+              --restart unless-stopped \
+              --env-file .env \
+              -p 8050:8050 \
+              caisaara-backend:latest
+
+            rm -f caisaara-backend.tar
+
+            docker image prune -f
+
+            echo "Waiting for container to be healthy..."
+            for i in $(seq 1 30); do
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8050/health || true)
+              if [ "$STATUS" = "200" ]; then
+                echo "Container is healthy after ${i}s"
+                break
+              fi
+              if [ "$i" = "30" ]; then
+                echo "Container health check failed after 30s"
+                docker logs caisaara-backend
+                exit 1
+              fi
+              sleep 1
+            done
+
+            docker ps --filter "name=caisaara-backend"

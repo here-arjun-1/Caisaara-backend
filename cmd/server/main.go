@@ -1,7 +1,14 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/database"
@@ -17,7 +24,7 @@ func main() {
 	err := godotenv.Load()
 
 	if err != nil {
-		log.Fatal("Error loading .env")
+		log.Println("No .env file found, using environment variables")
 	}
 
 	conn, err := database.ConnectDB()
@@ -75,6 +82,10 @@ func main() {
 
 	r := gin.Default()
 
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
 	r.POST("/register", registerHandler.Register)
 	r.POST("/login", loginHandler.Login)
 	r.POST("/refresh", refreshHandler.Refresh)
@@ -93,10 +104,38 @@ func main() {
 	{
 		protected.GET("/profile", handler.GetProfile)
 	}
-	if err := r.Run(":8050"); err != nil {
-		log.Printf(
-			"server failed to start: %v",
-			err,
-		)
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8050"
 	}
+
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: r,
+	}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("server failed to start: %v", err)
+		}
+	}()
+
+	log.Printf("server started on port %s", port)
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("server forced to shutdown: %v", err)
+	}
+
+	log.Println("server exited")
 }
+
