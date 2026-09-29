@@ -12,11 +12,14 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/go-playground/validator/v10"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/database"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/handler"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/service"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/validation"
 	"github.com/joho/godotenv"
 )
 
@@ -81,6 +84,17 @@ func run() error {
 	passwordResetHandler := handler.NewPasswordResetHandler(
 		passwordResetService,
 	)
+
+	v, ok := binding.Validator.Engine().(*validator.Validate)
+	if !ok {
+		return errors.New("failed to get validator engine")
+	}
+	if err := v.RegisterValidation("username", validation.Username); err != nil {
+		return fmt.Errorf("register username validator: %w", err)
+	}
+	if err := v.RegisterValidation("otp", validation.OTP); err != nil {
+		return fmt.Errorf("register otp validator: %w", err)
+	}
 
 	r := gin.Default()
 
