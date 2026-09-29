@@ -45,10 +45,6 @@ func NewRegisterService(
 }
 
 func (s *RegisterService) Register(req dto.RegisterData) error {
-	if !isValidUsername(req.Username) {
-		return ErrInvalidUsername
-	}
-
 	req.Email = strings.ToLower(req.Email)
 
 	_, err := s.UserRepository.FindUserByEmail(req.Email)
@@ -141,10 +137,6 @@ func (s *RegisterService) VerifyRegistration(req dto.VerifyRegistrationData) (st
 }
 
 func (s *RegisterService) GuestLogin(req dto.GuestLoginData) (string, string, error) {
-	if !isValidUsername(req.Username) {
-		return "", "", ErrInvalidUsername
-	}
-
 	_, err := s.UserRepository.FindUserByUsername(req.Username)
 	if err == nil {
 		return "", "", ErrUsernameTaken
@@ -175,15 +167,4 @@ func (s *RegisterService) GuestLogin(req dto.GuestLoginData) (string, string, er
 	}
 
 	return createSessionTokens(s.SessionRepository, user.ID)
-}
-
-func isValidUsername(username string) bool {
-	for _, char := range username {
-		isLetter := (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z')
-		isNumber := char >= '0' && char <= '9'
-		if !isLetter && !isNumber && char != '_' {
-			return false
-		}
-	}
-	return true
 }
