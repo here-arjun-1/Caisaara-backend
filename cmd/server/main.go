@@ -40,12 +40,19 @@ func run() error {
 	}
 	defer conn.Close()
 
+	redisClient, err := database.ConnectRedis()
+	if err != nil {
+		return fmt.Errorf("redis connection failed: %w", err)
+	}
+	defer func() { _ = redisClient.Close() }()
+
 	userRepository := repository.NewUserRepository(conn)
 	sessionRepository := repository.NewSessionRepository(conn)
 
 	registerService := service.NewRegisterService(
 		userRepository,
 		sessionRepository,
+		redisClient,
 	)
 
 	registerHandler := handler.NewRegisterHandler(
@@ -80,6 +87,7 @@ func run() error {
 		userRepository,
 		passwordResetRepository,
 		sessionRepository,
+		redisClient,
 	)
 	passwordResetHandler := handler.NewPasswordResetHandler(
 		passwordResetService,

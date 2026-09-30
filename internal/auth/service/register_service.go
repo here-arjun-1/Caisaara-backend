@@ -1,11 +1,12 @@
 package service
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
@@ -14,12 +15,12 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 )
 
 var (
-	pendingRegistrations sync.Map
-	ErrInvalidCode       = errors.New("invalid or expired verification code")
+	ErrInvalidCode = errors.New("invalid or expired verification code")
 )
 
 type pendingUser struct {
@@ -31,16 +32,19 @@ type pendingUser struct {
 type RegisterService struct {
 	UserRepository    *repository.UserRepository
 	SessionRepository *repository.SessionRepository
+	RedisClient       *redis.Client
 }
 
 func NewRegisterService(
 	userRepository *repository.UserRepository,
 	sessionRepository *repository.SessionRepository,
+	redisClient *redis.Client,
 ) *RegisterService {
 
 	return &RegisterService{
 		UserRepository:    userRepository,
 		SessionRepository: sessionRepository,
+		RedisClient:       redisClient,
 	}
 }
 
@@ -71,30 +75,40 @@ func (s *RegisterService) Register(req dto.RegisterData) error {
 		return ErrInternal
 	}
 
-	pendingRegistrations.Store(req.Email, pendingUser{
+	pUser := pendingUser{
 		Req:       req,
 		Code:      code,
 		ExpiresAt: time.Now().Add(15 * time.Minute),
-	})
+	}
+	pUserJSON, _ := json.Marshal(pUser)
+	s.RedisClient.Set(context.Background(), "register:"+req.Email, pUserJSON, 15*time.Minute)
 
-	go email.SendRegistrationEmail(req.Email, code)
+	go func() {
+		if err := email.SendRegistrationEmail(req.Email, code); err != nil {
+			log.Printf("send registration email failed: %v", err)
+		}
+	}()
 
 	return nil
 }
 
 func (s *RegisterService) VerifyRegistration(req dto.VerifyRegistrationData) (string, string, error) {
 	req.Email = strings.ToLower(req.Email)
-	val, ok := pendingRegistrations.Load(req.Email)
-	if !ok {
+	val, err := s.RedisClient.Get(context.Background(), "register:"+req.Email).Result()
+	if err != nil {
 		return "", "", ErrInvalidCode
 	}
 
-	pUser := val.(pendingUser)
+	var pUser pendingUser
+	if err := json.Unmarshal([]byte(val), &pUser); err != nil {
+		return "", "", ErrInvalidCode
+	}
+
 	if time.Now().After(pUser.ExpiresAt) || pUser.Code != req.Code {
 		return "", "", ErrInvalidCode
 	}
 
-	pendingRegistrations.Delete(req.Email)
+	s.RedisClient.Del(context.Background(), "register:"+req.Email)
 
 	userReq := pUser.Req
 
