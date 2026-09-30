@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/email"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/redis/go-redis/v9"
@@ -150,35 +150,18 @@ func (s *RegisterService) VerifyRegistration(req dto.VerifyRegistrationData) (st
 	return createSessionTokens(s.SessionRepository, user.ID)
 }
 
-func (s *RegisterService) GuestLogin(req dto.GuestLoginData) (string, string, error) {
-	_, err := s.UserRepository.FindUserByUsername(req.Username)
-	if err == nil {
-		return "", "", ErrUsernameTaken
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		log.Printf("find user by username failed: %v", err)
-		return "", "", ErrInternal
-	}
-
-	dummyEmail := fmt.Sprintf("%s_%d@guest.local", req.Username, time.Now().UnixNano())
-
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte("guest_password_dummy"), bcrypt.DefaultCost)
+func (s *RegisterService) GuestLogin(username string) (string, string, error) {
+	guestID, err := token.GenerateGuestID()
 	if err != nil {
-		log.Printf("hash password failed: %v", err)
+		log.Printf("generate guest id failed: %v", err)
 		return "", "", ErrInternal
 	}
 
-	user := &model.User{
-		Username: req.Username,
-		Email:    dummyEmail,
-		Password: string(hashedPassword),
-	}
-
-	err = s.UserRepository.CreateUser(user)
+	accessToken, err := token.GenerateGuestToken(guestID, username)
 	if err != nil {
-		log.Printf("create user failed: %v", err)
+		log.Printf("generate guest token failed: %v", err)
 		return "", "", ErrInternal
 	}
 
-	return createSessionTokens(s.SessionRepository, user.ID)
+	return guestID, accessToken, nil
 }

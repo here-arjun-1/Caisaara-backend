@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Build Docker Image
         run: |
@@ -54,17 +54,20 @@ jobs:
 
             docker load -i caisaara-backend.tar
 
-            # Start Redis only if it is not already running
+            # Start Redis if it does not exist
             if ! docker ps -a --format '{{.Names}}' | grep -q '^redis$'; then
               docker run -d \
                 --name redis \
                 --restart unless-stopped \
                 --network host \
                 redis:7-alpine
+              echo "Redis container started"
             else
               docker start redis || true
+              echo "Redis already running or started"
             fi
 
+            # Stop and replace backend container
             docker stop caisaara-backend || true
             docker rm caisaara-backend || true
 
@@ -94,5 +97,4 @@ jobs:
               sleep 1
             done
 
-            docker ps --filter "name=caisaara-backend"
-            docker ps --filter "name=redis"
+            docker ps --filter "name=caisaara-backend" --filter "name=redis"
