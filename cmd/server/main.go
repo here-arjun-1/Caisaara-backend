@@ -110,10 +110,10 @@ func run() error {
 		return fmt.Errorf("set trusted proxies: %w", err)
 	}
 
-	loginLimiter := middleware.NewFixedWindowLimiter(5, time.Minute)
-	registerLimiter := middleware.NewFixedWindowLimiter(3, 10*time.Minute)
-	forgotLimiter := middleware.NewFixedWindowLimiter(3, 15*time.Minute)
-	otpLimiter := middleware.NewFixedWindowLimiter(5, time.Minute)
+	loginLimiter := middleware.NewFixedWindowLimiter(30, time.Minute)
+	registerLimiter := middleware.NewFixedWindowLimiter(30, 10*time.Minute)
+	forgotLimiter := middleware.NewFixedWindowLimiter(30, 15*time.Minute)
+	otpLimiter := middleware.NewFixedWindowLimiter(30, time.Minute)
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
