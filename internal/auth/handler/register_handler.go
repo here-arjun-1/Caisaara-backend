@@ -112,18 +112,11 @@ func (h *RegisterHandler) GuestLogin(c *gin.Context) {
 		return
 	}
 
-	accessToken, refreshToken, err := h.RegisterService.GuestLogin(req)
+	guestID, accessToken, err := h.RegisterService.GuestLogin(req.Username)
 
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "internal server error",
-		})
-		return
-	}
-
-	if errors.Is(err, service.ErrUsernameTaken) {
-		c.JSON(http.StatusConflict, gin.H{
-			"error": err.Error(),
 		})
 		return
 	}
@@ -135,9 +128,8 @@ func (h *RegisterHandler) GuestLogin(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
-		"message":       "guest logged in successfully",
-		"access_token":  accessToken,
-		"refresh_token": refreshToken,
+	c.JSON(http.StatusOK, gin.H{
+		"guest_id":     guestID,
+		"access_token": accessToken,
 	})
 }
