@@ -24,8 +24,9 @@ import (
 const maxOTPAttempts = 5
 
 type OTPData struct {
-	Hash     string `json:"hash"`
-	Attempts int    `json:"attempts"`
+	CodeHash  string
+	Attempts  int
+	ExpiresAt time.Time
 }
 
 type PasswordResetService struct {
@@ -52,7 +53,7 @@ func NewPasswordResetService(
 func (s *PasswordResetService) ForgotPassword(req dto.ForgotPasswordRequest) error {
 	userEmail := strings.ToLower(strings.TrimSpace(req.Email))
 
-	user, err := s.UserRepository.FindUserByEmail(userEmail)
+	_, err := s.UserRepository.FindUserByEmail(userEmail)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -61,38 +62,36 @@ func (s *PasswordResetService) ForgotPassword(req dto.ForgotPasswordRequest) err
 		return ErrInternal
 	}
 
-	go s.sendResetCode(user.Email)
-
-	return nil
-}
-
-func (s *PasswordResetService) sendResetCode(userEmail string) {
 	otp, err := generateOTP()
 	if err != nil {
 		log.Printf("generate otp failed: %v", err)
-		return
+		return ErrInternal
 	}
 
 	otpHash, err := bcrypt.GenerateFromPassword([]byte(otp), bcrypt.DefaultCost)
 	if err != nil {
 		log.Printf("hash otp failed: %v", err)
-		return
+		return ErrInternal
 	}
 
 	data := OTPData{
-		Hash:     string(otpHash),
-		Attempts: 0,
+		CodeHash:  string(otpHash),
+		ExpiresAt: time.Now().Add(15 * time.Minute),
 	}
 	dataJSON, _ := json.Marshal(data)
 
 	if err := s.RedisClient.Set(context.Background(), "forgot_otp:"+userEmail, dataJSON, 15*time.Minute).Err(); err != nil {
 		log.Printf("save otp to redis failed: %v", err)
-		return
+		return ErrInternal
 	}
 
-	if err := email.SendPasswordResetEmail(userEmail, otp); err != nil {
-		log.Printf("send password reset email failed: %v", err)
-	}
+	go func() {
+		if err := email.SendPasswordResetEmail(userEmail, otp); err != nil {
+			log.Printf("send password reset email failed: %v", err)
+		}
+	}()
+
+	return nil
 }
 
 func (s *PasswordResetService) VerifyCode(req dto.VerifyCodeRequest) (string, error) {
@@ -106,13 +105,18 @@ func (s *PasswordResetService) VerifyCode(req dto.VerifyCodeRequest) (string, er
 	err := s.RedisClient.Watch(ctx, func(tx *redis.Tx) error {
 		val, err := tx.Get(ctx, key).Result()
 		if err != nil {
-			returnErr = errors.New("invalid or expired verification code")
+			returnErr = ErrInvalidCode
 			return nil
 		}
 
 		var data OTPData
 		if err := json.Unmarshal([]byte(val), &data); err != nil {
-			returnErr = errors.New("invalid or expired verification code")
+			returnErr = ErrInvalidCode
+			return nil
+		}
+
+		if time.Now().After(data.ExpiresAt) {
+			returnErr = ErrInvalidCode
 			return nil
 		}
 
@@ -129,12 +133,12 @@ func (s *PasswordResetService) VerifyCode(req dto.VerifyCodeRequest) (string, er
 		newData, _ := json.Marshal(data)
 		ttl := tx.TTL(ctx, key).Val()
 
-		if err := bcrypt.CompareHashAndPassword([]byte(data.Hash), []byte(req.Code)); err != nil {
+		if err := bcrypt.CompareHashAndPassword([]byte(data.CodeHash), []byte(req.Code)); err != nil {
 			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 				pipe.Set(ctx, key, newData, ttl)
 				return nil
 			})
-			returnErr = errors.New("invalid verification code")
+			returnErr = ErrInvalidCode
 			return err
 		}
 
