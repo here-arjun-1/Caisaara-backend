@@ -108,7 +108,10 @@ func (s *RegisterService) VerifyRegistration(req dto.VerifyRegistrationData) (st
 		return "", "", ErrInvalidCode
 	}
 
-	s.RedisClient.Del(context.Background(), "register:"+req.Email)
+	deleted, err := s.RedisClient.Del(context.Background(), "register:"+req.Email).Result()
+	if err != nil || deleted == 0 {
+		return "", "", ErrInvalidCode
+	}
 
 	userReq := pUser.Req
 
