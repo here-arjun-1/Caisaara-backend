@@ -132,9 +132,9 @@ func run() error {
 	r.POST("/logout", logoutHandler.Logout)
 	r.POST("/logout-all", logoutHandler.LogoutAll)
 
-	r.POST("/auth/forgot-password", forgotLimiter.Limit, passwordResetHandler.ForgotPassword)
-	r.POST("/auth/verify-reset-code", otpLimiter.Limit, passwordResetHandler.VerifyCode)
-	r.POST("/auth/reset-password", passwordResetHandler.ResetPassword)
+	r.POST("/forgot-password", forgotLimiter.Limit, passwordResetHandler.ForgotPassword)
+	r.POST("/verify-reset-code", otpLimiter.Limit, passwordResetHandler.VerifyCode)
+	r.POST("/reset-password", passwordResetHandler.ResetPassword)
 
 	protected := r.Group("/api")
 

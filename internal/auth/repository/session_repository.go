@@ -158,7 +158,7 @@ func (r *SessionRepository) CleanExpiredSessions() (int64, error) {
 	result, err := r.DB.Exec(
 		context.Background(),
 		`DELETE FROM sessions 
-		WHERE expires_at < CURRENT_TIMESTAMP-
+		WHERE expires_at < CURRENT_TIMESTAMP
 		OR revoked_at IS NOT NULL`,
 	)
 
