@@ -67,6 +67,53 @@ func (r *SessionRepository) FindSessionByRefreshTokenHash(
 	return &session, nil
 }
 
+func (r *SessionRepository) RotateSession(
+	oldRefreshTokenHash string,
+	newSession *model.Session,
+) error {
+
+	ctx := context.Background()
+
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+	err = tx.QueryRow(
+		ctx,
+		`UPDATE sessions
+		SET revoked_at = CURRENT_TIMESTAMP
+		WHERE refresh_token_hash = $1
+		AND revoked_at IS NULL
+		AND expires_at > CURRENT_TIMESTAMP
+		RETURNING user_id`,
+		oldRefreshTokenHash,
+	).Scan(&newSession.UserID)
+
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(
+		ctx,
+		`INSERT INTO sessions
+		(user_id, refresh_token_hash, expires_at)
+		VALUES ($1, $2, $3)`,
+		newSession.UserID,
+		newSession.RefreshTokenHash,
+		newSession.ExpiresAt,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
 func (r *SessionRepository) RevokeSession(
 	refreshTokenHash string,
 ) error {

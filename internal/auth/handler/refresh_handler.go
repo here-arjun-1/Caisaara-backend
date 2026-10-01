@@ -35,7 +35,7 @@ func (h *RefreshHandler) Refresh(
 		return
 	}
 
-	accessToken, err := h.RefreshService.Refresh(req)
+	accessToken, refreshToken, err := h.RefreshService.Refresh(req)
 
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -52,6 +52,7 @@ func (h *RefreshHandler) Refresh(
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"access_token": accessToken,
+		"access_token":  accessToken,
+		"refresh_token": refreshToken,
 	})
 }
