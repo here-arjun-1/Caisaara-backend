@@ -103,6 +103,9 @@ func run() error {
 	if err := v.RegisterValidation("otp", validation.OTP); err != nil {
 		return fmt.Errorf("register otp validator: %w", err)
 	}
+	if err := v.RegisterValidation("password", validation.Password); err != nil {
+		return fmt.Errorf("register password validator: %w", err)
+	}
 
 	r := gin.Default()
 

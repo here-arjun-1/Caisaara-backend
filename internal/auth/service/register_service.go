@@ -49,7 +49,8 @@ func NewRegisterService(
 }
 
 func (s *RegisterService) Register(req dto.RegisterData) error {
-	req.Email = strings.ToLower(req.Email)
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+	req.Username = strings.ToLower(strings.TrimSpace(req.Username))
 
 	_, err := s.UserRepository.FindUserByEmail(req.Email)
 	if err == nil {
@@ -93,7 +94,7 @@ func (s *RegisterService) Register(req dto.RegisterData) error {
 }
 
 func (s *RegisterService) VerifyRegistration(req dto.VerifyRegistrationData) (string, string, error) {
-	req.Email = strings.ToLower(req.Email)
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	val, err := s.RedisClient.Get(context.Background(), "register:"+req.Email).Result()
 	if err != nil {
 		return "", "", ErrInvalidCode
@@ -154,6 +155,7 @@ func (s *RegisterService) VerifyRegistration(req dto.VerifyRegistrationData) (st
 }
 
 func (s *RegisterService) GuestLogin(username string) (string, string, error) {
+	username = strings.ToLower(strings.TrimSpace(username))
 	guestID, err := token.GenerateGuestID()
 	if err != nil {
 		log.Printf("generate guest id failed: %v", err)
