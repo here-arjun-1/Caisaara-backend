@@ -162,6 +162,19 @@ func run() error {
 
 	log.Printf("server started on port %s", port)
 
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			deleted, err := sessionRepository.CleanExpiredSessions()
+			if err != nil {
+				log.Printf("failed to clean expired sessions: %v", err)
+			} else if deleted > 0 {
+				log.Printf("cleaned up %d expired sessions", deleted)
+			}
+		}
+	}()
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
