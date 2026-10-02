@@ -106,6 +106,9 @@ func run() error {
 	if err := v.RegisterValidation("password", validation.Password); err != nil {
 		return fmt.Errorf("register password validator: %w", err)
 	}
+	if err := v.RegisterValidation("strictemail", validation.Email); err != nil {
+		return fmt.Errorf("register email validator: %w", err)
+	}
 
 	r := gin.Default()
 

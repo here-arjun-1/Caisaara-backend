@@ -1,11 +1,11 @@
 package dto
 
 type ForgotPasswordRequest struct {
-	Email string `json:"email" binding:"required,email"`
+	Email string `json:"email" binding:"required,strictemail"`
 }
 
 type VerifyCodeRequest struct {
-	Email string `json:"email" binding:"required,email"`
+	Email string `json:"email" binding:"required,strictemail"`
 	Code  string `json:"code" binding:"required,otp"`
 }
 
