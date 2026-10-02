@@ -44,24 +44,7 @@ func JWTMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		guestClaims := &token.GuestTokenClaims{}
-		guestToken, guestErr := jwt.ParseWithClaims(
-			parts[1],
-			guestClaims,
-			func(t *jwt.Token) (interface{}, error) {
-				if t.Method != jwt.SigningMethodHS256 {
-					return nil, errors.New("unexpected signing method")
-				}
-				return []byte(secret), nil
-			},
-		)
 
-		if guestErr == nil && guestToken.Valid && guestClaims.IsGuest && guestClaims.GuestID != "" {
-			c.Set("guest_id", guestClaims.GuestID)
-			c.Set("is_guest", true)
-			c.Next()
-			return
-		}
 
 		claims := &token.AccessTokenClaims{}
 		jwtToken, err := jwt.ParseWithClaims(
