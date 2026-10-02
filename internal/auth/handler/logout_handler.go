@@ -26,16 +26,19 @@ func (h *LogoutHandler) Logout(
 	c *gin.Context,
 ) {
 
-	var req dto.LogoutData
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request body",
+	refreshToken, err := GetRefreshTokenFromCookie(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "refresh token is required",
 		})
 		return
 	}
 
-	err := h.LogoutService.Logout(req)
+	req := dto.LogoutData{
+		RefreshToken: refreshToken,
+	}
+
+	err = h.LogoutService.Logout(req)
 
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -50,6 +53,8 @@ func (h *LogoutHandler) Logout(
 		})
 		return
 	}
+
+	ClearRefreshTokenCookie(c)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "logout successful",
@@ -60,16 +65,19 @@ func (h *LogoutHandler) LogoutAll(
 	c *gin.Context,
 ) {
 
-	var req dto.LogoutData
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request body",
+	refreshToken, err := GetRefreshTokenFromCookie(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "refresh token is required",
 		})
 		return
 	}
 
-	err := h.LogoutService.LogoutAll(req)
+	req := dto.LogoutData{
+		RefreshToken: refreshToken,
+	}
+
+	err = h.LogoutService.LogoutAll(req)
 
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -84,6 +92,8 @@ func (h *LogoutHandler) LogoutAll(
 		})
 		return
 	}
+
+	ClearRefreshTokenCookie(c)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "all sessions logged out successfully",

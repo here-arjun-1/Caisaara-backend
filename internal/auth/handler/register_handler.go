@@ -96,10 +96,11 @@ func (h *RegisterHandler) VerifyRegistration(c *gin.Context) {
 		return
 	}
 
+	SetRefreshTokenCookie(c, refreshToken)
+
 	c.JSON(http.StatusCreated, gin.H{
-		"message":       "user registered successfully",
-		"access_token":  accessToken,
-		"refresh_token": refreshToken,
+		"message":      "user registered successfully",
+		"access_token": accessToken,
 	})
 }
 
