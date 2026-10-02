@@ -14,12 +14,17 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o caisaara-backend ./cmd/server
 
 # Final stage
-FROM alpine:latest
+FROM alpine:3.24
+
+# CA certificates for TLS (SMTP), and a non-root user to run the app
+RUN apk add --no-cache ca-certificates && adduser -D -H -u 10001 app
 
 WORKDIR /app
 
 # Copy only the compiled binary
 COPY --from=builder /app/caisaara-backend .
+
+USER app
 
 EXPOSE 8050
 
