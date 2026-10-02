@@ -204,19 +204,12 @@ func (s *RegisterService) VerifyRegistration(req dto.VerifyRegistrationData) (st
 	return createSessionTokens(s.SessionRepository, user.ID)
 }
 
-func (s *RegisterService) GuestLogin(username string) (string, string, error) {
-	username = strings.ToLower(strings.TrimSpace(username))
+func (s *RegisterService) GuestLogin() (string, error) {
 	guestID, err := token.GenerateGuestID()
 	if err != nil {
 		log.Printf("generate guest id failed: %v", err)
-		return "", "", ErrInternal
+		return "", ErrInternal
 	}
 
-	accessToken, err := token.GenerateGuestToken(guestID, username)
-	if err != nil {
-		log.Printf("generate guest token failed: %v", err)
-		return "", "", ErrInternal
-	}
-
-	return guestID, accessToken, nil
+	return guestID, nil
 }

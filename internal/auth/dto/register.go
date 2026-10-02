@@ -11,6 +11,4 @@ type VerifyRegistrationData struct {
 	Code  string `json:"code" binding:"required,otp"`
 }
 
-type GuestLoginData struct {
-	Username string `json:"username" binding:"required,username"`
-}
+
