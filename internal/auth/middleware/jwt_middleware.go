@@ -44,8 +44,6 @@ func JWTMiddleware() gin.HandlerFunc {
 			return
 		}
 
-
-
 		claims := &token.AccessTokenClaims{}
 		jwtToken, err := jwt.ParseWithClaims(
 			parts[1],
