@@ -26,13 +26,16 @@ func (h *RefreshHandler) Refresh(
 	c *gin.Context,
 ) {
 
-	var req dto.RefreshData
-
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request body",
+	refreshTokenFromCookie, err := GetRefreshTokenFromCookie(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "refresh token is required",
 		})
 		return
+	}
+
+	req := dto.RefreshData{
+		RefreshToken: refreshTokenFromCookie,
 	}
 
 	accessToken, refreshToken, err := h.RefreshService.Refresh(req)
@@ -51,8 +54,9 @@ func (h *RefreshHandler) Refresh(
 		return
 	}
 
+	SetRefreshTokenCookie(c, refreshToken)
+
 	c.JSON(http.StatusOK, gin.H{
-		"access_token":  accessToken,
-		"refresh_token": refreshToken,
+		"access_token": accessToken,
 	})
 }

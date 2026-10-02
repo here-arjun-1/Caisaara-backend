@@ -96,23 +96,16 @@ func (h *RegisterHandler) VerifyRegistration(c *gin.Context) {
 		return
 	}
 
+	SetRefreshTokenCookie(c, refreshToken)
+
 	c.JSON(http.StatusCreated, gin.H{
-		"message":       "user registered successfully",
-		"access_token":  accessToken,
-		"refresh_token": refreshToken,
+		"message":      "user registered successfully",
+		"access_token": accessToken,
 	})
 }
 
 func (h *RegisterHandler) GuestLogin(c *gin.Context) {
-	var req dto.GuestLoginData
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request body",
-		})
-		return
-	}
-
-	guestID, accessToken, err := h.RegisterService.GuestLogin(req.Username)
+	guestID, err := h.RegisterService.GuestLogin()
 
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -129,7 +122,6 @@ func (h *RegisterHandler) GuestLogin(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"guest_id":     guestID,
-		"access_token": accessToken,
+		"guest_id": guestID,
 	})
 }

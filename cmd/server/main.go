@@ -103,6 +103,9 @@ func run() error {
 	if err := v.RegisterValidation("otp", validation.OTP); err != nil {
 		return fmt.Errorf("register otp validator: %w", err)
 	}
+	if err := v.RegisterValidation("password", validation.Password); err != nil {
+		return fmt.Errorf("register password validator: %w", err)
+	}
 
 	r := gin.Default()
 
@@ -129,9 +132,9 @@ func run() error {
 	r.POST("/logout", logoutHandler.Logout)
 	r.POST("/logout-all", logoutHandler.LogoutAll)
 
-	r.POST("/auth/forgot-password", forgotLimiter.Limit, passwordResetHandler.ForgotPassword)
-	r.POST("/auth/verify-reset-code", otpLimiter.Limit, passwordResetHandler.VerifyCode)
-	r.POST("/auth/reset-password", passwordResetHandler.ResetPassword)
+	r.POST("/forgot-password", forgotLimiter.Limit, passwordResetHandler.ForgotPassword)
+	r.POST("/verify-reset-code", otpLimiter.Limit, passwordResetHandler.VerifyCode)
+	r.POST("/reset-password", passwordResetHandler.ResetPassword)
 
 	protected := r.Group("/api")
 
@@ -158,6 +161,19 @@ func run() error {
 	}()
 
 	log.Printf("server started on port %s", port)
+
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+		for range ticker.C {
+			deleted, err := sessionRepository.CleanExpiredSessions()
+			if err != nil {
+				log.Printf("failed to clean expired sessions: %v", err)
+			} else if deleted > 0 {
+				log.Printf("cleaned up %d expired sessions", deleted)
+			}
+		}
+	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)

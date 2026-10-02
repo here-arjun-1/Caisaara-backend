@@ -31,9 +31,9 @@ func (h *LoginService) Login(
 	req dto.LoginData,
 ) (string, string, string, error) {
 
-	usernameOrEmail := strings.TrimSpace(req.Email)
+	usernameOrEmail := strings.ToLower(strings.TrimSpace(req.Email))
 	if usernameOrEmail == "" {
-		usernameOrEmail = strings.TrimSpace(req.Username)
+		usernameOrEmail = strings.ToLower(strings.TrimSpace(req.Username))
 	}
 
 	var user *model.User
@@ -41,7 +41,7 @@ func (h *LoginService) Login(
 
 	if strings.Contains(usernameOrEmail, "@") {
 		user, err = h.UserRepository.FindUserByEmail(
-			strings.ToLower(usernameOrEmail),
+			usernameOrEmail,
 		)
 	} else {
 		user, err = h.UserRepository.FindUserByUsername(usernameOrEmail)

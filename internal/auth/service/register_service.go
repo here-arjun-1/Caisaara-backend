@@ -25,7 +25,8 @@ var (
 
 type pendingUser struct {
 	Req       dto.RegisterData
-	Code      string
+	CodeHash  string
+	Attempts  int
 	ExpiresAt time.Time
 }
 
@@ -49,7 +50,8 @@ func NewRegisterService(
 }
 
 func (s *RegisterService) Register(req dto.RegisterData) error {
-	req.Email = strings.ToLower(req.Email)
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+	req.Username = strings.ToLower(strings.TrimSpace(req.Username))
 
 	_, err := s.UserRepository.FindUserByEmail(req.Email)
 	if err == nil {
@@ -75,9 +77,15 @@ func (s *RegisterService) Register(req dto.RegisterData) error {
 		return ErrInternal
 	}
 
+	codeHash, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
+	if err != nil {
+		log.Printf("hash otp failed: %v", err)
+		return ErrInternal
+	}
+
 	pUser := pendingUser{
 		Req:       req,
-		Code:      code,
+		CodeHash:  string(codeHash),
 		ExpiresAt: time.Now().Add(15 * time.Minute),
 	}
 	pUserJSON, _ := json.Marshal(pUser)
@@ -93,22 +101,68 @@ func (s *RegisterService) Register(req dto.RegisterData) error {
 }
 
 func (s *RegisterService) VerifyRegistration(req dto.VerifyRegistrationData) (string, string, error) {
-	req.Email = strings.ToLower(req.Email)
-	val, err := s.RedisClient.Get(context.Background(), "register:"+req.Email).Result()
-	if err != nil {
-		return "", "", ErrInvalidCode
-	}
+	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
+	ctx := context.Background()
+	key := "register:" + req.Email
 
 	var pUser pendingUser
-	if err := json.Unmarshal([]byte(val), &pUser); err != nil {
-		return "", "", ErrInvalidCode
-	}
+	var returnErr error
 
-	if time.Now().After(pUser.ExpiresAt) || pUser.Code != req.Code {
-		return "", "", ErrInvalidCode
-	}
+	err := s.RedisClient.Watch(ctx, func(tx *redis.Tx) error {
+		val, err := tx.Get(ctx, key).Result()
+		if err != nil {
+			returnErr = ErrInvalidCode
+			return nil
+		}
 
-	s.RedisClient.Del(context.Background(), "register:"+req.Email)
+		if err := json.Unmarshal([]byte(val), &pUser); err != nil {
+			returnErr = ErrInvalidCode
+			return nil
+		}
+
+		if time.Now().After(pUser.ExpiresAt) {
+			returnErr = ErrInvalidCode
+			return nil
+		}
+
+		pUser.Attempts++
+		if pUser.Attempts > maxOTPAttempts {
+			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.Del(ctx, key)
+				return nil
+			})
+			returnErr = errors.New("too many attempts, please request a new code")
+			return err
+		}
+
+		newData, _ := json.Marshal(pUser)
+		ttl := tx.TTL(ctx, key).Val()
+
+		if err := bcrypt.CompareHashAndPassword([]byte(pUser.CodeHash), []byte(req.Code)); err != nil {
+			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+				pipe.Set(ctx, key, newData, ttl)
+				return nil
+			})
+			returnErr = ErrInvalidCode
+			return err
+		}
+
+		_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+			pipe.Del(ctx, key)
+			return nil
+		})
+		return err
+	}, key)
+
+	if err != nil {
+		if err == redis.TxFailedErr {
+			return "", "", errors.New("concurrent request, please try again")
+		}
+		return "", "", ErrInternal
+	}
+	if returnErr != nil {
+		return "", "", returnErr
+	}
 
 	userReq := pUser.Req
 
@@ -150,18 +204,12 @@ func (s *RegisterService) VerifyRegistration(req dto.VerifyRegistrationData) (st
 	return createSessionTokens(s.SessionRepository, user.ID)
 }
 
-func (s *RegisterService) GuestLogin(username string) (string, string, error) {
+func (s *RegisterService) GuestLogin() (string, error) {
 	guestID, err := token.GenerateGuestID()
 	if err != nil {
 		log.Printf("generate guest id failed: %v", err)
-		return "", "", ErrInternal
+		return "", ErrInternal
 	}
 
-	accessToken, err := token.GenerateGuestToken(guestID, username)
-	if err != nil {
-		log.Printf("generate guest token failed: %v", err)
-		return "", "", ErrInternal
-	}
-
-	return guestID, accessToken, nil
+	return guestID, nil
 }
