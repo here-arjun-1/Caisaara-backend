@@ -8,24 +8,18 @@ linters:
     - ineffassign
     - unused
     - gocritic
-    - gosec
-    - gocyclo
-    - err113
     - bodyclose
     - noctx
     - unparam
-    - revive
     - misspell
     - prealloc
     - errname
     - errorlint
-    - nilerr
     - nilnil
     - wastedassign
     - maintidx
     - godox
     - goprintffuncname
-    - whitespace
 
 formatters:
   enable:

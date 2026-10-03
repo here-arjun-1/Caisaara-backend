@@ -158,7 +158,7 @@ func (s *PasswordResetService) VerifyCode(ctx context.Context, req dto.VerifyCod
 	}, key)
 
 	if err != nil {
-		if err == redis.TxFailedErr {
+		if errors.Is(err, redis.TxFailedErr) {
 			return "", errors.New("concurrent request, please try again")
 		}
 		return "", ErrInternal

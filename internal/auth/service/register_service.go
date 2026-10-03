@@ -154,7 +154,7 @@ func (s *RegisterService) VerifyRegistration(ctx context.Context, req dto.Verify
 	}, key)
 
 	if err != nil {
-		if err == redis.TxFailedErr {
+		if errors.Is(err, redis.TxFailedErr) {
 			return "", "", errors.New("concurrent request, please try again")
 		}
 		return "", "", ErrInternal
