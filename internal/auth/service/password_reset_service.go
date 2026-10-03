@@ -50,10 +50,10 @@ func NewPasswordResetService(
 	}
 }
 
-func (s *PasswordResetService) ForgotPassword(req dto.ForgotPasswordRequest) error {
+func (s *PasswordResetService) ForgotPassword(ctx context.Context, req dto.ForgotPasswordRequest) error {
 	userEmail := strings.ToLower(strings.TrimSpace(req.Email))
 
-	_, err := s.UserRepository.FindUserByEmail(userEmail)
+	_, err := s.UserRepository.FindUserByEmail(ctx, userEmail)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -80,7 +80,7 @@ func (s *PasswordResetService) ForgotPassword(req dto.ForgotPasswordRequest) err
 	}
 	dataJSON, _ := json.Marshal(data)
 
-	if err := s.RedisClient.Set(context.Background(), "forgot_otp:"+userEmail, dataJSON, 15*time.Minute).Err(); err != nil {
+	if err := s.RedisClient.Set(ctx, "forgot_otp:"+userEmail, dataJSON, 15*time.Minute).Err(); err != nil {
 		log.Printf("save otp to redis failed: %v", err)
 		return ErrInternal
 	}
@@ -94,9 +94,8 @@ func (s *PasswordResetService) ForgotPassword(req dto.ForgotPasswordRequest) err
 	return nil
 }
 
-func (s *PasswordResetService) VerifyCode(req dto.VerifyCodeRequest) (string, error) {
+func (s *PasswordResetService) VerifyCode(ctx context.Context, req dto.VerifyCodeRequest) (string, error) {
 	userEmail := strings.ToLower(strings.TrimSpace(req.Email))
-	ctx := context.Background()
 	key := "forgot_otp:" + userEmail
 
 	var resetToken string
@@ -171,8 +170,7 @@ func (s *PasswordResetService) VerifyCode(req dto.VerifyCodeRequest) (string, er
 	return resetToken, nil
 }
 
-func (s *PasswordResetService) ResetPassword(req dto.ResetPasswordRequest) error {
-	ctx := context.Background()
+func (s *PasswordResetService) ResetPassword(ctx context.Context, req dto.ResetPasswordRequest) error {
 	key := "reset_token:" + hashResetToken(req.ResetToken)
 
 	email, err := s.RedisClient.Get(ctx, key).Result()

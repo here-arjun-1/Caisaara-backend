@@ -18,10 +18,10 @@ func NewSessionRepository(db *pgxpool.Pool) *SessionRepository {
 	}
 }
 
-func (r *SessionRepository) CreateSession(session *model.Session) error {
+func (r *SessionRepository) CreateSession(ctx context.Context, session *model.Session) error {
 
 	_, err := r.DB.Exec(
-		context.Background(),
+		ctx,
 		`INSERT INTO sessions
 		(user_id, refresh_token_hash, expires_at)
 		VALUES ($1, $2, $3)`,
@@ -34,13 +34,14 @@ func (r *SessionRepository) CreateSession(session *model.Session) error {
 }
 
 func (r *SessionRepository) FindSessionByRefreshTokenHash(
+	ctx context.Context,
 	refreshTokenHash string,
 ) (*model.Session, error) {
 
 	var session model.Session
 
 	err := r.DB.QueryRow(
-		context.Background(),
+		ctx,
 		`SELECT
 			id,
 			user_id,
@@ -68,11 +69,10 @@ func (r *SessionRepository) FindSessionByRefreshTokenHash(
 }
 
 func (r *SessionRepository) RotateSession(
+	ctx context.Context,
 	oldRefreshTokenHash string,
 	newSession *model.Session,
 ) error {
-
-	ctx := context.Background()
 
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
@@ -115,11 +115,12 @@ func (r *SessionRepository) RotateSession(
 }
 
 func (r *SessionRepository) RevokeSession(
+	ctx context.Context,
 	refreshTokenHash string,
 ) error {
 
 	result, err := r.DB.Exec(
-		context.Background(),
+		ctx,
 		`UPDATE sessions
 		SET revoked_at = CURRENT_TIMESTAMP
 		WHERE refresh_token_hash = $1
@@ -139,11 +140,12 @@ func (r *SessionRepository) RevokeSession(
 }
 
 func (r *SessionRepository) RevokeAllSessions(
+	ctx context.Context,
 	userID int64,
 ) error {
 
 	_, err := r.DB.Exec(
-		context.Background(),
+		ctx,
 		`UPDATE sessions
 		SET revoked_at = CURRENT_TIMESTAMP
 		WHERE user_id = $1
@@ -154,9 +156,9 @@ func (r *SessionRepository) RevokeAllSessions(
 	return err
 }
 
-func (r *SessionRepository) CleanExpiredSessions() (int64, error) {
+func (r *SessionRepository) CleanExpiredSessions(ctx context.Context) (int64, error) {
 	result, err := r.DB.Exec(
-		context.Background(),
+		ctx,
 		`DELETE FROM sessions 
 		WHERE expires_at < CURRENT_TIMESTAMP
 		OR revoked_at IS NOT NULL`,

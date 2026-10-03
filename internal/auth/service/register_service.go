@@ -49,11 +49,11 @@ func NewRegisterService(
 	}
 }
 
-func (s *RegisterService) Register(req dto.RegisterData) error {
+func (s *RegisterService) Register(ctx context.Context, req dto.RegisterData) error {
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	req.Username = strings.ToLower(strings.TrimSpace(req.Username))
 
-	_, err := s.UserRepository.FindUserByEmail(req.Email)
+	_, err := s.UserRepository.FindUserByEmail(ctx, req.Email)
 	if err == nil {
 		return ErrEmailTaken
 	}
@@ -62,7 +62,7 @@ func (s *RegisterService) Register(req dto.RegisterData) error {
 		return ErrInternal
 	}
 
-	_, err = s.UserRepository.FindUserByUsername(req.Username)
+	_, err = s.UserRepository.FindUserByUsername(ctx, req.Username)
 	if err == nil {
 		return ErrUsernameTaken
 	}
@@ -89,7 +89,7 @@ func (s *RegisterService) Register(req dto.RegisterData) error {
 		ExpiresAt: time.Now().Add(15 * time.Minute),
 	}
 	pUserJSON, _ := json.Marshal(pUser)
-	s.RedisClient.Set(context.Background(), "register:"+req.Email, pUserJSON, 15*time.Minute)
+	s.RedisClient.Set(ctx, "register:"+req.Email, pUserJSON, 15*time.Minute)
 
 	go func() {
 		if err := email.SendRegistrationEmail(req.Email, code); err != nil {
@@ -100,9 +100,8 @@ func (s *RegisterService) Register(req dto.RegisterData) error {
 	return nil
 }
 
-func (s *RegisterService) VerifyRegistration(req dto.VerifyRegistrationData) (string, string, error) {
+func (s *RegisterService) VerifyRegistration(ctx context.Context, req dto.VerifyRegistrationData) (string, string, error) {
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
-	ctx := context.Background()
 	key := "register:" + req.Email
 
 	var pUser pendingUser
@@ -182,7 +181,7 @@ func (s *RegisterService) VerifyRegistration(req dto.VerifyRegistrationData) (st
 		Password: string(hashedPassword),
 	}
 
-	err = s.UserRepository.CreateUser(user)
+	err = s.UserRepository.CreateUser(ctx, user)
 
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -201,10 +200,10 @@ func (s *RegisterService) VerifyRegistration(req dto.VerifyRegistrationData) (st
 		return "", "", ErrInternal
 	}
 
-	return createSessionTokens(s.SessionRepository, user.ID)
+	return createSessionTokens(ctx, s.SessionRepository, user.ID)
 }
 
-func (s *RegisterService) GuestLogin() (string, error) {
+func (s *RegisterService) GuestLogin(ctx context.Context) (string, error) {
 	guestID, err := token.GenerateGuestID()
 	if err != nil {
 		log.Printf("generate guest id failed: %v", err)

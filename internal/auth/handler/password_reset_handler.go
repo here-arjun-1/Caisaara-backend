@@ -28,7 +28,7 @@ func (h *PasswordResetHandler) ForgotPassword(c *gin.Context) {
 		return
 	}
 
-	err := h.PasswordResetService.ForgotPassword(req)
+	err := h.PasswordResetService.ForgotPassword(c.Request.Context(), req)
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "internal server error",
@@ -50,7 +50,7 @@ func (h *PasswordResetHandler) VerifyCode(c *gin.Context) {
 		return
 	}
 
-	resetToken, err := h.PasswordResetService.VerifyCode(req)
+	resetToken, err := h.PasswordResetService.VerifyCode(c.Request.Context(), req)
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "internal server error",
@@ -79,7 +79,7 @@ func (h *PasswordResetHandler) ResetPassword(c *gin.Context) {
 		return
 	}
 
-	err := h.PasswordResetService.ResetPassword(req)
+	err := h.PasswordResetService.ResetPassword(c.Request.Context(), req)
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "internal server error",

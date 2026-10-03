@@ -32,7 +32,7 @@ func (h *RegisterHandler) Register(c *gin.Context) {
 		return
 	}
 
-	err = h.RegisterService.Register(req)
+	err = h.RegisterService.Register(c.Request.Context(), req)
 
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -72,7 +72,7 @@ func (h *RegisterHandler) VerifyRegistration(c *gin.Context) {
 		return
 	}
 
-	accessToken, refreshToken, err := h.RegisterService.VerifyRegistration(req)
+	accessToken, refreshToken, err := h.RegisterService.VerifyRegistration(c.Request.Context(), req)
 
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -106,7 +106,7 @@ func (h *RegisterHandler) VerifyRegistration(c *gin.Context) {
 }
 
 func (h *RegisterHandler) GuestLogin(c *gin.Context) {
-	guestID, err := h.RegisterService.GuestLogin()
+	guestID, err := h.RegisterService.GuestLogin(c.Request.Context())
 
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{

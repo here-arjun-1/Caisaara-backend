@@ -38,7 +38,7 @@ func (h *RefreshHandler) Refresh(
 		RefreshToken: refreshTokenFromCookie,
 	}
 
-	accessToken, refreshToken, err := h.RefreshService.Refresh(req)
+	accessToken, refreshToken, err := h.RefreshService.Refresh(c.Request.Context(), req)
 
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{
