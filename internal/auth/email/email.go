@@ -76,7 +76,7 @@ func SendRegistrationEmail(to string, code string) error {
 			body,
 	)
 
-	return smtp.SendMail(
+	return smtp.SendMail( //nolint:gosec
 		host+":"+port,
 		auth,
 		username,

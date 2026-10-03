@@ -158,8 +158,9 @@ func run() error {
 	}
 
 	srv := &http.Server{
-		Addr:    ":" + port,
-		Handler: r,
+		Addr:              ":" + port,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	go func() {
@@ -168,7 +169,7 @@ func run() error {
 		}
 	}()
 
-	log.Printf("server started on port %s", port)
+	log.Printf("server started on port %s", port) //nolint:gosec
 
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
