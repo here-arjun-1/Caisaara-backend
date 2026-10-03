@@ -29,7 +29,7 @@ func NewLoginService(
 
 func (h *LoginService) Login(
 	req dto.LoginData,
-) (string, string, string, error) {
+) (string, string, string, bool, error) {
 
 	usernameOrEmail := strings.ToLower(strings.TrimSpace(req.Email))
 	if usernameOrEmail == "" {
@@ -48,11 +48,11 @@ func (h *LoginService) Login(
 	}
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", "", "", ErrInvalidCredentials
+		return "", "", "", false, ErrInvalidCredentials
 	}
 	if err != nil {
 		log.Printf("find user failed: %v", err)
-		return "", "", "", ErrInternal
+		return "", "", "", false, ErrInternal
 	}
 
 	err = bcrypt.CompareHashAndPassword(
@@ -61,13 +61,13 @@ func (h *LoginService) Login(
 	)
 
 	if err != nil {
-		return "", "", "", ErrInvalidCredentials
+		return "", "", "", false, ErrInvalidCredentials
 	}
 
 	accessToken, refreshToken, err := createSessionTokens(h.SessionRepository, user.ID)
 	if err != nil {
-		return "", "", "", err
+		return "", "", "", false, err
 	}
 
-	return user.Username, accessToken, refreshToken, nil
+	return user.Username, accessToken, refreshToken, user.SkillLevel == nil, nil
 }

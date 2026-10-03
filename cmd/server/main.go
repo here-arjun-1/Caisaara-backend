@@ -93,6 +93,9 @@ func run() error {
 		passwordResetService,
 	)
 
+	ratingService := service.NewRatingService(userRepository)
+	ratingHandler := handler.NewRatingHandler(ratingService)
+
 	v, ok := binding.Validator.Engine().(*validator.Validate)
 	if !ok {
 		return errors.New("failed to get validator engine")
@@ -142,6 +145,7 @@ func run() error {
 
 	{
 		protected.GET("/profile", handler.GetProfile)
+		protected.POST("/rating", ratingHandler.SetRating)
 	}
 
 	port := os.Getenv("PORT")

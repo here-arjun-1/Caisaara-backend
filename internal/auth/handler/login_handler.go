@@ -28,7 +28,7 @@ func (h *LoginHandler) Login(c *gin.Context) {
 		})
 		return
 	}
-	username, accessToken, refreshToken, err := h.LoginService.Login(req)
+	username, accessToken, refreshToken, needsRating, err := h.LoginService.Login(req)
 
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -48,5 +48,6 @@ func (h *LoginHandler) Login(c *gin.Context) {
 		"message":      "login successful",
 		"username":     username,
 		"access_token": accessToken,
+		"needs_rating": needsRating,
 	})
 }
