@@ -20,6 +20,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/service"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/validation"
+	"github.com/here-arjun-1/Caisaara-backend/internal/player"
 	"github.com/joho/godotenv"
 )
 
@@ -96,6 +97,8 @@ func run() error {
 	ratingService := service.NewRatingService(userRepository)
 	ratingHandler := handler.NewRatingHandler(ratingService)
 
+	playerModule := player.NewModule(conn)
+
 	v, ok := binding.Validator.Engine().(*validator.Validate)
 	if !ok {
 		return errors.New("failed to get validator engine")
@@ -144,9 +147,10 @@ func run() error {
 	protected.Use(middleware.JWTMiddleware())
 
 	{
-		protected.GET("/profile", handler.GetProfile)
 		protected.POST("/rating", ratingHandler.SetRating)
 	}
+
+	playerModule.RegisterRoutes(r, protected)
 
 	port := os.Getenv("PORT")
 	if port == "" {
