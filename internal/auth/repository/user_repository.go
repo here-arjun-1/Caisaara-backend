@@ -64,7 +64,8 @@ func (r *UserRepository) FindUserByUsername(username string) (*model.User, error
 		`SELECT
 			id,
 			username,
-			password
+			password,
+			skill_level
 		FROM users
 		WHERE username = $1`,
 		username,
@@ -72,6 +73,7 @@ func (r *UserRepository) FindUserByUsername(username string) (*model.User, error
 		&user.ID,
 		&user.Username,
 		&user.Password,
+		&user.SkillLevel,
 	)
 
 	if err != nil {
@@ -90,7 +92,8 @@ func (r *UserRepository) FindUserByEmail(email string) (*model.User, error) {
 			id,
 			username,
 			email,
-			password
+			password,
+			skill_level
 		FROM users
 		WHERE email = $1`,
 		email,
@@ -99,6 +102,7 @@ func (r *UserRepository) FindUserByEmail(email string) (*model.User, error) {
 		&user.Username,
 		&user.Email,
 		&user.Password,
+		&user.SkillLevel,
 	)
 
 	if err != nil {
@@ -116,4 +120,20 @@ func (r *UserRepository) UpdatePassword(email, hashedPassword string) error {
 		email,
 	)
 	return err
+}
+
+func (r *UserRepository) SetInitialRating(userID int64, level string, rating int) (bool, error) {
+	tag, err := r.DB.Exec(
+		context.Background(),
+		`UPDATE users
+		SET skill_level = $1, rating = $2
+		WHERE id = $3 AND skill_level IS NULL`,
+		level,
+		rating,
+		userID,
+	)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
 }

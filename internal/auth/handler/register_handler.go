@@ -101,6 +101,7 @@ func (h *RegisterHandler) VerifyRegistration(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"message":      "user registered successfully",
 		"access_token": accessToken,
+		"needs_rating": true,
 	})
 }
 
