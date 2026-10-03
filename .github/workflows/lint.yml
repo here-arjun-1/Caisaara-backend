@@ -21,3 +21,14 @@ jobs:
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.14.0
+
+  gitlint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Run gitlint
+        uses: jorisroovers/gitlint-action@v5.0.0
