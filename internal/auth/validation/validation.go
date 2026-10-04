@@ -9,6 +9,12 @@ import (
 var (
 	usernameRegex = regexp.MustCompile(`^[a-zA-Z0-9_]{3,20}$`)
 	otpRegex      = regexp.MustCompile(`^\d{6}$`)
+
+	passwordUpperRegex   = regexp.MustCompile(`[A-Z]`)
+	passwordLowerRegex   = regexp.MustCompile(`[a-z]`)
+	passwordNumberRegex  = regexp.MustCompile(`[0-9]`)
+	passwordSpecialRegex = regexp.MustCompile(`[!@#\$%\^&\*\(\)_\+\-\=\[\]\{\};':"\\\|,\.<>\/\?]`)
+	passwordAllowedRegex = regexp.MustCompile(`^[a-zA-Z0-9!@#\$%\^&\*\(\)_\+\-\=\[\]\{\};':"\\\|,\.<>\/\?]*$`)
 )
 
 func Username(f validator.FieldLevel) bool {
@@ -24,11 +30,11 @@ func Password(f validator.FieldLevel) bool {
 	if len(password) < 8 || len(password) > 16 {
 		return false
 	}
-	hasUpper := regexp.MustCompile(`[A-Z]`).MatchString(password)
-	hasLower := regexp.MustCompile(`[a-z]`).MatchString(password)
-	hasNumber := regexp.MustCompile(`[0-9]`).MatchString(password)
-	hasSpecial := regexp.MustCompile(`[!@#\$%\^&\*\(\)_\+\-\=\[\]\{\};':"\\\|,\.<>\/\?]`).MatchString(password)
-	noEmojis := regexp.MustCompile(`^[a-zA-Z0-9!@#\$%\^&\*\(\)_\+\-\=\[\]\{\};':"\\\|,\.<>\/\?]*$`).MatchString(password)
+	hasUpper := passwordUpperRegex.MatchString(password)
+	hasLower := passwordLowerRegex.MatchString(password)
+	hasNumber := passwordNumberRegex.MatchString(password)
+	hasSpecial := passwordSpecialRegex.MatchString(password)
+	noEmojis := passwordAllowedRegex.MatchString(password)
 
 	return hasUpper && hasLower && hasNumber && hasSpecial && noEmojis
 }
