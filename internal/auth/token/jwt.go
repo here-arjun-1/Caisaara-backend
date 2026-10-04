@@ -10,15 +10,17 @@ import (
 const AccessTokenTTL = 15 * time.Minute
 
 type AccessTokenClaims struct {
-	UserID int64 `json:"user_id"`
+	UserID          int64 `json:"user_id"`
+	PasswordVersion int   `json:"password_version"`
 	jwt.RegisteredClaims
 }
 
-func GenerateAccessToken(secret string, userID int64) (string, error) {
+func GenerateAccessToken(secret string, userID int64, passwordVersion int) (string, error) {
 	now := time.Now()
 
 	claims := AccessTokenClaims{
-		UserID: userID,
+		UserID:          userID,
+		PasswordVersion: passwordVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   strconv.FormatInt(userID, 10),
 			IssuedAt:  jwt.NewNumericDate(now),

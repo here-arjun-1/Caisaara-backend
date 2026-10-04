@@ -12,6 +12,30 @@ type UserRepository struct {
 	DB *pgxpool.Pool
 }
 
+func (r *UserRepository) FindUserByID(ctx context.Context, id int64) (*model.User, error) {
+	var user model.User
+	err := r.DB.QueryRow(
+		ctx,
+		`SELECT
+			id,
+			username,
+			email,
+			COALESCE(password_version, 1)
+		FROM users
+		WHERE id = $1`,
+		id,
+	).Scan(
+		&user.ID,
+		&user.Username,
+		&user.Email,
+		&user.PasswordVersion,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &user, nil
+}
+
 func NewUserRepository(db *pgxpool.Pool) *UserRepository {
 	return &UserRepository{
 		DB: db,
@@ -19,31 +43,34 @@ func NewUserRepository(db *pgxpool.Pool) *UserRepository {
 }
 
 func (r *UserRepository) CreateUser(ctx context.Context, user *model.User) error {
-
+	user.PasswordVersion = 1
 	err := r.DB.QueryRow(
 		ctx,
 		`INSERT INTO users
-		(username, email, password)
-		VALUES ($1, $2, $3)
+		(username, email, password, password_version)
+		VALUES ($1, $2, $3, $4)
 		RETURNING id`,
 		user.Username,
 		user.Email,
 		user.Password,
+		user.PasswordVersion,
 	).Scan(&user.ID)
 
 	return err
 }
 
 func (r *UserRepository) CreateUserTx(ctx context.Context, tx pgx.Tx, user *model.User) error {
+	user.PasswordVersion = 1
 	err := tx.QueryRow(
 		ctx,
 		`INSERT INTO users
-		(username, email, password)
-		VALUES ($1, $2, $3)
+		(username, email, password, password_version)
+		VALUES ($1, $2, $3, $4)
 		RETURNING id`,
 		user.Username,
 		user.Email,
 		user.Password,
+		user.PasswordVersion,
 	).Scan(&user.ID)
 
 	return err
@@ -59,7 +86,8 @@ func (r *UserRepository) FindUserByUsername(ctx context.Context, username string
 			id,
 			username,
 			password,
-			skill_level
+			skill_level,
+			COALESCE(password_version, 1)
 		FROM users
 		WHERE username = $1`,
 		username,
@@ -68,6 +96,7 @@ func (r *UserRepository) FindUserByUsername(ctx context.Context, username string
 		&user.Username,
 		&user.Password,
 		&user.SkillLevel,
+		&user.PasswordVersion,
 	)
 
 	if err != nil {
@@ -87,7 +116,8 @@ func (r *UserRepository) FindUserByEmail(ctx context.Context, email string) (*mo
 			username,
 			email,
 			password,
-			skill_level
+			skill_level,
+			COALESCE(password_version, 1)
 		FROM users
 		WHERE email = $1`,
 		email,
@@ -97,6 +127,7 @@ func (r *UserRepository) FindUserByEmail(ctx context.Context, email string) (*mo
 		&user.Email,
 		&user.Password,
 		&user.SkillLevel,
+		&user.PasswordVersion,
 	)
 
 	if err != nil {
@@ -104,6 +135,16 @@ func (r *UserRepository) FindUserByEmail(ctx context.Context, email string) (*mo
 	}
 
 	return &user, nil
+}
+
+func (r *UserRepository) UpdatePassword(ctx context.Context, email, hashedPassword string) error {
+	_, err := r.DB.Exec(
+		ctx,
+		`UPDATE users SET password = $1, password_version = COALESCE(password_version, 1) + 1 WHERE email = $2`,
+		hashedPassword,
+		email,
+	)
+	return err
 }
 
 func (r *UserRepository) SetInitialRating(ctx context.Context, userID int64, level string, rating int) (bool, error) {
@@ -120,4 +161,26 @@ func (r *UserRepository) SetInitialRating(ctx context.Context, userID int64, lev
 		return false, err
 	}
 	return tag.RowsAffected() == 1, nil
+}
+
+func (r *UserRepository) GetPasswordVersion(ctx context.Context, id int64) (int, error) {
+	var version int
+	err := r.DB.QueryRow(
+		ctx,
+		`SELECT COALESCE(password_version, 1) FROM users WHERE id = $1`,
+		id,
+	).Scan(&version)
+	if err != nil {
+		return 0, err
+	}
+	return version, nil
+}
+
+func (r *UserRepository) IncrementPasswordVersion(ctx context.Context, id int64) error {
+	_, err := r.DB.Exec(
+		ctx,
+		`UPDATE users SET password_version = COALESCE(password_version, 1) + 1 WHERE id = $1`,
+		id,
+	)
+	return err
 }

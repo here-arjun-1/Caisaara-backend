@@ -15,15 +15,18 @@ import (
 
 type RefreshService struct {
 	SessionRepository *repository.SessionRepository
+	UserRepository    *repository.UserRepository
 	JWTSecret         string
 }
 
 func NewRefreshService(
 	sessionRepository *repository.SessionRepository,
+	userRepository *repository.UserRepository,
 	jwtSecret string,
 ) *RefreshService {
 	return &RefreshService{
 		SessionRepository: sessionRepository,
+		UserRepository:    userRepository,
 		JWTSecret:         jwtSecret,
 	}
 }
@@ -88,9 +91,16 @@ func (h *RefreshService) Refresh(ctx context.Context, req dto.RefreshData) (stri
 		return "", "", ErrInternal
 	}
 
+	user, err := h.UserRepository.FindUserByID(ctx, newSession.UserID)
+	if err != nil {
+		log.Printf("find user by id failed: %v", err)
+		return "", "", ErrInternal
+	}
+
 	accessToken, err := token.GenerateAccessToken(
 		h.JWTSecret,
 		newSession.UserID,
+		user.PasswordVersion,
 	)
 
 	if err != nil {

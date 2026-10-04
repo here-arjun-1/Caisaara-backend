@@ -7,10 +7,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
 )
 
-func JWTMiddleware(secret string) gin.HandlerFunc {
+func JWTMiddleware(secret string, userRepo ...*repository.UserRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 
 		authHeader := c.GetHeader("Authorization")
@@ -67,6 +68,17 @@ func JWTMiddleware(secret string) gin.HandlerFunc {
 			})
 			c.Abort()
 			return
+		}
+
+		if len(userRepo) > 0 && userRepo[0] != nil && claims.PasswordVersion > 0 {
+			currentVersion, err := userRepo[0].GetPasswordVersion(c.Request.Context(), claims.UserID)
+			if err != nil || claims.PasswordVersion != currentVersion {
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"error": "invalid or revoked token",
+				})
+				c.Abort()
+				return
+			}
 		}
 
 		c.Set("user_id", claims.UserID)

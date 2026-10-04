@@ -70,7 +70,7 @@ func (h *LoginService) Login(
 		return "", "", "", false, ErrInvalidCredentials
 	}
 
-	accessToken, refreshToken, err := createSessionTokens(ctx, h.SessionRepository, h.JWTSecret, user.ID)
+	accessToken, refreshToken, err := createSessionTokens(ctx, h.SessionRepository, h.JWTSecret, user.ID, user.PasswordVersion)
 	if err != nil {
 		return "", "", "", false, err
 	}

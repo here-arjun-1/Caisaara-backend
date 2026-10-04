@@ -16,9 +16,10 @@ func createSessionTokens(
 	sessionRepository *repository.SessionRepository,
 	jwtSecret string,
 	userID int64,
+	passwordVersion int,
 ) (string, string, error) {
 
-	accessToken, err := token.GenerateAccessToken(jwtSecret, userID)
+	accessToken, err := token.GenerateAccessToken(jwtSecret, userID, passwordVersion)
 	if err != nil {
 		log.Printf("generate access token failed: %v", err)
 		return "", "", ErrInternal
@@ -53,9 +54,10 @@ func createSessionTokensTx(
 	sessionRepository *repository.SessionRepository,
 	jwtSecret string,
 	userID int64,
+	passwordVersion int,
 ) (string, string, error) {
 
-	accessToken, err := token.GenerateAccessToken(jwtSecret, userID)
+	accessToken, err := token.GenerateAccessToken(jwtSecret, userID, passwordVersion)
 	if err != nil {
 		log.Printf("generate access token failed: %v", err)
 		return "", "", ErrInternal
