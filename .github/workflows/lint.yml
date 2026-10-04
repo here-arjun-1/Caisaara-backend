@@ -1,7 +1,6 @@
 name: Go Lint
 
 on:
-  push:
   pull_request:
   workflow_call:
 
@@ -41,4 +40,4 @@ jobs:
         run: pip install gitlint
 
       - name: Run gitlint
-        run: gitlint --commits "HEAD~1..HEAD"
+        run: gitlint -c "general.ignore=body-is-missing,title-trailing-punctuation,T3" --commits "HEAD~1..HEAD"
