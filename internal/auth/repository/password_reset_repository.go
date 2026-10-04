@@ -16,8 +16,7 @@ func NewPasswordResetRepository(db *pgxpool.Pool) *PasswordResetRepository {
 	}
 }
 
-func (r *PasswordResetRepository) ResetPassword(email, hashedPassword string) error {
-	ctx := context.Background()
+func (r *PasswordResetRepository) ResetPassword(ctx context.Context, email, hashedPassword string) error {
 
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {

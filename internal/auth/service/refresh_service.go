@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"log"
 	"time"
@@ -24,7 +25,7 @@ func NewRefreshService(
 	}
 }
 
-func (h *RefreshService) Refresh(req dto.RefreshData) (string, string, error) {
+func (h *RefreshService) Refresh(ctx context.Context, req dto.RefreshData) (string, string, error) {
 
 	if req.RefreshToken == "" {
 		return "", "", errors.New("refresh token is required")
@@ -35,6 +36,7 @@ func (h *RefreshService) Refresh(req dto.RefreshData) (string, string, error) {
 	)
 
 	session, err := h.SessionRepository.FindSessionByRefreshTokenHash(
+		ctx,
 		oldRefreshTokenHash,
 	)
 
@@ -47,7 +49,7 @@ func (h *RefreshService) Refresh(req dto.RefreshData) (string, string, error) {
 	}
 
 	if session.RevokedAt != nil {
-		err = h.SessionRepository.RevokeAllSessions(session.UserID)
+		err = h.SessionRepository.RevokeAllSessions(ctx, session.UserID)
 		if err != nil {
 			log.Printf("revoke all sessions failed: %v", err)
 		}
@@ -70,6 +72,7 @@ func (h *RefreshService) Refresh(req dto.RefreshData) (string, string, error) {
 	}
 
 	err = h.SessionRepository.RotateSession(
+		ctx,
 		oldRefreshTokenHash,
 		newSession,
 	)

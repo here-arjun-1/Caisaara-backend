@@ -17,11 +17,11 @@ func NewProfileRepository(db *pgxpool.Pool) *ProfileRepository {
 	}
 }
 
-func (r *ProfileRepository) FindByUserID(userID int64) (*model.Profile, error) {
+func (r *ProfileRepository) FindByUserID(ctx context.Context, userID int64) (*model.Profile, error) {
 	var p model.Profile
 
 	err := r.DB.QueryRow(
-		context.Background(),
+		ctx,
 		`SELECT
 			u.id,
 			u.username,
@@ -57,11 +57,11 @@ func (r *ProfileRepository) FindByUserID(userID int64) (*model.Profile, error) {
 	return &p, nil
 }
 
-func (r *ProfileRepository) FindByUsername(username string) (*model.Profile, error) {
+func (r *ProfileRepository) FindByUsername(ctx context.Context, username string) (*model.Profile, error) {
 	var p model.Profile
 
 	err := r.DB.QueryRow(
-		context.Background(),
+		ctx,
 		`SELECT
 			u.id,
 			u.username,
@@ -97,9 +97,9 @@ func (r *ProfileRepository) FindByUsername(username string) (*model.Profile, err
 	return &p, nil
 }
 
-func (r *ProfileRepository) SaveProfile(p *model.Profile) error {
+func (r *ProfileRepository) SaveProfile(ctx context.Context, p *model.Profile) error {
 	_, err := r.DB.Exec(
-		context.Background(),
+		ctx,
 		`INSERT INTO player_profiles (user_id, display_name, country, bio, avatar_url)
 		VALUES ($1, $2, $3, $4, $5)
 		ON CONFLICT (user_id) DO UPDATE SET

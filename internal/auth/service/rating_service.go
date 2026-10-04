@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"log"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
@@ -23,13 +24,13 @@ func NewRatingService(userRepository *repository.UserRepository) *RatingService 
 	}
 }
 
-func (s *RatingService) SetInitialRating(userID int64, level string) (int, error) {
+func (s *RatingService) SetInitialRating(ctx context.Context, userID int64, level string) (int, error) {
 	rating, ok := startingRatings[level]
 	if !ok {
 		return 0, ErrInvalidLevel
 	}
 
-	updated, err := s.UserRepository.SetInitialRating(userID, level, rating)
+	updated, err := s.UserRepository.SetInitialRating(ctx, userID, level, rating)
 	if err != nil {
 		log.Printf("set initial rating failed: %v", err)
 		return 0, ErrInternal

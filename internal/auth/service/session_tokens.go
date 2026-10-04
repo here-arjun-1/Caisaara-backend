@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"log"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 )
 
 func createSessionTokens(
+	ctx context.Context,
 	sessionRepository *repository.SessionRepository,
 	userID int64,
 ) (string, string, error) {
@@ -34,7 +36,7 @@ func createSessionTokens(
 		ExpiresAt:        time.Now().Add(30 * 24 * time.Hour),
 	}
 
-	err = sessionRepository.CreateSession(session)
+	err = sessionRepository.CreateSession(ctx, session)
 	if err != nil {
 		log.Printf("create session failed: %v", err)
 		return "", "", ErrInternal

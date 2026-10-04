@@ -36,7 +36,7 @@ func (h *RatingHandler) SetRating(c *gin.Context) {
 		return
 	}
 
-	rating, err := h.RatingService.SetInitialRating(userID, req.Level)
+	rating, err := h.RatingService.SetInitialRating(c.Request.Context(), userID, req.Level)
 
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{

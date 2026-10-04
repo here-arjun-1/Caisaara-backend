@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net/url"
@@ -23,8 +24,8 @@ func NewProfileService(profileRepository *repository.ProfileRepository) *Profile
 	}
 }
 
-func (h *ProfileService) GetMyProfile(userID int64) (*dto.MyProfileResponse, error) {
-	p, err := h.ProfileRepository.FindByUserID(userID)
+func (h *ProfileService) GetMyProfile(ctx context.Context, userID int64) (*dto.MyProfileResponse, error) {
+	p, err := h.ProfileRepository.FindByUserID(ctx, userID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrUserNotFound
 	}
@@ -36,10 +37,10 @@ func (h *ProfileService) GetMyProfile(userID int64) (*dto.MyProfileResponse, err
 	return toMyProfileResponse(p), nil
 }
 
-func (h *ProfileService) GetPublicProfile(username string) (*dto.PublicProfileResponse, error) {
+func (h *ProfileService) GetPublicProfile(ctx context.Context, username string) (*dto.PublicProfileResponse, error) {
 	username = strings.ToLower(strings.TrimSpace(username))
 
-	p, err := h.ProfileRepository.FindByUsername(username)
+	p, err := h.ProfileRepository.FindByUsername(ctx, username)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrUserNotFound
 	}
@@ -59,8 +60,8 @@ func (h *ProfileService) GetPublicProfile(username string) (*dto.PublicProfileRe
 	}, nil
 }
 
-func (h *ProfileService) UpdateMyProfile(userID int64, req dto.UpdateProfileData) (*dto.MyProfileResponse, error) {
-	p, err := h.ProfileRepository.FindByUserID(userID)
+func (h *ProfileService) UpdateMyProfile(ctx context.Context, userID int64, req dto.UpdateProfileData) (*dto.MyProfileResponse, error) {
+	p, err := h.ProfileRepository.FindByUserID(ctx, userID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrUserNotFound
 	}
@@ -101,7 +102,7 @@ func (h *ProfileService) UpdateMyProfile(userID int64, req dto.UpdateProfileData
 		p.AvatarURL = emptyToNil(v)
 	}
 
-	if err := h.ProfileRepository.SaveProfile(p); err != nil {
+	if err := h.ProfileRepository.SaveProfile(ctx, p); err != nil {
 		log.Printf("save profile failed: %v", err)
 		return nil, ErrInternal
 	}

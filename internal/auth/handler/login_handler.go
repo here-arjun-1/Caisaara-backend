@@ -28,7 +28,7 @@ func (h *LoginHandler) Login(c *gin.Context) {
 		})
 		return
 	}
-	username, accessToken, refreshToken, needsRating, err := h.LoginService.Login(req)
+	username, accessToken, refreshToken, needsRating, err := h.LoginService.Login(c.Request.Context(), req)
 
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{
