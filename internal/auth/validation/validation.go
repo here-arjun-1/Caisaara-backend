@@ -1,8 +1,11 @@
 package validation
 
 import (
+	"errors"
+	"fmt"
 	"regexp"
 
+	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
 )
 
@@ -16,6 +19,23 @@ var (
 	passwordSpecialRegex = regexp.MustCompile(`[!@#\$%\^&\*\(\)_\+\-\=\[\]\{\};':"\\\|,\.<>\/\?]`)
 	passwordAllowedRegex = regexp.MustCompile(`^[a-zA-Z0-9!@#\$%\^&\*\(\)_\+\-\=\[\]\{\};':"\\\|,\.<>\/\?]*$`)
 )
+
+func Register() error {
+	v, ok := binding.Validator.Engine().(*validator.Validate)
+	if !ok {
+		return errors.New("failed to get validator engine")
+	}
+	if err := v.RegisterValidation("username", Username); err != nil {
+		return fmt.Errorf("register username validator: %w", err)
+	}
+	if err := v.RegisterValidation("otp", OTP); err != nil {
+		return fmt.Errorf("register otp validator: %w", err)
+	}
+	if err := v.RegisterValidation("password", Password); err != nil {
+		return fmt.Errorf("register password validator: %w", err)
+	}
+	return nil
+}
 
 func Username(f validator.FieldLevel) bool {
 	return usernameRegex.MatchString(f.Field().String())

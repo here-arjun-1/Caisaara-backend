@@ -17,7 +17,9 @@ type Handlers struct {
 	Rating        *handler.RatingHandler
 }
 
-func RegisterRoutes(r *gin.Engine, protected *gin.RouterGroup, h Handlers) {
+func (m *Module) RegisterRoutes(r *gin.Engine, protected *gin.RouterGroup) {
+	h := m.handlers
+
 	loginLimiter := middleware.NewTokenBucketLimiter(10, time.Minute)
 	registerLimiter := middleware.NewTokenBucketLimiter(10, time.Hour)
 	verifyRegistrationLimiter := middleware.NewTokenBucketLimiter(5, time.Minute)
