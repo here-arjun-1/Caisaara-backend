@@ -119,10 +119,16 @@ func run() error {
 		return fmt.Errorf("set trusted proxies: %w", err)
 	}
 
-	loginLimiter := middleware.NewFixedWindowLimiter(30, time.Minute)
-	registerLimiter := middleware.NewFixedWindowLimiter(30, 10*time.Minute)
-	forgotLimiter := middleware.NewFixedWindowLimiter(30, 15*time.Minute)
-	otpLimiter := middleware.NewFixedWindowLimiter(30, time.Minute)
+	loginLimiter := middleware.NewTokenBucketLimiter(10, time.Minute)
+	registerLimiter := middleware.NewTokenBucketLimiter(10, time.Hour)
+	verifyRegistrationLimiter := middleware.NewTokenBucketLimiter(5, time.Minute)
+	guestLoginLimiter := middleware.NewTokenBucketLimiter(10, time.Minute)
+	forgotLimiter := middleware.NewTokenBucketLimiter(5, 15*time.Minute)
+	verifyResetLimiter := middleware.NewTokenBucketLimiter(5, time.Minute)
+	resetPasswordLimiter := middleware.NewTokenBucketLimiter(5, 15*time.Minute)
+	refreshLimiter := middleware.NewTokenBucketLimiter(30, time.Minute)
+	logoutLimiter := middleware.NewTokenBucketLimiter(10, time.Minute)
+	ratingLimiter := middleware.NewTokenBucketLimiter(5, time.Minute)
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -130,24 +136,24 @@ func run() error {
 		})
 	})
 	r.POST("/register", registerLimiter.Limit, registerHandler.Register)
-	r.POST("/verify-registration", otpLimiter.Limit, registerHandler.VerifyRegistration)
-	r.POST("/guest-login", loginLimiter.Limit, registerHandler.GuestLogin)
+	r.POST("/verify-registration", verifyRegistrationLimiter.Limit, registerHandler.VerifyRegistration)
+	r.POST("/guest-login", guestLoginLimiter.Limit, registerHandler.GuestLogin)
 	r.POST("/login", loginLimiter.Limit, loginHandler.Login)
-	r.POST("/refresh", refreshHandler.Refresh)
+	r.POST("/refresh", refreshLimiter.Limit, refreshHandler.Refresh)
 
-	r.POST("/logout", logoutHandler.Logout)
-	r.POST("/logout-all", logoutHandler.LogoutAll)
+	r.POST("/logout", logoutLimiter.Limit, logoutHandler.Logout)
+	r.POST("/logout-all", logoutLimiter.Limit, logoutHandler.LogoutAll)
 
 	r.POST("/forgot-password", forgotLimiter.Limit, passwordResetHandler.ForgotPassword)
-	r.POST("/verify-reset-code", otpLimiter.Limit, passwordResetHandler.VerifyCode)
-	r.POST("/reset-password", passwordResetHandler.ResetPassword)
+	r.POST("/verify-reset-code", verifyResetLimiter.Limit, passwordResetHandler.VerifyCode)
+	r.POST("/reset-password", resetPasswordLimiter.Limit, passwordResetHandler.ResetPassword)
 
 	protected := r.Group("/api")
 
 	protected.Use(middleware.JWTMiddleware())
 
 	{
-		protected.POST("/rating", ratingHandler.SetRating)
+		protected.POST("/rating", ratingLimiter.Limit, ratingHandler.SetRating)
 	}
 
 	playerModule.RegisterRoutes(r, protected)
