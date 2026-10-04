@@ -100,7 +100,7 @@ func (h *RegisterHandler) GuestLogin(c *gin.Context) {
 		return
 	}
 
-	SetAccessTokenCookie(c, guestToken, guestTokenMaxAge)
+	SetGuestTokenCookie(c, guestToken)
 
 	response.Success(c, http.StatusOK, "guest login successful", dto.GuestLoginResponse{
 		GuestID: guestID,

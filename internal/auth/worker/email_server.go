@@ -9,7 +9,7 @@ import (
 	"github.com/hibiken/asynq"
 )
 
-func StartEmailServer(redisOpt asynq.RedisClientOpt, sender *email.Sender) {
+func StartEmailServer(redisOpt asynq.RedisClientOpt, sender *email.Sender) *asynq.Server {
 	server := asynq.NewServer(
 		redisOpt,
 		asynq.Config{
@@ -25,10 +25,9 @@ func StartEmailServer(redisOpt asynq.RedisClientOpt, sender *email.Sender) {
 	mux.HandleFunc(TypeEmailRegistration, processor.ProcessTaskEmailRegistration)
 	mux.HandleFunc(TypeEmailPasswordReset, processor.ProcessTaskEmailPasswordReset)
 
-	go func() {
-		if err := server.Run(mux); err != nil {
-			slog.Error("could not run asynq server", "error", err)
-			os.Exit(1)
-		}
-	}()
+	if err := server.Start(mux); err != nil {
+		slog.Error("could not start asynq server", "error", err)
+		os.Exit(1)
+	}
+	return server
 }
