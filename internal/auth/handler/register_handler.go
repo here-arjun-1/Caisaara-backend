@@ -105,7 +105,6 @@ func (h *RegisterHandler) VerifyRegistration(c *gin.Context) {
 	})
 }
 
-
 func (h *RegisterHandler) GuestLogin(c *gin.Context) {
 	guestID, guestToken, err := h.RegisterService.GuestLogin(c.Request.Context())
 
@@ -130,5 +129,3 @@ func (h *RegisterHandler) GuestLogin(c *gin.Context) {
 		"guest_id": guestID,
 	})
 }
-
-

@@ -61,4 +61,3 @@ func (h *RefreshHandler) Refresh(
 		"message": "token refreshed successfully",
 	})
 }
-

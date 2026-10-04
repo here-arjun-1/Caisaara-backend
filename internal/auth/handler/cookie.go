@@ -112,5 +112,3 @@ func ClearGuestTokenCookie(c *gin.Context) {
 func GetGuestTokenFromCookie(c *gin.Context) (string, error) {
 	return c.Cookie(guestTokenCookieName)
 }
-
-

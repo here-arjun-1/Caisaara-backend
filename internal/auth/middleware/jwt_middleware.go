@@ -29,7 +29,6 @@ func JWTMiddleware(secret string, userRepo ...*repository.UserRepository) gin.Ha
 			}
 		}
 
-
 		if tokenString == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "authorization token is required",
@@ -111,4 +110,3 @@ func RequireRegisteredUser() gin.HandlerFunc {
 		c.Next()
 	}
 }
-

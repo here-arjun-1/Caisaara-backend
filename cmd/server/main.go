@@ -202,7 +202,6 @@ func run() error {
 
 	playerModule.RegisterRoutes(r, protected)
 
-
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
 		Handler: r,

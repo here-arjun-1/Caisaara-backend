@@ -103,4 +103,3 @@ func (h *LogoutHandler) LogoutAll(
 		"message": "all sessions logged out successfully",
 	})
 }
-

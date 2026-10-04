@@ -271,5 +271,3 @@ func (s *RegisterService) GuestLogin(ctx context.Context) (string, string, error
 
 	return guestID, guestToken, nil
 }
-
-
