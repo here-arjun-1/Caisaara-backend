@@ -27,6 +27,8 @@ func JWTMiddleware(secret string, userRepo ...*repository.UserRepository) gin.Ha
 		if tokenString == "" {
 			if cookieToken, err := c.Cookie("access_token"); err == nil && cookieToken != "" {
 				tokenString = cookieToken
+			} else if guestCookieToken, err := c.Cookie("guest_token"); err == nil && guestCookieToken != "" {
+				tokenString = guestCookieToken
 			}
 		}
 

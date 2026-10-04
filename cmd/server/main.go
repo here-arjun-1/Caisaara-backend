@@ -69,7 +69,7 @@ func run() error {
 		return fmt.Errorf("setup router: %w", err)
 	}
 
-	worker.StartEmailServer(asynqRedisOpt, email.NewSender(cfg.SMTP))
+	asynqServer := worker.StartEmailServer(asynqRedisOpt, email.NewSender(cfg.SMTP))
 	worker.StartSessionCleanup(authModule.SessionRepository)
 
 	srv := &http.Server{
@@ -91,6 +91,10 @@ func run() error {
 	<-quit
 
 	slog.Info("shutting down server...")
+
+	if asynqServer != nil {
+		asynqServer.Stop()
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
