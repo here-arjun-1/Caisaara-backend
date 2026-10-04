@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/service"
+	"github.com/here-arjun-1/Caisaara-backend/internal/response"
 )
 
 type LogoutHandler struct {
@@ -28,9 +29,7 @@ func (h *LogoutHandler) Logout(
 
 	refreshToken, err := GetRefreshTokenFromCookie(c)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "refresh token is required",
-		})
+		response.Error(c, http.StatusUnauthorized, "refresh token is required")
 		return
 	}
 
@@ -41,16 +40,12 @@ func (h *LogoutHandler) Logout(
 	err = h.LogoutService.Logout(c.Request.Context(), req)
 
 	if errors.Is(err, service.ErrInternal) {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal server error",
-		})
+		response.Error(c, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": err.Error(),
-		})
+		response.Error(c, http.StatusUnauthorized, err.Error())
 		return
 	}
 
@@ -58,9 +53,7 @@ func (h *LogoutHandler) Logout(
 	ClearRefreshTokenCookie(c)
 	ClearGuestTokenCookie(c)
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "logout successful",
-	})
+	response.Success(c, http.StatusOK, "logout successful", nil)
 }
 
 func (h *LogoutHandler) LogoutAll(
@@ -69,9 +62,7 @@ func (h *LogoutHandler) LogoutAll(
 
 	refreshToken, err := GetRefreshTokenFromCookie(c)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "refresh token is required",
-		})
+		response.Error(c, http.StatusUnauthorized, "refresh token is required")
 		return
 	}
 
@@ -82,16 +73,12 @@ func (h *LogoutHandler) LogoutAll(
 	err = h.LogoutService.LogoutAll(c.Request.Context(), req)
 
 	if errors.Is(err, service.ErrInternal) {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal server error",
-		})
+		response.Error(c, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": err.Error(),
-		})
+		response.Error(c, http.StatusUnauthorized, err.Error())
 		return
 	}
 
@@ -99,7 +86,5 @@ func (h *LogoutHandler) LogoutAll(
 	ClearRefreshTokenCookie(c)
 	ClearGuestTokenCookie(c)
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "all sessions logged out successfully",
-	})
+	response.Success(c, http.StatusOK, "all sessions logged out successfully", nil)
 }

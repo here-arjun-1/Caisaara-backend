@@ -9,6 +9,10 @@ type VerifyCodeRequest struct {
 	Code  string `json:"code" binding:"required,otp"`
 }
 
+type VerifyCodeResponse struct {
+	ResetToken string `json:"reset_token"`
+}
+
 type ResetPasswordRequest struct {
 	ResetToken      string `json:"reset_token" binding:"required"`
 	NewPassword     string `json:"new_password" binding:"required,password"`

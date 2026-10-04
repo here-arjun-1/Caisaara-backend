@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/service"
+	"github.com/here-arjun-1/Caisaara-backend/internal/response"
 )
 
 type RegisterHandler struct {
@@ -26,39 +27,29 @@ func (h *RegisterHandler) Register(c *gin.Context) {
 	err := c.ShouldBindJSON(&req)
 
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request body",
-		})
+		response.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	err = h.RegisterService.Register(c.Request.Context(), req)
 
 	if errors.Is(err, service.ErrInternal) {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal server error",
-		})
+		response.Error(c, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
 	if errors.Is(err, service.ErrUsernameTaken) ||
 		errors.Is(err, service.ErrEmailTaken) {
-		c.JSON(http.StatusConflict, gin.H{
-			"error": err.Error(),
-		})
+		response.Error(c, http.StatusConflict, err.Error())
 		return
 	}
 
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
+		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "verification email sent",
-	})
+	response.Success(c, http.StatusOK, "verification email sent", nil)
 }
 
 func (h *RegisterHandler) VerifyRegistration(c *gin.Context) {
@@ -66,42 +57,33 @@ func (h *RegisterHandler) VerifyRegistration(c *gin.Context) {
 
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request body",
-		})
+		response.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	accessToken, refreshToken, err := h.RegisterService.VerifyRegistration(c.Request.Context(), req)
 
 	if errors.Is(err, service.ErrInternal) {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal server error",
-		})
+		response.Error(c, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
 	if errors.Is(err, service.ErrUsernameTaken) ||
 		errors.Is(err, service.ErrEmailTaken) {
-		c.JSON(http.StatusConflict, gin.H{
-			"error": err.Error(),
-		})
+		response.Error(c, http.StatusConflict, err.Error())
 		return
 	}
 
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
+		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	SetAccessTokenCookie(c, accessToken)
 	SetRefreshTokenCookie(c, refreshToken)
 
-	c.JSON(http.StatusCreated, gin.H{
-		"message":      "user registered successfully",
-		"needs_rating": true,
+	response.Success(c, http.StatusCreated, "user registered successfully", dto.VerifyRegistrationResponse{
+		NeedsRating: true,
 	})
 }
 
@@ -109,23 +91,18 @@ func (h *RegisterHandler) GuestLogin(c *gin.Context) {
 	guestID, guestToken, err := h.RegisterService.GuestLogin(c.Request.Context())
 
 	if errors.Is(err, service.ErrInternal) {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal server error",
-		})
+		response.Error(c, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
+		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
 	SetAccessTokenCookie(c, guestToken, guestTokenMaxAge)
 
-	c.JSON(http.StatusOK, gin.H{
-		"message":  "guest login successful",
-		"guest_id": guestID,
+	response.Success(c, http.StatusOK, "guest login successful", dto.GuestLoginResponse{
+		GuestID: guestID,
 	})
 }

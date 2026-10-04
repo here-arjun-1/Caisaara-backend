@@ -10,3 +10,11 @@ type VerifyRegistrationData struct {
 	Email string `json:"email" binding:"required,email"`
 	Code  string `json:"code" binding:"required,otp"`
 }
+
+type VerifyRegistrationResponse struct {
+	NeedsRating bool `json:"needs_rating"`
+}
+
+type GuestLoginResponse struct {
+	GuestID string `json:"guest_id"`
+}
