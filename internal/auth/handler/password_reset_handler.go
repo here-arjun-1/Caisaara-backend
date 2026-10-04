@@ -10,10 +10,10 @@ import (
 )
 
 type PasswordResetHandler struct {
-	PasswordResetService *service.PasswordResetService
+	PasswordResetService PasswordResetService
 }
 
-func NewPasswordResetHandler(passwordResetService *service.PasswordResetService) *PasswordResetHandler {
+func NewPasswordResetHandler(passwordResetService PasswordResetService) *PasswordResetHandler {
 	return &PasswordResetHandler{
 		PasswordResetService: passwordResetService,
 	}

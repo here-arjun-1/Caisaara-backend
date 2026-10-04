@@ -10,11 +10,11 @@ import (
 )
 
 type RefreshHandler struct {
-	RefreshService *service.RefreshService
+	RefreshService RefreshService
 }
 
 func NewRefreshHandler(
-	refreshService *service.RefreshService,
+	refreshService RefreshService,
 ) *RefreshHandler {
 
 	return &RefreshHandler{

@@ -6,14 +6,13 @@ import (
 	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
-	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
 	"github.com/jackc/pgx/v5"
 )
 
 func createSessionTokens(
 	ctx context.Context,
-	sessionRepository *repository.SessionRepository,
+	sessionRepository SessionRepository,
 	jwtSecret string,
 	userID int64,
 	passwordVersion int,
@@ -51,7 +50,7 @@ func createSessionTokens(
 func createSessionTokensTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	sessionRepository *repository.SessionRepository,
+	sessionRepository SessionRepository,
 	jwtSecret string,
 	userID int64,
 	passwordVersion int,

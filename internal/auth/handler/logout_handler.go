@@ -10,11 +10,11 @@ import (
 )
 
 type LogoutHandler struct {
-	LogoutService *service.LogoutService
+	LogoutService LogoutService
 }
 
 func NewLogoutHandler(
-	logoutService *service.LogoutService,
+	logoutService LogoutService,
 ) *LogoutHandler {
 
 	return &LogoutHandler{

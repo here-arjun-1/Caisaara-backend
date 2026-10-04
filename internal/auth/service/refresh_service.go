@@ -8,20 +8,19 @@ import (
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
-	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
 	"github.com/jackc/pgx/v5"
 )
 
 type RefreshService struct {
-	SessionRepository *repository.SessionRepository
-	UserRepository    *repository.UserRepository
+	SessionRepository SessionRepository
+	UserRepository    UserRepository
 	JWTSecret         string
 }
 
 func NewRefreshService(
-	sessionRepository *repository.SessionRepository,
-	userRepository *repository.UserRepository,
+	sessionRepository SessionRepository,
+	userRepository UserRepository,
 	jwtSecret string,
 ) *RefreshService {
 	return &RefreshService{

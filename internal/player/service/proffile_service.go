@@ -10,15 +10,20 @@ import (
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/player/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player/model"
-	"github.com/here-arjun-1/Caisaara-backend/internal/player/repository"
 	"github.com/jackc/pgx/v5"
 )
 
-type ProfileService struct {
-	ProfileRepository *repository.ProfileRepository
+type ProfileRepository interface {
+	FindByUserID(ctx context.Context, userID int64) (*model.Profile, error)
+	FindByUsername(ctx context.Context, username string) (*model.Profile, error)
+	SaveProfile(ctx context.Context, p *model.Profile) error
 }
 
-func NewProfileService(profileRepository *repository.ProfileRepository) *ProfileService {
+type ProfileService struct {
+	ProfileRepository ProfileRepository
+}
+
+func NewProfileService(profileRepository ProfileRepository) *ProfileService {
 	return &ProfileService{
 		ProfileRepository: profileRepository,
 	}

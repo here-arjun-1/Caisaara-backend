@@ -3,8 +3,6 @@ package service
 import (
 	"context"
 	"log"
-
-	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 )
 
 var startingRatings = map[string]int{
@@ -15,10 +13,10 @@ var startingRatings = map[string]int{
 }
 
 type RatingService struct {
-	UserRepository *repository.UserRepository
+	UserRepository UserRepository
 }
 
-func NewRatingService(userRepository *repository.UserRepository) *RatingService {
+func NewRatingService(userRepository UserRepository) *RatingService {
 	return &RatingService{
 		UserRepository: userRepository,
 	}
