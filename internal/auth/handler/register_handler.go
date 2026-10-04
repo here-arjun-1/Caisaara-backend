@@ -10,10 +10,10 @@ import (
 )
 
 type RegisterHandler struct {
-	RegisterService *service.RegisterService
+	RegisterService RegisterService
 }
 
-func NewRegisterHandler(registerService *service.RegisterService) *RegisterHandler {
+func NewRegisterHandler(registerService RegisterService) *RegisterHandler {
 	return &RegisterHandler{
 		RegisterService: registerService,
 	}

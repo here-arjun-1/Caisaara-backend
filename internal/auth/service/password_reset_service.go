@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
-	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/worker"
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
@@ -31,17 +30,17 @@ type OTPData struct {
 }
 
 type PasswordResetService struct {
-	UserRepository          *repository.UserRepository
-	PasswordResetRepository *repository.PasswordResetRepository
-	SessionRepository       *repository.SessionRepository
+	UserRepository          UserRepository
+	PasswordResetRepository PasswordResetRepository
+	SessionRepository       SessionRepository
 	RedisClient             *redis.Client
 	TaskDistributor         *asynq.Client
 }
 
 func NewPasswordResetService(
-	userRepository *repository.UserRepository,
-	passwordResetRepository *repository.PasswordResetRepository,
-	sessionRepository *repository.SessionRepository,
+	userRepository UserRepository,
+	passwordResetRepository PasswordResetRepository,
+	sessionRepository SessionRepository,
 	redisClient *redis.Client,
 	taskDistributor *asynq.Client,
 ) *PasswordResetService {

@@ -10,7 +10,6 @@ import (
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
-	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/worker"
 	"github.com/hibiken/asynq"
@@ -34,8 +33,8 @@ type pendingUser struct {
 
 type RegisterService struct {
 	DB                *pgxpool.Pool
-	UserRepository    *repository.UserRepository
-	SessionRepository *repository.SessionRepository
+	UserRepository    UserRepository
+	SessionRepository SessionRepository
 	RedisClient       *redis.Client
 	TaskDistributor   *asynq.Client
 	JWTSecret         string
@@ -43,8 +42,8 @@ type RegisterService struct {
 
 func NewRegisterService(
 	db *pgxpool.Pool,
-	userRepository *repository.UserRepository,
-	sessionRepository *repository.SessionRepository,
+	userRepository UserRepository,
+	sessionRepository SessionRepository,
 	redisClient *redis.Client,
 	taskDistributor *asynq.Client,
 	jwtSecret string,

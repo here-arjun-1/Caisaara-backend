@@ -6,17 +6,16 @@ import (
 	"log"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
-	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
 	"github.com/jackc/pgx/v5"
 )
 
 type LogoutService struct {
-	SessionRepository *repository.SessionRepository
+	SessionRepository SessionRepository
 }
 
 func NewLogoutService(
-	sessionRepository *repository.SessionRepository,
+	sessionRepository SessionRepository,
 ) *LogoutService {
 
 	return &LogoutService{

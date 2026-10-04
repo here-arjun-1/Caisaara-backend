@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
@@ -10,11 +11,17 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/player/service"
 )
 
-type ProfileHandler struct {
-	ProfileService *service.ProfileService
+type ProfileService interface {
+	GetMyProfile(ctx context.Context, userID int64) (*dto.MyProfileResponse, error)
+	GetPublicProfile(ctx context.Context, username string) (*dto.PublicProfileResponse, error)
+	UpdateMyProfile(ctx context.Context, userID int64, req dto.UpdateProfileData) (*dto.MyProfileResponse, error)
 }
 
-func NewProfileHandler(profileService *service.ProfileService) *ProfileHandler {
+type ProfileHandler struct {
+	ProfileService ProfileService
+}
+
+func NewProfileHandler(profileService ProfileService) *ProfileHandler {
 	return &ProfileHandler{
 		ProfileService: profileService,
 	}

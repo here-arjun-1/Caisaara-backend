@@ -8,20 +8,19 @@ import (
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
-	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 	"github.com/jackc/pgx/v5"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type LoginService struct {
-	UserRepository    *repository.UserRepository
-	SessionRepository *repository.SessionRepository
+	UserRepository    UserRepository
+	SessionRepository SessionRepository
 	JWTSecret         string
 }
 
 func NewLoginService(
-	userRepository *repository.UserRepository,
-	sessionRepository *repository.SessionRepository,
+	userRepository UserRepository,
+	sessionRepository SessionRepository,
 	jwtSecret string,
 ) *LoginService {
 	return &LoginService{
