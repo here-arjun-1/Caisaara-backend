@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
 	"github.com/jackc/pgx/v5"
@@ -21,6 +23,20 @@ func NewSessionRepository(db *pgxpool.Pool) *SessionRepository {
 func (r *SessionRepository) CreateSession(ctx context.Context, session *model.Session) error {
 
 	_, err := r.DB.Exec(
+		ctx,
+		`INSERT INTO sessions
+		(user_id, refresh_token_hash, expires_at)
+		VALUES ($1, $2, $3)`,
+		session.UserID,
+		session.RefreshTokenHash,
+		session.ExpiresAt,
+	)
+
+	return err
+}
+
+func (r *SessionRepository) CreateSessionTx(ctx context.Context, tx pgx.Tx, session *model.Session) error {
+	_, err := tx.Exec(
 		ctx,
 		`INSERT INTO sessions
 		(user_id, refresh_token_hash, expires_at)
@@ -154,6 +170,55 @@ func (r *SessionRepository) RevokeAllSessions(
 	)
 
 	return err
+}
+
+func (r *SessionRepository) RevokeAllSessionsByTokenHash(
+	ctx context.Context,
+	refreshTokenHash string,
+) error {
+
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	var userID int64
+	var revokedAt *time.Time
+
+	err = tx.QueryRow(
+		ctx,
+		`SELECT user_id, revoked_at
+		FROM sessions
+		WHERE refresh_token_hash = $1`,
+		refreshTokenHash,
+	).Scan(&userID, &revokedAt)
+
+	if err != nil {
+		return err
+	}
+
+	if revokedAt != nil {
+		return errors.New("refresh token has been revoked")
+	}
+
+	_, err = tx.Exec(
+		ctx,
+		`UPDATE sessions
+		SET revoked_at = CURRENT_TIMESTAMP
+		WHERE user_id = $1
+		AND revoked_at IS NULL`,
+		userID,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
 
 func (r *SessionRepository) CleanExpiredSessions(ctx context.Context) (int64, error) {

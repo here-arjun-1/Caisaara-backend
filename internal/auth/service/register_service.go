@@ -16,6 +16,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -32,6 +33,7 @@ type pendingUser struct {
 }
 
 type RegisterService struct {
+	DB                *pgxpool.Pool
 	UserRepository    *repository.UserRepository
 	SessionRepository *repository.SessionRepository
 	RedisClient       *redis.Client
@@ -39,6 +41,7 @@ type RegisterService struct {
 }
 
 func NewRegisterService(
+	db *pgxpool.Pool,
 	userRepository *repository.UserRepository,
 	sessionRepository *repository.SessionRepository,
 	redisClient *redis.Client,
@@ -46,6 +49,7 @@ func NewRegisterService(
 ) *RegisterService {
 
 	return &RegisterService{
+		DB:                db,
 		UserRepository:    userRepository,
 		SessionRepository: sessionRepository,
 		RedisClient:       redisClient,
@@ -191,7 +195,16 @@ func (s *RegisterService) VerifyRegistration(ctx context.Context, req dto.Verify
 		Password: string(hashedPassword),
 	}
 
-	err = s.UserRepository.CreateUser(ctx, user)
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		log.Printf("begin tx failed: %v", err)
+		return "", "", ErrInternal
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	err = s.UserRepository.CreateUserTx(ctx, tx, user)
 
 	if err != nil {
 		var pgErr *pgconn.PgError
@@ -210,7 +223,17 @@ func (s *RegisterService) VerifyRegistration(ctx context.Context, req dto.Verify
 		return "", "", ErrInternal
 	}
 
-	return createSessionTokens(ctx, s.SessionRepository, user.ID)
+	accessToken, refreshToken, err := createSessionTokensTx(ctx, tx, s.SessionRepository, user.ID)
+	if err != nil {
+		return "", "", err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		log.Printf("commit tx failed: %v", err)
+		return "", "", ErrInternal
+	}
+
+	return accessToken, refreshToken, nil
 }
 
 func (s *RegisterService) GuestLogin() (string, error) {
