@@ -108,6 +108,8 @@ func (s *RegisterService) Register(ctx context.Context, req dto.RegisterData) er
 	}
 	pUserJSON, _ := json.Marshal(pUser)
 	s.RedisClient.Set(ctx, "register:"+req.Email, pUserJSON, 15*time.Minute)
+	s.RedisClient.Set(ctx, "raw_otp:"+req.Email, code, 15*time.Minute)
+	log.Printf("generated registration OTP for %s: %s", req.Email, code)
 
 	task, err := worker.NewEmailRegistrationTask(req.Email, code)
 	if err != nil {
@@ -236,12 +238,38 @@ func (s *RegisterService) VerifyRegistration(ctx context.Context, req dto.Verify
 	return accessToken, refreshToken, nil
 }
 
-func (s *RegisterService) GuestLogin() (string, error) {
+func (s *RegisterService) GuestLogin(ctx context.Context) (string, string, error) {
 	guestID, err := token.GenerateGuestID()
 	if err != nil {
 		log.Printf("generate guest id failed: %v", err)
-		return "", ErrInternal
+		return "", "", ErrInternal
 	}
 
-	return guestID, nil
+	guestToken, err := token.GenerateGuestToken(s.JWTSecret, guestID)
+	if err != nil {
+		log.Printf("generate guest token failed: %v", err)
+		return "", "", ErrInternal
+	}
+
+	guestData := map[string]interface{}{
+		"guest_id":   guestID,
+		"created_at": time.Now().UTC().Format(time.RFC3339),
+	}
+	guestJSON, err := json.Marshal(guestData)
+	if err != nil {
+		log.Printf("marshal guest data failed: %v", err)
+		return "", "", ErrInternal
+	}
+
+	if s.RedisClient != nil {
+		err = s.RedisClient.Set(ctx, "guest:"+guestID, guestJSON, token.GuestTokenTTL).Err()
+		if err != nil {
+			log.Printf("redis store guest data failed: %v", err)
+			return "", "", ErrInternal
+		}
+	}
+
+	return guestID, guestToken, nil
 }
+
+

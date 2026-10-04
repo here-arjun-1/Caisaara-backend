@@ -96,17 +96,18 @@ func (h *RegisterHandler) VerifyRegistration(c *gin.Context) {
 		return
 	}
 
+	SetAccessTokenCookie(c, accessToken)
 	SetRefreshTokenCookie(c, refreshToken)
 
 	c.JSON(http.StatusCreated, gin.H{
 		"message":      "user registered successfully",
-		"access_token": accessToken,
 		"needs_rating": true,
 	})
 }
 
+
 func (h *RegisterHandler) GuestLogin(c *gin.Context) {
-	guestID, err := h.RegisterService.GuestLogin()
+	guestID, guestToken, err := h.RegisterService.GuestLogin(c.Request.Context())
 
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -122,7 +123,12 @@ func (h *RegisterHandler) GuestLogin(c *gin.Context) {
 		return
 	}
 
+	SetAccessTokenCookie(c, guestToken, guestTokenMaxAge)
+
 	c.JSON(http.StatusOK, gin.H{
+		"message":  "guest login successful",
 		"guest_id": guestID,
 	})
 }
+
+

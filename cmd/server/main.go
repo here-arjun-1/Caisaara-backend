@@ -197,10 +197,11 @@ func run() error {
 	protected.Use(middleware.JWTMiddleware(cfg.JWTSecret, userRepository))
 
 	{
-		protected.POST("/rating", ratingLimiter.Limit, ratingHandler.SetRating)
+		protected.POST("/rating", ratingLimiter.Limit, middleware.RequireRegisteredUser(), ratingHandler.SetRating)
 	}
 
 	playerModule.RegisterRoutes(r, protected)
+
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,

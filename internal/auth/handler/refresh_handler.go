@@ -54,9 +54,11 @@ func (h *RefreshHandler) Refresh(
 		return
 	}
 
+	SetAccessTokenCookie(c, accessToken)
 	SetRefreshTokenCookie(c, refreshToken)
 
 	c.JSON(http.StatusOK, gin.H{
-		"access_token": accessToken,
+		"message": "token refreshed successfully",
 	})
 }
+

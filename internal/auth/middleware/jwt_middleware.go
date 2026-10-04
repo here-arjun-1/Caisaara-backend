@@ -13,22 +13,26 @@ import (
 
 func JWTMiddleware(secret string, userRepo ...*repository.UserRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		var tokenString string
 
 		authHeader := c.GetHeader("Authorization")
-
-		if authHeader == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "authorization header is required",
-			})
-			c.Abort()
-			return
+		if authHeader != "" {
+			parts := strings.Fields(authHeader)
+			if len(parts) == 2 && parts[0] == "Bearer" {
+				tokenString = parts[1]
+			}
 		}
 
-		parts := strings.Fields(authHeader)
+		if tokenString == "" {
+			if cookieToken, err := c.Cookie("access_token"); err == nil && cookieToken != "" {
+				tokenString = cookieToken
+			}
+		}
 
-		if len(parts) != 2 || parts[0] != "Bearer" {
+
+		if tokenString == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "invalid authorization header",
+				"error": "authorization token is required",
 			})
 			c.Abort()
 			return
@@ -36,7 +40,7 @@ func JWTMiddleware(secret string, userRepo ...*repository.UserRepository) gin.Ha
 
 		claims := &token.AccessTokenClaims{}
 		jwtToken, err := jwt.ParseWithClaims(
-			parts[1],
+			tokenString,
 			claims,
 			func(t *jwt.Token) (interface{}, error) {
 				if t.Method != jwt.SigningMethodHS256 {
@@ -46,7 +50,7 @@ func JWTMiddleware(secret string, userRepo ...*repository.UserRepository) gin.Ha
 			},
 		)
 
-		if err != nil {
+		if err != nil || !jwtToken.Valid {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "invalid or expired token",
 			})
@@ -54,11 +58,18 @@ func JWTMiddleware(secret string, userRepo ...*repository.UserRepository) gin.Ha
 			return
 		}
 
-		if !jwtToken.Valid {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "invalid or expired token",
-			})
-			c.Abort()
+		if claims.IsGuest {
+			if claims.GuestID == "" {
+				c.JSON(http.StatusUnauthorized, gin.H{
+					"error": "invalid guest token claims",
+				})
+				c.Abort()
+				return
+			}
+
+			c.Set("is_guest", true)
+			c.Set("guest_id", claims.GuestID)
+			c.Next()
 			return
 		}
 
@@ -83,7 +94,21 @@ func JWTMiddleware(secret string, userRepo ...*repository.UserRepository) gin.Ha
 
 		c.Set("user_id", claims.UserID)
 		c.Set("is_guest", false)
-
 		c.Next()
 	}
 }
+
+func RequireRegisteredUser() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		isGuest, exists := c.Get("is_guest")
+		if exists && isGuest.(bool) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": "feature requires a registered account",
+			})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
