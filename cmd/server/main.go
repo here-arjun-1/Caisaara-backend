@@ -14,6 +14,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/database"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/email"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/handler"
@@ -164,40 +165,21 @@ func run() error {
 		return fmt.Errorf("set trusted proxies: %w", err)
 	}
 
-	loginLimiter := middleware.NewTokenBucketLimiter(10, time.Minute)
-	registerLimiter := middleware.NewTokenBucketLimiter(10, time.Hour)
-	verifyRegistrationLimiter := middleware.NewTokenBucketLimiter(5, time.Minute)
-	guestLoginLimiter := middleware.NewTokenBucketLimiter(10, time.Minute)
-	forgotLimiter := middleware.NewTokenBucketLimiter(5, 15*time.Minute)
-	verifyResetLimiter := middleware.NewTokenBucketLimiter(5, time.Minute)
-	resetPasswordLimiter := middleware.NewTokenBucketLimiter(5, 15*time.Minute)
-	refreshLimiter := middleware.NewTokenBucketLimiter(30, time.Minute)
-	logoutLimiter := middleware.NewTokenBucketLimiter(10, time.Minute)
-	ratingLimiter := middleware.NewTokenBucketLimiter(5, time.Minute)
-
 	r.GET("/health", func(c *gin.Context) {
 		response.Success(c, http.StatusOK, "ok", nil)
 	})
-	r.POST("/register", registerLimiter.Limit, registerHandler.Register)
-	r.POST("/verify-registration", verifyRegistrationLimiter.Limit, registerHandler.VerifyRegistration)
-	r.POST("/guest-login", guestLoginLimiter.Limit, registerHandler.GuestLogin)
-	r.POST("/login", loginLimiter.Limit, loginHandler.Login)
-	r.POST("/refresh", refreshLimiter.Limit, refreshHandler.Refresh)
-
-	r.POST("/logout", logoutLimiter.Limit, logoutHandler.Logout)
-	r.POST("/logout-all", logoutLimiter.Limit, logoutHandler.LogoutAll)
-
-	r.POST("/forgot-password", forgotLimiter.Limit, passwordResetHandler.ForgotPassword)
-	r.POST("/verify-reset-code", verifyResetLimiter.Limit, passwordResetHandler.VerifyCode)
-	r.POST("/reset-password", resetPasswordLimiter.Limit, passwordResetHandler.ResetPassword)
 
 	protected := r.Group("/api")
-
 	protected.Use(middleware.JWTMiddleware(cfg.JWTSecret, userRepository))
 
-	{
-		protected.POST("/rating", ratingLimiter.Limit, middleware.RequireRegisteredUser(), ratingHandler.SetRating)
-	}
+	auth.RegisterRoutes(r, protected, auth.Handlers{
+		Register:      registerHandler,
+		Login:         loginHandler,
+		Refresh:       refreshHandler,
+		Logout:        logoutHandler,
+		PasswordReset: passwordResetHandler,
+		Rating:        ratingHandler,
+	})
 
 	playerModule.RegisterRoutes(r, protected)
 
