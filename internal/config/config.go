@@ -2,7 +2,7 @@ package config
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"os"
 	"strings"
 
@@ -26,7 +26,7 @@ type SMTPConfig struct {
 
 func Load() (*Config, error) {
 	if err := godotenv.Load(); err != nil {
-		log.Println("no .env file found, using system environment variables")
+		slog.Info("no .env file found, using system environment variables")
 	}
 
 	cfg := &Config{

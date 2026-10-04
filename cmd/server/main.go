@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -33,7 +33,8 @@ import (
 func main() {
 	err := run()
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("fatal error", "error", err)
+		os.Exit(1)
 	}
 }
 func run() error {
@@ -82,7 +83,8 @@ func run() error {
 
 	go func() {
 		if err := asynqServer.Run(asynqMux); err != nil {
-			log.Fatalf("could not run asynq server: %v", err)
+			slog.Error("could not run asynq server", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -190,11 +192,12 @@ func run() error {
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("server failed to start: %v", err)
+			slog.Error("server failed to start", "error", err)
+			os.Exit(1)
 		}
 	}()
 
-	log.Printf("server started on port %s", cfg.Port)
+	slog.Info("server started", "port", cfg.Port)
 
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
@@ -202,9 +205,9 @@ func run() error {
 		for range ticker.C {
 			deleted, err := sessionRepository.CleanExpiredSessions(context.Background())
 			if err != nil {
-				log.Printf("failed to clean expired sessions: %v", err)
+				slog.Error("failed to clean expired sessions", "error", err)
 			} else if deleted > 0 {
-				log.Printf("cleaned up %d expired sessions", deleted)
+				slog.Info("cleaned up expired sessions", "count", deleted)
 			}
 		}
 	}()
@@ -213,7 +216,7 @@ func run() error {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("shutting down server...")
+	slog.Info("shutting down server...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -222,6 +225,6 @@ func run() error {
 		return fmt.Errorf("server forced to shutdown: %w", err)
 	}
 
-	log.Println("server exited")
+	slog.Info("server exited")
 	return nil
 }

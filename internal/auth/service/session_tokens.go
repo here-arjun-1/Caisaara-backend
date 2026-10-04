@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
@@ -20,13 +20,13 @@ func createSessionTokens(
 
 	accessToken, err := token.GenerateAccessToken(jwtSecret, userID, passwordVersion)
 	if err != nil {
-		log.Printf("generate access token failed: %v", err)
+		slog.Error("generate access token failed", "error", err)
 		return "", "", ErrInternal
 	}
 
 	refreshToken, err := token.GenerateRefreshToken()
 	if err != nil {
-		log.Printf("generate refresh token failed: %v", err)
+		slog.Error("generate refresh token failed", "error", err)
 		return "", "", ErrInternal
 	}
 
@@ -40,7 +40,7 @@ func createSessionTokens(
 
 	err = sessionRepository.CreateSession(ctx, session)
 	if err != nil {
-		log.Printf("create session failed: %v", err)
+		slog.Error("create session failed", "error", err)
 		return "", "", ErrInternal
 	}
 
@@ -58,13 +58,13 @@ func createSessionTokensTx(
 
 	accessToken, err := token.GenerateAccessToken(jwtSecret, userID, passwordVersion)
 	if err != nil {
-		log.Printf("generate access token failed: %v", err)
+		slog.Error("generate access token failed", "error", err)
 		return "", "", ErrInternal
 	}
 
 	refreshToken, err := token.GenerateRefreshToken()
 	if err != nil {
-		log.Printf("generate refresh token failed: %v", err)
+		slog.Error("generate refresh token failed", "error", err)
 		return "", "", ErrInternal
 	}
 
@@ -78,7 +78,7 @@ func createSessionTokensTx(
 
 	err = sessionRepository.CreateSessionTx(ctx, tx, session)
 	if err != nil {
-		log.Printf("create session failed: %v", err)
+		slog.Error("create session failed", "error", err)
 		return "", "", ErrInternal
 	}
 

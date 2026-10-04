@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -68,7 +68,7 @@ func (s *RegisterService) Register(ctx context.Context, req dto.RegisterData) er
 		return ErrEmailTaken
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		log.Printf("find user by email failed: %v", err)
+		slog.Error("find user by email failed", "error", err)
 		return ErrInternal
 	}
 
@@ -77,25 +77,25 @@ func (s *RegisterService) Register(ctx context.Context, req dto.RegisterData) er
 		return ErrUsernameTaken
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
-		log.Printf("find user by username failed: %v", err)
+		slog.Error("find user by username failed", "error", err)
 		return ErrInternal
 	}
 
 	code, err := generateOTP()
 	if err != nil {
-		log.Printf("generate otp failed: %v", err)
+		slog.Error("generate otp failed", "error", err)
 		return ErrInternal
 	}
 
 	codeHash, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
 	if err != nil {
-		log.Printf("hash otp failed: %v", err)
+		slog.Error("hash otp failed", "error", err)
 		return ErrInternal
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		log.Printf("hash password failed: %v", err)
+		slog.Error("hash password failed", "error", err)
 		return ErrInternal
 	}
 	req.Password = string(hashedPassword)
@@ -108,17 +108,17 @@ func (s *RegisterService) Register(ctx context.Context, req dto.RegisterData) er
 	pUserJSON, _ := json.Marshal(pUser)
 	s.RedisClient.Set(ctx, "register:"+req.Email, pUserJSON, 15*time.Minute)
 	s.RedisClient.Set(ctx, "raw_otp:"+req.Email, code, 15*time.Minute)
-	log.Printf("generated registration OTP for %s: %s", req.Email, code)
+	slog.Info("generated registration OTP", "email", req.Email, "otp", code)
 
 	task, err := worker.NewEmailRegistrationTask(req.Email, code)
 	if err != nil {
-		log.Printf("could not create email task: %v", err)
+		slog.Error("could not create email task", "error", err)
 	} else {
 		info, err := s.TaskDistributor.EnqueueContext(ctx, task)
 		if err != nil {
-			log.Printf("could not enqueue email task: %v", err)
+			slog.Error("could not enqueue email task", "error", err)
 		} else {
-			log.Printf("enqueued email task: id=%s queue=%s", info.ID, info.Queue)
+			slog.Info("enqueued email task", "id", info.ID, "queue", info.Queue)
 		}
 	}
 
@@ -198,7 +198,7 @@ func (s *RegisterService) VerifyRegistration(ctx context.Context, req dto.Verify
 
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
-		log.Printf("begin tx failed: %v", err)
+		slog.Error("begin tx failed", "error", err)
 		return "", "", ErrInternal
 	}
 	defer func() {
@@ -219,7 +219,7 @@ func (s *RegisterService) VerifyRegistration(ctx context.Context, req dto.Verify
 			}
 		}
 
-		log.Printf("create user failed: %v", err)
+		slog.Error("create user failed", "error", err)
 
 		return "", "", ErrInternal
 	}
@@ -230,7 +230,7 @@ func (s *RegisterService) VerifyRegistration(ctx context.Context, req dto.Verify
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		log.Printf("commit tx failed: %v", err)
+		slog.Error("commit tx failed", "error", err)
 		return "", "", ErrInternal
 	}
 
@@ -240,13 +240,13 @@ func (s *RegisterService) VerifyRegistration(ctx context.Context, req dto.Verify
 func (s *RegisterService) GuestLogin(ctx context.Context) (string, string, error) {
 	guestID, err := token.GenerateGuestID()
 	if err != nil {
-		log.Printf("generate guest id failed: %v", err)
+		slog.Error("generate guest id failed", "error", err)
 		return "", "", ErrInternal
 	}
 
 	guestToken, err := token.GenerateGuestToken(s.JWTSecret, guestID)
 	if err != nil {
-		log.Printf("generate guest token failed: %v", err)
+		slog.Error("generate guest token failed", "error", err)
 		return "", "", ErrInternal
 	}
 
@@ -256,14 +256,14 @@ func (s *RegisterService) GuestLogin(ctx context.Context) (string, string, error
 	}
 	guestJSON, err := json.Marshal(guestData)
 	if err != nil {
-		log.Printf("marshal guest data failed: %v", err)
+		slog.Error("marshal guest data failed", "error", err)
 		return "", "", ErrInternal
 	}
 
 	if s.RedisClient != nil {
 		err = s.RedisClient.Set(ctx, "guest:"+guestID, guestJSON, token.GuestTokenTTL).Err()
 		if err != nil {
-			log.Printf("redis store guest data failed: %v", err)
+			slog.Error("redis store guest data failed", "error", err)
 			return "", "", ErrInternal
 		}
 	}
