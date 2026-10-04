@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/service"
+	"github.com/here-arjun-1/Caisaara-backend/internal/response"
 )
 
 type LoginHandler struct {
@@ -23,31 +24,24 @@ func (h *LoginHandler) Login(c *gin.Context) {
 	var req dto.LoginData
 	err := c.ShouldBindJSON(&req)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request body",
-		})
+		response.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
 	username, accessToken, refreshToken, needsRating, err := h.LoginService.Login(c.Request.Context(), req)
 
 	if errors.Is(err, service.ErrInternal) {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal server error",
-		})
+		response.Error(c, http.StatusInternalServerError, "internal server error")
 		return
 	}
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": err.Error(),
-		})
+		response.Error(c, http.StatusUnauthorized, err.Error())
 		return
 	}
 	SetAccessTokenCookie(c, accessToken)
 	SetRefreshTokenCookie(c, refreshToken)
 
-	c.JSON(http.StatusOK, gin.H{
-		"message":      "login successful",
-		"username":     username,
-		"needs_rating": needsRating,
+	response.Success(c, http.StatusOK, "login successful", dto.LoginResponse{
+		Username:    username,
+		NeedsRating: needsRating,
 	})
 }

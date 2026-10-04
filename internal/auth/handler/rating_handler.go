@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/service"
+	"github.com/here-arjun-1/Caisaara-backend/internal/response"
 )
 
 type RatingHandler struct {
@@ -22,46 +23,35 @@ func NewRatingHandler(ratingService RatingService) *RatingHandler {
 func (h *RatingHandler) SetRating(c *gin.Context) {
 	userID := c.GetInt64("user_id")
 	if userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "user not authenticated",
-		})
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
 		return
 	}
 
 	var req dto.SetRatingData
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid request body",
-		})
+		response.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
 
 	rating, err := h.RatingService.SetInitialRating(c.Request.Context(), userID, req.Level)
 
 	if errors.Is(err, service.ErrInternal) {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "internal server error",
-		})
+		response.Error(c, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
 	if errors.Is(err, service.ErrRatingAlreadySet) {
-		c.JSON(http.StatusConflict, gin.H{
-			"error": err.Error(),
-		})
+		response.Error(c, http.StatusConflict, err.Error())
 		return
 	}
 
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
-		})
+		response.Error(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "rating set successfully",
-		"level":   req.Level,
-		"rating":  rating,
+	response.Success(c, http.StatusOK, "rating set successfully", dto.SetRatingResponse{
+		Level:  req.Level,
+		Rating: rating,
 	})
 }

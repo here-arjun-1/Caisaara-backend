@@ -9,6 +9,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
+	"github.com/here-arjun-1/Caisaara-backend/internal/response"
 )
 
 func JWTMiddleware(secret string, userRepo ...*repository.UserRepository) gin.HandlerFunc {
@@ -30,10 +31,7 @@ func JWTMiddleware(secret string, userRepo ...*repository.UserRepository) gin.Ha
 		}
 
 		if tokenString == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "authorization token is required",
-			})
-			c.Abort()
+			response.Abort(c, http.StatusUnauthorized, "authorization token is required")
 			return
 		}
 
@@ -50,19 +48,13 @@ func JWTMiddleware(secret string, userRepo ...*repository.UserRepository) gin.Ha
 		)
 
 		if err != nil || !jwtToken.Valid {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "invalid or expired token",
-			})
-			c.Abort()
+			response.Abort(c, http.StatusUnauthorized, "invalid or expired token")
 			return
 		}
 
 		if claims.IsGuest {
 			if claims.GuestID == "" {
-				c.JSON(http.StatusUnauthorized, gin.H{
-					"error": "invalid guest token claims",
-				})
-				c.Abort()
+				response.Abort(c, http.StatusUnauthorized, "invalid guest token claims")
 				return
 			}
 
@@ -73,20 +65,14 @@ func JWTMiddleware(secret string, userRepo ...*repository.UserRepository) gin.Ha
 		}
 
 		if claims.UserID <= 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "invalid token claims",
-			})
-			c.Abort()
+			response.Abort(c, http.StatusUnauthorized, "invalid token claims")
 			return
 		}
 
 		if len(userRepo) > 0 && userRepo[0] != nil && claims.PasswordVersion > 0 {
 			currentVersion, err := userRepo[0].GetPasswordVersion(c.Request.Context(), claims.UserID)
 			if err != nil || claims.PasswordVersion != currentVersion {
-				c.JSON(http.StatusUnauthorized, gin.H{
-					"error": "invalid or revoked token",
-				})
-				c.Abort()
+				response.Abort(c, http.StatusUnauthorized, "invalid or revoked token")
 				return
 			}
 		}
@@ -101,10 +87,7 @@ func RequireRegisteredUser() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		isGuest, exists := c.Get("is_guest")
 		if exists && isGuest.(bool) {
-			c.JSON(http.StatusForbidden, gin.H{
-				"error": "feature requires a registered account",
-			})
-			c.Abort()
+			response.Abort(c, http.StatusForbidden, "feature requires a registered account")
 			return
 		}
 		c.Next()

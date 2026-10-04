@@ -24,6 +24,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/worker"
 	"github.com/here-arjun-1/Caisaara-backend/internal/config"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
+	"github.com/here-arjun-1/Caisaara-backend/internal/response"
 	"github.com/here-arjun-1/Caisaara-backend/migrations"
 	"github.com/hibiken/asynq"
 )
@@ -175,9 +176,7 @@ func run() error {
 	ratingLimiter := middleware.NewTokenBucketLimiter(5, time.Minute)
 
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{
-			"status": "ok",
-		})
+		response.Success(c, http.StatusOK, "ok", nil)
 	})
 	r.POST("/register", registerLimiter.Limit, registerHandler.Register)
 	r.POST("/verify-registration", verifyRegistrationLimiter.Limit, registerHandler.VerifyRegistration)

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/here-arjun-1/Caisaara-backend/internal/response"
 )
 
 type client struct {
@@ -70,9 +71,7 @@ func (l *TokenBucketLimiter) cleanup() {
 
 func (l *TokenBucketLimiter) Limit(c *gin.Context) {
 	if !l.allow(c.ClientIP()) {
-		c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{
-			"error": "too many requests, please try again later",
-		})
+		response.Abort(c, http.StatusTooManyRequests, "too many requests, please try again later")
 		return
 	}
 	c.Next()
