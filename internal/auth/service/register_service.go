@@ -91,6 +91,13 @@ func (s *RegisterService) Register(ctx context.Context, req dto.RegisterData) er
 		return ErrInternal
 	}
 
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		log.Printf("hash password failed: %v", err)
+		return ErrInternal
+	}
+	req.Password = string(hashedPassword)
+
 	pUser := pendingUser{
 		Req:       req,
 		CodeHash:  string(codeHash),
@@ -179,20 +186,10 @@ func (s *RegisterService) VerifyRegistration(ctx context.Context, req dto.Verify
 
 	userReq := pUser.Req
 
-	hashedPassword, err := bcrypt.GenerateFromPassword(
-		[]byte(userReq.Password),
-		bcrypt.DefaultCost,
-	)
-
-	if err != nil {
-		log.Printf("hash password failed: %v", err)
-		return "", "", ErrInternal
-	}
-
 	user := &model.User{
 		Username: userReq.Username,
 		Email:    userReq.Email,
-		Password: string(hashedPassword),
+		Password: userReq.Password,
 	}
 
 	tx, err := s.DB.Begin(ctx)
