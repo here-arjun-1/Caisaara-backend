@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"log"
+	"log/slog"
 )
 
 var startingRatings = map[string]int{
@@ -30,7 +30,7 @@ func (s *RatingService) SetInitialRating(ctx context.Context, userID int64, leve
 
 	updated, err := s.UserRepository.SetInitialRating(ctx, userID, level, rating)
 	if err != nil {
-		log.Printf("set initial rating failed: %v", err)
+		slog.Error("set initial rating failed", "error", err)
 		return 0, ErrInternal
 	}
 	if !updated {

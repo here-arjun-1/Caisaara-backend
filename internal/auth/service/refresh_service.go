@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
@@ -49,14 +49,14 @@ func (h *RefreshService) Refresh(ctx context.Context, req dto.RefreshData) (stri
 		return "", "", errors.New("invalid refresh token")
 	}
 	if err != nil {
-		log.Printf("find session failed: %v", err)
+		slog.Error("find session failed", "error", err)
 		return "", "", ErrInternal
 	}
 
 	if session.RevokedAt != nil {
 		err = h.SessionRepository.RevokeAllSessions(ctx, session.UserID)
 		if err != nil {
-			log.Printf("revoke all sessions failed: %v", err)
+			slog.Error("revoke all sessions failed", "error", err)
 		}
 		return "", "", errors.New("refresh token has been revoked")
 	}
@@ -67,7 +67,7 @@ func (h *RefreshService) Refresh(ctx context.Context, req dto.RefreshData) (stri
 
 	newRefreshToken, err := token.GenerateRefreshToken()
 	if err != nil {
-		log.Printf("generate refresh token failed: %v", err)
+		slog.Error("generate refresh token failed", "error", err)
 		return "", "", ErrInternal
 	}
 
@@ -86,13 +86,13 @@ func (h *RefreshService) Refresh(ctx context.Context, req dto.RefreshData) (stri
 		return "", "", errors.New("refresh token has been revoked")
 	}
 	if err != nil {
-		log.Printf("rotate session failed: %v", err)
+		slog.Error("rotate session failed", "error", err)
 		return "", "", ErrInternal
 	}
 
 	user, err := h.UserRepository.FindUserByID(ctx, newSession.UserID)
 	if err != nil {
-		log.Printf("find user by id failed: %v", err)
+		slog.Error("find user by id failed", "error", err)
 		return "", "", ErrInternal
 	}
 
@@ -103,7 +103,7 @@ func (h *RefreshService) Refresh(ctx context.Context, req dto.RefreshData) (stri
 	)
 
 	if err != nil {
-		log.Printf("generate access token failed: %v", err)
+		slog.Error("generate access token failed", "error", err)
 		return "", "", ErrInternal
 	}
 

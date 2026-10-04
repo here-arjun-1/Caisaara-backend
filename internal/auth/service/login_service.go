@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"strings"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
@@ -56,7 +56,7 @@ func (h *LoginService) Login(
 		return "", "", "", false, ErrInvalidCredentials
 	}
 	if err != nil {
-		log.Printf("find user failed: %v", err)
+		slog.Error("find user failed", "error", err)
 		return "", "", "", false, ErrInternal
 	}
 

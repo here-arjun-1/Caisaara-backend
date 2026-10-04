@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/url"
 	"strings"
 	"unicode/utf8"
@@ -35,7 +35,7 @@ func (h *ProfileService) GetMyProfile(ctx context.Context, userID int64) (*dto.M
 		return nil, ErrUserNotFound
 	}
 	if err != nil {
-		log.Printf("find profile by id failed: %v", err)
+		slog.Error("find profile by id failed", "error", err)
 		return nil, ErrInternal
 	}
 
@@ -50,7 +50,7 @@ func (h *ProfileService) GetPublicProfile(ctx context.Context, username string) 
 		return nil, ErrUserNotFound
 	}
 	if err != nil {
-		log.Printf("find profile by username failed: %v", err)
+		slog.Error("find profile by username failed", "error", err)
 		return nil, ErrInternal
 	}
 
@@ -71,7 +71,7 @@ func (h *ProfileService) UpdateMyProfile(ctx context.Context, userID int64, req 
 		return nil, ErrUserNotFound
 	}
 	if err != nil {
-		log.Printf("find profile by id failed: %v", err)
+		slog.Error("find profile by id failed", "error", err)
 		return nil, ErrInternal
 	}
 
@@ -108,7 +108,7 @@ func (h *ProfileService) UpdateMyProfile(ctx context.Context, userID int64, req 
 	}
 
 	if err := h.ProfileRepository.SaveProfile(ctx, p); err != nil {
-		log.Printf("save profile failed: %v", err)
+		slog.Error("save profile failed", "error", err)
 		return nil, ErrInternal
 	}
 

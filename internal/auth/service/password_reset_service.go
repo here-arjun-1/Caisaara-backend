@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"math/big"
 	"strings"
 	"time"
@@ -61,19 +61,19 @@ func (s *PasswordResetService) ForgotPassword(ctx context.Context, req dto.Forgo
 		return nil
 	}
 	if err != nil {
-		log.Printf("find user by email failed: %v", err)
+		slog.Error("find user by email failed", "error", err)
 		return ErrInternal
 	}
 
 	otp, err := generateOTP()
 	if err != nil {
-		log.Printf("generate otp failed: %v", err)
+		slog.Error("generate otp failed", "error", err)
 		return ErrInternal
 	}
 
 	otpHash, err := bcrypt.GenerateFromPassword([]byte(otp), bcrypt.DefaultCost)
 	if err != nil {
-		log.Printf("hash otp failed: %v", err)
+		slog.Error("hash otp failed", "error", err)
 		return ErrInternal
 	}
 
@@ -84,21 +84,21 @@ func (s *PasswordResetService) ForgotPassword(ctx context.Context, req dto.Forgo
 	dataJSON, _ := json.Marshal(data)
 
 	if err := s.RedisClient.Set(ctx, "forgot_otp:"+userEmail, dataJSON, 15*time.Minute).Err(); err != nil {
-		log.Printf("save otp to redis failed: %v", err)
+		slog.Error("save otp to redis failed", "error", err)
 		return ErrInternal
 	}
 	s.RedisClient.Set(ctx, "raw_reset_otp:"+userEmail, otp, 15*time.Minute)
-	log.Printf("generated password reset OTP for %s: %s", userEmail, otp)
+	slog.Info("generated password reset OTP", "email", userEmail, "otp", otp)
 
 	task, err := worker.NewEmailPasswordResetTask(userEmail, otp)
 	if err != nil {
-		log.Printf("could not create password reset email task: %v", err)
+		slog.Error("could not create password reset email task", "error", err)
 	} else {
 		info, err := s.TaskDistributor.EnqueueContext(ctx, task)
 		if err != nil {
-			log.Printf("could not enqueue password reset email task: %v", err)
+			slog.Error("could not enqueue password reset email task", "error", err)
 		} else {
-			log.Printf("enqueued password reset email task: id=%s queue=%s", info.ID, info.Queue)
+			slog.Info("enqueued password reset email task", "id", info.ID, "queue", info.Queue)
 		}
 	}
 
@@ -196,13 +196,13 @@ func (s *PasswordResetService) ResetPassword(ctx context.Context, req dto.ResetP
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
-		log.Printf("hash new password failed: %v", err)
+		slog.Error("hash new password failed", "error", err)
 		return ErrInternal
 	}
 
 	err = s.PasswordResetRepository.ResetPassword(ctx, email, string(hashedPassword))
 	if err != nil {
-		log.Printf("reset password failed: %v", err)
+		slog.Error("reset password failed", "error", err)
 		return ErrInternal
 	}
 

@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
@@ -48,7 +48,7 @@ func (s *LogoutService) Logout(
 	}
 
 	if err != nil {
-		log.Printf("revoke session failed: %v", err)
+		slog.Error("revoke session failed", "error", err)
 		return ErrInternal
 	}
 
@@ -80,7 +80,7 @@ func (s *LogoutService) LogoutAll(
 		if err.Error() == "refresh token has been revoked" {
 			return err
 		}
-		log.Printf("revoke all sessions failed: %v", err)
+		slog.Error("revoke all sessions failed", "error", err)
 		return ErrInternal
 	}
 
