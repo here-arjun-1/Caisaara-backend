@@ -60,4 +60,3 @@ func GenerateGuestToken(secret string, guestID string) (string, error) {
 
 	return token.SignedString([]byte(secret))
 }
-

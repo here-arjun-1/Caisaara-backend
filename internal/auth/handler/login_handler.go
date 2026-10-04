@@ -51,4 +51,3 @@ func (h *LoginHandler) Login(c *gin.Context) {
 		"needs_rating": needsRating,
 	})
 }
-
