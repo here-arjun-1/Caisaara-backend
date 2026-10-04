@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -42,6 +43,21 @@ func NewUserRepository(db *pgxpool.Pool) *UserRepository {
 func (r *UserRepository) CreateUser(ctx context.Context, user *model.User) error {
 
 	err := r.DB.QueryRow(
+		ctx,
+		`INSERT INTO users
+		(username, email, password)
+		VALUES ($1, $2, $3)
+		RETURNING id`,
+		user.Username,
+		user.Email,
+		user.Password,
+	).Scan(&user.ID)
+
+	return err
+}
+
+func (r *UserRepository) CreateUserTx(ctx context.Context, tx pgx.Tx, user *model.User) error {
+	err := tx.QueryRow(
 		ctx,
 		`INSERT INTO users
 		(username, email, password)
