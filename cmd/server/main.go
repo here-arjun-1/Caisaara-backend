@@ -174,7 +174,7 @@ func run() error {
 		ticker := time.NewTicker(1 * time.Hour)
 		defer ticker.Stop()
 		for range ticker.C {
-			deleted, err := sessionRepository.CleanExpiredSessions()
+			deleted, err := sessionRepository.CleanExpiredSessions(context.Background())
 			if err != nil {
 				log.Printf("failed to clean expired sessions: %v", err)
 			} else if deleted > 0 {

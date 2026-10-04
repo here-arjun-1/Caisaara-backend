@@ -38,7 +38,7 @@ func (h *LogoutHandler) Logout(
 		RefreshToken: refreshToken,
 	}
 
-	err = h.LogoutService.Logout(req)
+	err = h.LogoutService.Logout(c.Request.Context(), req)
 
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -77,7 +77,7 @@ func (h *LogoutHandler) LogoutAll(
 		RefreshToken: refreshToken,
 	}
 
-	err = h.LogoutService.LogoutAll(req)
+	err = h.LogoutService.LogoutAll(c.Request.Context(), req)
 
 	if errors.Is(err, service.ErrInternal) {
 		c.JSON(http.StatusInternalServerError, gin.H{

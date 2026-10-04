@@ -11,10 +11,10 @@ type UserRepository struct {
 	DB *pgxpool.Pool
 }
 
-func (r *UserRepository) FindUserByID(id int64) (*model.User, error) {
+func (r *UserRepository) FindUserByID(ctx context.Context, id int64) (*model.User, error) {
 	var user model.User
 	err := r.DB.QueryRow(
-		context.Background(),
+		ctx,
 		`SELECT
 			id,
 			username,
@@ -39,10 +39,10 @@ func NewUserRepository(db *pgxpool.Pool) *UserRepository {
 	}
 }
 
-func (r *UserRepository) CreateUser(user *model.User) error {
+func (r *UserRepository) CreateUser(ctx context.Context, user *model.User) error {
 
 	err := r.DB.QueryRow(
-		context.Background(),
+		ctx,
 		`INSERT INTO users
 		(username, email, password)
 		VALUES ($1, $2, $3)
@@ -55,12 +55,12 @@ func (r *UserRepository) CreateUser(user *model.User) error {
 	return err
 }
 
-func (r *UserRepository) FindUserByUsername(username string) (*model.User, error) {
+func (r *UserRepository) FindUserByUsername(ctx context.Context, username string) (*model.User, error) {
 
 	var user model.User
 
 	err := r.DB.QueryRow(
-		context.Background(),
+		ctx,
 		`SELECT
 			id,
 			username,
@@ -83,11 +83,11 @@ func (r *UserRepository) FindUserByUsername(username string) (*model.User, error
 	return &user, nil
 }
 
-func (r *UserRepository) FindUserByEmail(email string) (*model.User, error) {
+func (r *UserRepository) FindUserByEmail(ctx context.Context, email string) (*model.User, error) {
 	var user model.User
 
 	err := r.DB.QueryRow(
-		context.Background(),
+		ctx,
 		`SELECT
 			id,
 			username,
@@ -112,9 +112,9 @@ func (r *UserRepository) FindUserByEmail(email string) (*model.User, error) {
 	return &user, nil
 }
 
-func (r *UserRepository) UpdatePassword(email, hashedPassword string) error {
+func (r *UserRepository) UpdatePassword(ctx context.Context, email, hashedPassword string) error {
 	_, err := r.DB.Exec(
-		context.Background(),
+		ctx,
 		`UPDATE users SET password = $1 WHERE email = $2`,
 		hashedPassword,
 		email,
@@ -122,9 +122,9 @@ func (r *UserRepository) UpdatePassword(email, hashedPassword string) error {
 	return err
 }
 
-func (r *UserRepository) SetInitialRating(userID int64, level string, rating int) (bool, error) {
+func (r *UserRepository) SetInitialRating(ctx context.Context, userID int64, level string, rating int) (bool, error) {
 	tag, err := r.DB.Exec(
-		context.Background(),
+		ctx,
 		`UPDATE users
 		SET skill_level = $1, rating = $2
 		WHERE id = $3 AND skill_level IS NULL`,

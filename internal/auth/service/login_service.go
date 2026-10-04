@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"log"
 	"strings"
@@ -28,6 +29,7 @@ func NewLoginService(
 }
 
 func (h *LoginService) Login(
+	ctx context.Context,
 	req dto.LoginData,
 ) (string, string, string, bool, error) {
 
@@ -41,10 +43,11 @@ func (h *LoginService) Login(
 
 	if strings.Contains(usernameOrEmail, "@") {
 		user, err = h.UserRepository.FindUserByEmail(
+			ctx,
 			usernameOrEmail,
 		)
 	} else {
-		user, err = h.UserRepository.FindUserByUsername(usernameOrEmail)
+		user, err = h.UserRepository.FindUserByUsername(ctx, usernameOrEmail)
 	}
 
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -64,7 +67,7 @@ func (h *LoginService) Login(
 		return "", "", "", false, ErrInvalidCredentials
 	}
 
-	accessToken, refreshToken, err := createSessionTokens(h.SessionRepository, user.ID)
+	accessToken, refreshToken, err := createSessionTokens(ctx, h.SessionRepository, user.ID)
 	if err != nil {
 		return "", "", "", false, err
 	}

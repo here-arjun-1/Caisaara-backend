@@ -28,7 +28,7 @@ func (h *ProfileHandler) GetMyProfile(c *gin.Context) {
 		return
 	}
 
-	profile, err := h.ProfileService.GetMyProfile(userID)
+	profile, err := h.ProfileService.GetMyProfile(c.Request.Context(), userID)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -56,7 +56,7 @@ func (h *ProfileHandler) UpdateMyProfile(c *gin.Context) {
 		return
 	}
 
-	profile, err := h.ProfileService.UpdateMyProfile(userID, req)
+	profile, err := h.ProfileService.UpdateMyProfile(c.Request.Context(), userID, req)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -66,7 +66,7 @@ func (h *ProfileHandler) UpdateMyProfile(c *gin.Context) {
 }
 
 func (h *ProfileHandler) GetPublicProfile(c *gin.Context) {
-	profile, err := h.ProfileService.GetPublicProfile(c.Param("username"))
+	profile, err := h.ProfileService.GetPublicProfile(c.Request.Context(), c.Param("username"))
 	if err != nil {
 		writeError(c, err)
 		return

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"log"
 
@@ -24,6 +25,7 @@ func NewLogoutService(
 }
 
 func (s *LogoutService) Logout(
+	ctx context.Context,
 	req dto.LogoutData,
 ) error {
 
@@ -36,6 +38,7 @@ func (s *LogoutService) Logout(
 	)
 
 	err := s.SessionRepository.RevokeSession(
+		ctx,
 		refreshTokenHash,
 	)
 
@@ -54,6 +57,7 @@ func (s *LogoutService) Logout(
 }
 
 func (s *LogoutService) LogoutAll(
+	ctx context.Context,
 	req dto.LogoutData,
 ) error {
 
@@ -66,6 +70,7 @@ func (s *LogoutService) LogoutAll(
 	)
 
 	session, err := s.SessionRepository.FindSessionByRefreshTokenHash(
+		ctx,
 		refreshTokenHash,
 	)
 
@@ -82,6 +87,7 @@ func (s *LogoutService) LogoutAll(
 	}
 
 	err = s.SessionRepository.RevokeAllSessions(
+		ctx,
 		session.UserID,
 	)
 
