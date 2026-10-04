@@ -3,15 +3,24 @@ package email
 import (
 	"fmt"
 	"net/smtp"
-	"os"
+
+	"github.com/here-arjun-1/Caisaara-backend/internal/config"
 )
 
-func SendPasswordResetEmail(to string, code string) error {
+type Sender struct {
+	cfg config.SMTPConfig
+}
 
-	host := os.Getenv("SMTP_HOST")
-	port := os.Getenv("SMTP_PORT")
-	username := os.Getenv("SMTP_USERNAME")
-	password := os.Getenv("SMTP_PASSWORD")
+func NewSender(cfg config.SMTPConfig) *Sender {
+	return &Sender{cfg: cfg}
+}
+
+func (s *Sender) SendPasswordResetEmail(to string, code string) error {
+
+	host := s.cfg.Host
+	port := s.cfg.Port
+	username := s.cfg.Username
+	password := s.cfg.Password
 
 	auth := smtp.PlainAuth(
 		"",
@@ -46,11 +55,11 @@ func SendPasswordResetEmail(to string, code string) error {
 	)
 }
 
-func SendRegistrationEmail(to string, code string) error {
-	host := os.Getenv("SMTP_HOST")
-	port := os.Getenv("SMTP_PORT")
-	username := os.Getenv("SMTP_USERNAME")
-	password := os.Getenv("SMTP_PASSWORD")
+func (s *Sender) SendRegistrationEmail(to string, code string) error {
+	host := s.cfg.Host
+	port := s.cfg.Port
+	username := s.cfg.Username
+	password := s.cfg.Password
 
 	auth := smtp.PlainAuth(
 		"",
