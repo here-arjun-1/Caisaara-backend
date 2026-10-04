@@ -14,8 +14,9 @@ import (
 	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
-	"github.com/here-arjun-1/Caisaara-backend/internal/auth/email"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/worker"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
@@ -34,6 +35,7 @@ type PasswordResetService struct {
 	PasswordResetRepository *repository.PasswordResetRepository
 	SessionRepository       *repository.SessionRepository
 	RedisClient             *redis.Client
+	TaskDistributor         *asynq.Client
 }
 
 func NewPasswordResetService(
@@ -41,12 +43,14 @@ func NewPasswordResetService(
 	passwordResetRepository *repository.PasswordResetRepository,
 	sessionRepository *repository.SessionRepository,
 	redisClient *redis.Client,
+	taskDistributor *asynq.Client,
 ) *PasswordResetService {
 	return &PasswordResetService{
 		UserRepository:          userRepository,
 		PasswordResetRepository: passwordResetRepository,
 		SessionRepository:       sessionRepository,
 		RedisClient:             redisClient,
+		TaskDistributor:         taskDistributor,
 	}
 }
 
@@ -85,11 +89,17 @@ func (s *PasswordResetService) ForgotPassword(ctx context.Context, req dto.Forgo
 		return ErrInternal
 	}
 
-	go func() {
-		if err := email.SendPasswordResetEmail(userEmail, otp); err != nil {
-			log.Printf("send password reset email failed: %v", err)
+	task, err := worker.NewEmailPasswordResetTask(userEmail, otp)
+	if err != nil {
+		log.Printf("could not create password reset email task: %v", err)
+	} else {
+		info, err := s.TaskDistributor.EnqueueContext(ctx, task)
+		if err != nil {
+			log.Printf("could not enqueue password reset email task: %v", err)
+		} else {
+			log.Printf("enqueued password reset email task: id=%s queue=%s", info.ID, info.Queue)
 		}
-	}()
+	}
 
 	return nil
 }
