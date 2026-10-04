@@ -223,8 +223,7 @@ func (s *RegisterService) VerifyRegistration(ctx context.Context, req dto.Verify
 		return "", "", ErrInternal
 	}
 
-	accessToken, refreshToken, err := createSessionTokensTx(ctx, tx, s.SessionRepository, s.JWTSecret, user.ID)
-
+	accessToken, refreshToken, err := createSessionTokensTx(ctx, tx, s.SessionRepository, s.JWTSecret, user.ID, user.PasswordVersion)
 	if err != nil {
 		return "", "", err
 	}

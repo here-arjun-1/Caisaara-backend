@@ -104,6 +104,7 @@ func run() error {
 	)
 	refreshService := service.NewRefreshService(
 		sessionRepository,
+		userRepository,
 		cfg.JWTSecret,
 	)
 
@@ -187,7 +188,7 @@ func run() error {
 
 	protected := r.Group("/api")
 
-	protected.Use(middleware.JWTMiddleware(cfg.JWTSecret))
+	protected.Use(middleware.JWTMiddleware(cfg.JWTSecret, userRepository))
 
 	{
 		protected.POST("/rating", ratingLimiter.Limit, ratingHandler.SetRating)

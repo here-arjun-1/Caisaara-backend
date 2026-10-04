@@ -27,7 +27,7 @@ func (r *PasswordResetRepository) ResetPassword(ctx context.Context, email, hash
 	var userID int64
 	err = tx.QueryRow(
 		ctx,
-		`UPDATE users SET password = $1 WHERE email = $2 RETURNING id`,
+		`UPDATE users SET password = $1, password_version = COALESCE(password_version, 1) + 1 WHERE email = $2 RETURNING id`,
 		hashedPassword,
 		email,
 	).Scan(&userID)
