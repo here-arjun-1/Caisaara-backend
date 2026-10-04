@@ -3,11 +3,11 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player/service"
-	"time"
 )
 
 type ProfileHandler struct {
