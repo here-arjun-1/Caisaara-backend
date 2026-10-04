@@ -11,28 +11,6 @@ type UserRepository struct {
 	DB *pgxpool.Pool
 }
 
-func (r *UserRepository) FindUserByID(ctx context.Context, id int64) (*model.User, error) {
-	var user model.User
-	err := r.DB.QueryRow(
-		ctx,
-		`SELECT
-			id,
-			username,
-			email
-		FROM users
-		WHERE id = $1`,
-		id,
-	).Scan(
-		&user.ID,
-		&user.Username,
-		&user.Email,
-	)
-	if err != nil {
-		return nil, err
-	}
-	return &user, nil
-}
-
 func NewUserRepository(db *pgxpool.Pool) *UserRepository {
 	return &UserRepository{
 		DB: db,
@@ -110,16 +88,6 @@ func (r *UserRepository) FindUserByEmail(ctx context.Context, email string) (*mo
 	}
 
 	return &user, nil
-}
-
-func (r *UserRepository) UpdatePassword(ctx context.Context, email, hashedPassword string) error {
-	_, err := r.DB.Exec(
-		ctx,
-		`UPDATE users SET password = $1 WHERE email = $2`,
-		hashedPassword,
-		email,
-	)
-	return err
 }
 
 func (r *UserRepository) SetInitialRating(ctx context.Context, userID int64, level string, rating int) (bool, error) {
