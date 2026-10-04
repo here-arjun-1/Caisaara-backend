@@ -20,7 +20,9 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/service"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/validation"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/worker"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
+	"github.com/hibiken/asynq"
 	"github.com/joho/godotenv"
 )
 
@@ -47,6 +49,36 @@ func run() error {
 	}
 	defer func() { _ = redisClient.Close() }()
 
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "localhost:6379"
+	}
+	asynqRedisOpt := asynq.RedisClientOpt{Addr: redisURL}
+
+	taskDistributor := asynq.NewClient(asynqRedisOpt)
+	defer func() { _ = taskDistributor.Close() }()
+
+	asynqServer := asynq.NewServer(
+		asynqRedisOpt,
+		asynq.Config{
+			Concurrency: 10,
+			RetryDelayFunc: func(n int, e error, t *asynq.Task) time.Duration {
+				return 2 * time.Minute
+			},
+		},
+	)
+
+	asynqMux := asynq.NewServeMux()
+	emailProcessor := worker.NewEmailTaskProcessor()
+	asynqMux.HandleFunc(worker.TypeEmailRegistration, emailProcessor.ProcessTaskEmailRegistration)
+	asynqMux.HandleFunc(worker.TypeEmailPasswordReset, emailProcessor.ProcessTaskEmailPasswordReset)
+
+	go func() {
+		if err := asynqServer.Run(asynqMux); err != nil {
+			log.Fatalf("could not run asynq server: %v", err)
+		}
+	}()
+
 	userRepository := repository.NewUserRepository(conn)
 	sessionRepository := repository.NewSessionRepository(conn)
 
@@ -54,6 +86,7 @@ func run() error {
 		userRepository,
 		sessionRepository,
 		redisClient,
+		taskDistributor,
 	)
 
 	registerHandler := handler.NewRegisterHandler(
@@ -89,6 +122,7 @@ func run() error {
 		passwordResetRepository,
 		sessionRepository,
 		redisClient,
+		taskDistributor,
 	)
 	passwordResetHandler := handler.NewPasswordResetHandler(
 		passwordResetService,

@@ -9,10 +9,11 @@ import (
 	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/dto"
-	"github.com/here-arjun-1/Caisaara-backend/internal/auth/email"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/worker"
+	"github.com/hibiken/asynq"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/redis/go-redis/v9"
@@ -34,18 +35,21 @@ type RegisterService struct {
 	UserRepository    *repository.UserRepository
 	SessionRepository *repository.SessionRepository
 	RedisClient       *redis.Client
+	TaskDistributor   *asynq.Client
 }
 
 func NewRegisterService(
 	userRepository *repository.UserRepository,
 	sessionRepository *repository.SessionRepository,
 	redisClient *redis.Client,
+	taskDistributor *asynq.Client,
 ) *RegisterService {
 
 	return &RegisterService{
 		UserRepository:    userRepository,
 		SessionRepository: sessionRepository,
 		RedisClient:       redisClient,
+		TaskDistributor:   taskDistributor,
 	}
 }
 
@@ -91,11 +95,17 @@ func (s *RegisterService) Register(ctx context.Context, req dto.RegisterData) er
 	pUserJSON, _ := json.Marshal(pUser)
 	s.RedisClient.Set(ctx, "register:"+req.Email, pUserJSON, 15*time.Minute)
 
-	go func() {
-		if err := email.SendRegistrationEmail(req.Email, code); err != nil {
-			log.Printf("send registration email failed: %v", err)
+	task, err := worker.NewEmailRegistrationTask(req.Email, code)
+	if err != nil {
+		log.Printf("could not create email task: %v", err)
+	} else {
+		info, err := s.TaskDistributor.EnqueueContext(ctx, task)
+		if err != nil {
+			log.Printf("could not enqueue email task: %v", err)
+		} else {
+			log.Printf("enqueued email task: id=%s queue=%s", info.ID, info.Queue)
 		}
-	}()
+	}
 
 	return nil
 }
