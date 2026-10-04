@@ -169,7 +169,7 @@ func run() error {
 		}
 	}()
 
-	log.Printf("server started on port %s", port) //nolint:gosec
+	log.Printf("server started on port %s", port)
 
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)
