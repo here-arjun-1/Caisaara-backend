@@ -3,18 +3,5 @@ services:
     image: redis:7-alpine
     container_name: caisaara-redis
     restart: unless-stopped
-    network_mode: host
-
-  backend:
-    build: .
-    image: caisaara-backend:latest
-    container_name: caisaara-backend
-    restart: unless-stopped
-    network_mode: host
-    env_file:
-      - .env
-    environment:
-      - GIN_MODE=release
-    depends_on:
-      - redis
-
+    ports:
+      - "127.0.0.1:6379:6379"
