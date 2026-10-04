@@ -14,7 +14,7 @@ import (
 func New(jwtSecret string, authModule *auth.Module, playerModule *player.Module) (*gin.Engine, error) {
 	r := gin.Default()
 
-	if err := r.SetTrustedProxies([]string{"127.0.0.1", "::1"}); err != nil {
+	if err := r.SetTrustedProxies([]string{"127.0.0.1", "::1", "172.16.0.0/12"}); err != nil {
 		return nil, fmt.Errorf("set trusted proxies: %w", err)
 	}
 
