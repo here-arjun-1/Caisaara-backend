@@ -24,6 +24,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/worker"
 	"github.com/here-arjun-1/Caisaara-backend/internal/config"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
+	"github.com/here-arjun-1/Caisaara-backend/migrations"
 	"github.com/hibiken/asynq"
 )
 
@@ -37,6 +38,11 @@ func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
+	}
+
+	err = migrations.Run(cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("run migrations: %w", err)
 	}
 
 	conn, err := database.ConnectDB(cfg.DatabaseURL)

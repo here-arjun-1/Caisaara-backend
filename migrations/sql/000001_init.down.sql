@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS player_profiles;
+DROP TABLE IF EXISTS password_resets;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS users;
