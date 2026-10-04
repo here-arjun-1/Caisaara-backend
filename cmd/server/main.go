@@ -83,6 +83,7 @@ func run() error {
 	sessionRepository := repository.NewSessionRepository(conn)
 
 	registerService := service.NewRegisterService(
+		conn,
 		userRepository,
 		sessionRepository,
 		redisClient,

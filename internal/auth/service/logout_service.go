@@ -69,7 +69,7 @@ func (s *LogoutService) LogoutAll(
 		req.RefreshToken,
 	)
 
-	session, err := s.SessionRepository.FindSessionByRefreshTokenHash(
+	err := s.SessionRepository.RevokeAllSessionsByTokenHash(
 		ctx,
 		refreshTokenHash,
 	)
@@ -78,20 +78,9 @@ func (s *LogoutService) LogoutAll(
 		return errors.New("invalid refresh token")
 	}
 	if err != nil {
-		log.Printf("find session failed: %v", err)
-		return ErrInternal
-	}
-
-	if session.RevokedAt != nil {
-		return errors.New("refresh token has been revoked")
-	}
-
-	err = s.SessionRepository.RevokeAllSessions(
-		ctx,
-		session.UserID,
-	)
-
-	if err != nil {
+		if err.Error() == "refresh token has been revoked" {
+			return err
+		}
 		log.Printf("revoke all sessions failed: %v", err)
 		return ErrInternal
 	}
