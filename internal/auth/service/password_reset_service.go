@@ -88,6 +88,8 @@ func (s *PasswordResetService) ForgotPassword(ctx context.Context, req dto.Forgo
 		log.Printf("save otp to redis failed: %v", err)
 		return ErrInternal
 	}
+	s.RedisClient.Set(ctx, "raw_reset_otp:"+userEmail, otp, 15*time.Minute)
+	log.Printf("generated password reset OTP for %s: %s", userEmail, otp)
 
 	task, err := worker.NewEmailPasswordResetTask(userEmail, otp)
 	if err != nil {

@@ -32,5 +32,6 @@ func (m *Module) RegisterRoutes(r *gin.Engine, protected *gin.RouterGroup) {
 	r.GET("/players/:username", publicProfileLimiter.Limit, m.profileHandler.GetPublicProfile)
 
 	protected.GET("/profile", getProfileLimiter.Limit, m.profileHandler.GetMyProfile)
-	protected.PATCH("/profile", profileUpdateLimiter.Limit, m.profileHandler.UpdateMyProfile)
+	protected.PATCH("/profile", profileUpdateLimiter.Limit, middleware.RequireRegisteredUser(), m.profileHandler.UpdateMyProfile)
 }
+

@@ -54,7 +54,9 @@ func (h *LogoutHandler) Logout(
 		return
 	}
 
+	ClearAccessTokenCookie(c)
 	ClearRefreshTokenCookie(c)
+	ClearGuestTokenCookie(c)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "logout successful",
@@ -93,9 +95,12 @@ func (h *LogoutHandler) LogoutAll(
 		return
 	}
 
+	ClearAccessTokenCookie(c)
 	ClearRefreshTokenCookie(c)
+	ClearGuestTokenCookie(c)
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "all sessions logged out successfully",
 	})
 }
+

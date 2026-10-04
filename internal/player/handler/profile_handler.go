@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player/service"
+	"time"
 )
 
 type ProfileHandler struct {
@@ -20,6 +21,23 @@ func NewProfileHandler(profileService *service.ProfileService) *ProfileHandler {
 }
 
 func (h *ProfileHandler) GetMyProfile(c *gin.Context) {
+	isGuest := c.GetBool("is_guest")
+	if isGuest {
+		guestID := c.GetString("guest_id")
+		c.JSON(http.StatusOK, dto.MyProfileResponse{
+			Username:    "Guest_" + guestID[:8],
+			DisplayName: nil,
+			Country:     nil,
+			Bio:         nil,
+			AvatarURL:   nil,
+			Rating:      nil,
+			SkillLevel:  nil,
+			NeedsRating: true,
+			JoinedAt:    time.Now(),
+		})
+		return
+	}
+
 	userID := c.GetInt64("user_id")
 	if userID <= 0 {
 		c.JSON(http.StatusUnauthorized, gin.H{
