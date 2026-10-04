@@ -15,15 +15,16 @@ import (
 	"github.com/gin-gonic/gin/binding"
 	"github.com/go-playground/validator/v10"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/database"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/email"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/handler"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/service"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/validation"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/worker"
+	"github.com/here-arjun-1/Caisaara-backend/internal/config"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
 	"github.com/hibiken/asynq"
-	"github.com/joho/godotenv"
 )
 
 func main() {
@@ -33,27 +34,25 @@ func main() {
 	}
 }
 func run() error {
-	if err := godotenv.Load(); err != nil {
-		log.Println("no .env file found, using system environment variables")
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
 	}
-	conn, err := database.ConnectDB()
+
+	conn, err := database.ConnectDB(cfg.DatabaseURL)
 
 	if err != nil {
 		return fmt.Errorf("database connection failed: %w", err)
 	}
 	defer conn.Close()
 
-	redisClient, err := database.ConnectRedis()
+	redisClient, err := database.ConnectRedis(cfg.RedisURL)
 	if err != nil {
 		return fmt.Errorf("redis connection failed: %w", err)
 	}
 	defer func() { _ = redisClient.Close() }()
 
-	redisURL := os.Getenv("REDIS_URL")
-	if redisURL == "" {
-		redisURL = "localhost:6379"
-	}
-	asynqRedisOpt := asynq.RedisClientOpt{Addr: redisURL}
+	asynqRedisOpt := asynq.RedisClientOpt{Addr: cfg.RedisURL}
 
 	taskDistributor := asynq.NewClient(asynqRedisOpt)
 	defer func() { _ = taskDistributor.Close() }()
@@ -69,7 +68,7 @@ func run() error {
 	)
 
 	asynqMux := asynq.NewServeMux()
-	emailProcessor := worker.NewEmailTaskProcessor()
+	emailProcessor := worker.NewEmailTaskProcessor(email.NewSender(cfg.SMTP))
 	asynqMux.HandleFunc(worker.TypeEmailRegistration, emailProcessor.ProcessTaskEmailRegistration)
 	asynqMux.HandleFunc(worker.TypeEmailPasswordReset, emailProcessor.ProcessTaskEmailPasswordReset)
 
@@ -88,6 +87,7 @@ func run() error {
 		sessionRepository,
 		redisClient,
 		taskDistributor,
+		cfg.JWTSecret,
 	)
 
 	registerHandler := handler.NewRegisterHandler(
@@ -96,6 +96,7 @@ func run() error {
 	loginService := service.NewLoginService(
 		userRepository,
 		sessionRepository,
+		cfg.JWTSecret,
 	)
 
 	loginHandler := handler.NewLoginHandler(
@@ -103,6 +104,7 @@ func run() error {
 	)
 	refreshService := service.NewRefreshService(
 		sessionRepository,
+		cfg.JWTSecret,
 	)
 
 	refreshHandler := handler.NewRefreshHandler(
@@ -185,7 +187,7 @@ func run() error {
 
 	protected := r.Group("/api")
 
-	protected.Use(middleware.JWTMiddleware())
+	protected.Use(middleware.JWTMiddleware(cfg.JWTSecret))
 
 	{
 		protected.POST("/rating", ratingLimiter.Limit, ratingHandler.SetRating)
@@ -193,13 +195,8 @@ func run() error {
 
 	playerModule.RegisterRoutes(r, protected)
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8050"
-	}
-
 	srv := &http.Server{
-		Addr:    ":" + port,
+		Addr:    ":" + cfg.Port,
 		Handler: r,
 	}
 
@@ -209,7 +206,7 @@ func run() error {
 		}
 	}()
 
-	log.Printf("server started on port %s", port)
+	log.Printf("server started on port %s", cfg.Port)
 
 	go func() {
 		ticker := time.NewTicker(1 * time.Hour)

@@ -16,15 +16,18 @@ import (
 type LoginService struct {
 	UserRepository    *repository.UserRepository
 	SessionRepository *repository.SessionRepository
+	JWTSecret         string
 }
 
 func NewLoginService(
 	userRepository *repository.UserRepository,
 	sessionRepository *repository.SessionRepository,
+	jwtSecret string,
 ) *LoginService {
 	return &LoginService{
 		UserRepository:    userRepository,
 		SessionRepository: sessionRepository,
+		JWTSecret:         jwtSecret,
 	}
 }
 
@@ -67,7 +70,7 @@ func (h *LoginService) Login(
 		return "", "", "", false, ErrInvalidCredentials
 	}
 
-	accessToken, refreshToken, err := createSessionTokens(ctx, h.SessionRepository, user.ID)
+	accessToken, refreshToken, err := createSessionTokens(ctx, h.SessionRepository, h.JWTSecret, user.ID)
 	if err != nil {
 		return "", "", "", false, err
 	}

@@ -3,17 +3,11 @@ package database
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/redis/go-redis/v9"
 )
 
-func ConnectRedis() (*redis.Client, error) {
-	redisURL := os.Getenv("REDIS_URL")
-	if redisURL == "" {
-		redisURL = "localhost:6379"
-	}
-
+func ConnectRedis(redisURL string) (*redis.Client, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr: redisURL,
 	})

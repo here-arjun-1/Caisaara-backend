@@ -38,6 +38,7 @@ type RegisterService struct {
 	SessionRepository *repository.SessionRepository
 	RedisClient       *redis.Client
 	TaskDistributor   *asynq.Client
+	JWTSecret         string
 }
 
 func NewRegisterService(
@@ -46,6 +47,7 @@ func NewRegisterService(
 	sessionRepository *repository.SessionRepository,
 	redisClient *redis.Client,
 	taskDistributor *asynq.Client,
+	jwtSecret string,
 ) *RegisterService {
 
 	return &RegisterService{
@@ -54,6 +56,7 @@ func NewRegisterService(
 		SessionRepository: sessionRepository,
 		RedisClient:       redisClient,
 		TaskDistributor:   taskDistributor,
+		JWTSecret:         jwtSecret,
 	}
 }
 
@@ -220,7 +223,8 @@ func (s *RegisterService) VerifyRegistration(ctx context.Context, req dto.Verify
 		return "", "", ErrInternal
 	}
 
-	accessToken, refreshToken, err := createSessionTokensTx(ctx, tx, s.SessionRepository, user.ID)
+	accessToken, refreshToken, err := createSessionTokensTx(ctx, tx, s.SessionRepository, s.JWTSecret, user.ID)
+
 	if err != nil {
 		return "", "", err
 	}

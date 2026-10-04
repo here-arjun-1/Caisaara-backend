@@ -15,13 +15,16 @@ import (
 
 type RefreshService struct {
 	SessionRepository *repository.SessionRepository
+	JWTSecret         string
 }
 
 func NewRefreshService(
 	sessionRepository *repository.SessionRepository,
+	jwtSecret string,
 ) *RefreshService {
 	return &RefreshService{
 		SessionRepository: sessionRepository,
+		JWTSecret:         jwtSecret,
 	}
 }
 
@@ -86,6 +89,7 @@ func (h *RefreshService) Refresh(ctx context.Context, req dto.RefreshData) (stri
 	}
 
 	accessToken, err := token.GenerateAccessToken(
+		h.JWTSecret,
 		newSession.UserID,
 	)
 

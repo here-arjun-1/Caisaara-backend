@@ -35,10 +35,12 @@ func NewEmailPasswordResetTask(to, code string) (*asynq.Task, error) {
 	return asynq.NewTask(TypeEmailPasswordReset, payload), nil
 }
 
-type EmailTaskProcessor struct{}
+type EmailTaskProcessor struct {
+	sender *email.Sender
+}
 
-func NewEmailTaskProcessor() *EmailTaskProcessor {
-	return &EmailTaskProcessor{}
+func NewEmailTaskProcessor(sender *email.Sender) *EmailTaskProcessor {
+	return &EmailTaskProcessor{sender: sender}
 }
 
 func (p *EmailTaskProcessor) ProcessTaskEmailRegistration(ctx context.Context, t *asynq.Task) error {
@@ -47,7 +49,7 @@ func (p *EmailTaskProcessor) ProcessTaskEmailRegistration(ctx context.Context, t
 		return fmt.Errorf("json.Unmarshal failed: %v: %w", err, asynq.SkipRetry)
 	}
 
-	err := email.SendRegistrationEmail(pld.To, pld.Code)
+	err := p.sender.SendRegistrationEmail(pld.To, pld.Code)
 	if err != nil {
 		return fmt.Errorf("could not send registration email: %w", err)
 	}
@@ -61,7 +63,7 @@ func (p *EmailTaskProcessor) ProcessTaskEmailPasswordReset(ctx context.Context, 
 		return fmt.Errorf("json.Unmarshal failed: %v: %w", err, asynq.SkipRetry)
 	}
 
-	err := email.SendPasswordResetEmail(pld.To, pld.Code)
+	err := p.sender.SendPasswordResetEmail(pld.To, pld.Code)
 	if err != nil {
 		return fmt.Errorf("could not send password reset email: %w", err)
 	}

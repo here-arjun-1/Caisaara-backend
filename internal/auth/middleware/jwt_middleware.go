@@ -3,7 +3,6 @@ package middleware
 import (
 	"errors"
 	"net/http"
-	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -11,7 +10,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
 )
 
-func JWTMiddleware() gin.HandlerFunc {
+func JWTMiddleware(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 
 		authHeader := c.GetHeader("Authorization")
@@ -29,16 +28,6 @@ func JWTMiddleware() gin.HandlerFunc {
 		if len(parts) != 2 || parts[0] != "Bearer" {
 			c.JSON(http.StatusUnauthorized, gin.H{
 				"error": "invalid authorization header",
-			})
-			c.Abort()
-			return
-		}
-
-		secret := os.Getenv("JWT_SECRET")
-
-		if secret == "" {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "JWT_SECRET is not configured",
 			})
 			c.Abort()
 			return

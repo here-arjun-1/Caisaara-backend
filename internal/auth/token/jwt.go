@@ -1,8 +1,6 @@
 package token
 
 import (
-	"errors"
-	"os"
 	"strconv"
 	"time"
 
@@ -16,13 +14,7 @@ type AccessTokenClaims struct {
 	jwt.RegisteredClaims
 }
 
-func GenerateAccessToken(userID int64) (string, error) {
-	secret := os.Getenv("JWT_SECRET")
-
-	if secret == "" {
-		return "", errors.New("JWT_SECRET is not set")
-	}
-
+func GenerateAccessToken(secret string, userID int64) (string, error) {
 	now := time.Now()
 
 	claims := AccessTokenClaims{
