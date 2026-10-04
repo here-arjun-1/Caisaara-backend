@@ -11,45 +11,36 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gin-gonic/gin"
-	"github.com/gin-gonic/gin/binding"
-	"github.com/go-playground/validator/v10"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/database"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/email"
-	"github.com/here-arjun-1/Caisaara-backend/internal/auth/handler"
-	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
-	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
-	"github.com/here-arjun-1/Caisaara-backend/internal/auth/service"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/validation"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/worker"
 	"github.com/here-arjun-1/Caisaara-backend/internal/config"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
-	"github.com/here-arjun-1/Caisaara-backend/internal/response"
+	"github.com/here-arjun-1/Caisaara-backend/internal/router"
 	"github.com/here-arjun-1/Caisaara-backend/migrations"
 	"github.com/hibiken/asynq"
 )
 
 func main() {
-	err := run()
-	if err != nil {
+	if err := run(); err != nil {
 		slog.Error("fatal error", "error", err)
 		os.Exit(1)
 	}
 }
+
 func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	err = migrations.Run(cfg.DatabaseURL)
-	if err != nil {
+	if err := migrations.Run(cfg.DatabaseURL); err != nil {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 
 	conn, err := database.ConnectDB(cfg.DatabaseURL)
-
 	if err != nil {
 		return fmt.Errorf("database connection failed: %w", err)
 	}
@@ -66,124 +57,20 @@ func run() error {
 	taskDistributor := asynq.NewClient(asynqRedisOpt)
 	defer func() { _ = taskDistributor.Close() }()
 
-	asynqServer := asynq.NewServer(
-		asynqRedisOpt,
-		asynq.Config{
-			Concurrency: 10,
-			RetryDelayFunc: func(n int, e error, t *asynq.Task) time.Duration {
-				return 2 * time.Minute
-			},
-		},
-	)
+	if err := validation.Register(); err != nil {
+		return fmt.Errorf("register validators: %w", err)
+	}
 
-	asynqMux := asynq.NewServeMux()
-	emailProcessor := worker.NewEmailTaskProcessor(email.NewSender(cfg.SMTP))
-	asynqMux.HandleFunc(worker.TypeEmailRegistration, emailProcessor.ProcessTaskEmailRegistration)
-	asynqMux.HandleFunc(worker.TypeEmailPasswordReset, emailProcessor.ProcessTaskEmailPasswordReset)
-
-	go func() {
-		if err := asynqServer.Run(asynqMux); err != nil {
-			slog.Error("could not run asynq server", "error", err)
-			os.Exit(1)
-		}
-	}()
-
-	userRepository := repository.NewUserRepository(conn)
-	sessionRepository := repository.NewSessionRepository(conn)
-
-	registerService := service.NewRegisterService(
-		conn,
-		userRepository,
-		sessionRepository,
-		redisClient,
-		taskDistributor,
-		cfg.JWTSecret,
-	)
-
-	registerHandler := handler.NewRegisterHandler(
-		registerService,
-	)
-	loginService := service.NewLoginService(
-		userRepository,
-		sessionRepository,
-		cfg.JWTSecret,
-	)
-
-	loginHandler := handler.NewLoginHandler(
-		loginService,
-	)
-	refreshService := service.NewRefreshService(
-		sessionRepository,
-		userRepository,
-		cfg.JWTSecret,
-	)
-
-	refreshHandler := handler.NewRefreshHandler(
-		refreshService,
-	)
-
-	logoutService := service.NewLogoutService(
-		sessionRepository,
-	)
-
-	logoutHandler := handler.NewLogoutHandler(
-		logoutService,
-	)
-
-	passwordResetRepository := repository.NewPasswordResetRepository(conn)
-	passwordResetService := service.NewPasswordResetService(
-		userRepository,
-		passwordResetRepository,
-		sessionRepository,
-		redisClient,
-		taskDistributor,
-	)
-	passwordResetHandler := handler.NewPasswordResetHandler(
-		passwordResetService,
-	)
-
-	ratingService := service.NewRatingService(userRepository)
-	ratingHandler := handler.NewRatingHandler(ratingService)
-
+	authModule := auth.NewModule(conn, redisClient, taskDistributor, cfg.JWTSecret)
 	playerModule := player.NewModule(conn)
 
-	v, ok := binding.Validator.Engine().(*validator.Validate)
-	if !ok {
-		return errors.New("failed to get validator engine")
-	}
-	if err := v.RegisterValidation("username", validation.Username); err != nil {
-		return fmt.Errorf("register username validator: %w", err)
-	}
-	if err := v.RegisterValidation("otp", validation.OTP); err != nil {
-		return fmt.Errorf("register otp validator: %w", err)
-	}
-	if err := v.RegisterValidation("password", validation.Password); err != nil {
-		return fmt.Errorf("register password validator: %w", err)
+	r, err := router.New(cfg.JWTSecret, authModule, playerModule)
+	if err != nil {
+		return fmt.Errorf("setup router: %w", err)
 	}
 
-	r := gin.Default()
-
-	if err := r.SetTrustedProxies([]string{"127.0.0.1", "::1"}); err != nil {
-		return fmt.Errorf("set trusted proxies: %w", err)
-	}
-
-	r.GET("/health", func(c *gin.Context) {
-		response.Success(c, http.StatusOK, "ok", nil)
-	})
-
-	protected := r.Group("/api")
-	protected.Use(middleware.JWTMiddleware(cfg.JWTSecret, userRepository))
-
-	auth.RegisterRoutes(r, protected, auth.Handlers{
-		Register:      registerHandler,
-		Login:         loginHandler,
-		Refresh:       refreshHandler,
-		Logout:        logoutHandler,
-		PasswordReset: passwordResetHandler,
-		Rating:        ratingHandler,
-	})
-
-	playerModule.RegisterRoutes(r, protected)
+	worker.StartEmailServer(asynqRedisOpt, email.NewSender(cfg.SMTP))
+	worker.StartSessionCleanup(authModule.SessionRepository)
 
 	srv := &http.Server{
 		Addr:    ":" + cfg.Port,
@@ -198,19 +85,6 @@ func run() error {
 	}()
 
 	slog.Info("server started", "port", cfg.Port)
-
-	go func() {
-		ticker := time.NewTicker(1 * time.Hour)
-		defer ticker.Stop()
-		for range ticker.C {
-			deleted, err := sessionRepository.CleanExpiredSessions(context.Background())
-			if err != nil {
-				slog.Error("failed to clean expired sessions", "error", err)
-			} else if deleted > 0 {
-				slog.Info("cleaned up expired sessions", "count", deleted)
-			}
-		}
-	}()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
