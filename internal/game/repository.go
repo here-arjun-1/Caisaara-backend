@@ -10,7 +10,7 @@ import (
 )
 
 type GameRepository interface {
-	CreateGame(ctx context.Context, whitePlayerID int64, blackPlayerID int64, timeControlMinutes int) (string, error)
+	CreateGame(ctx context.Context, whitePlayerID int64, blackPlayerID int64, timeControlMinutes int, rated bool) (string, error)
 	FindGameByID(ctx context.Context, gameID string) (*Game, error)
 	UpdateGameState(ctx context.Context, gameID string, position string, status string, result string) error
 	AddMove(ctx context.Context, move *GameMove) error
@@ -32,6 +32,7 @@ func (r *Repository) CreateGame(
 	whitePlayerID int64,
 	blackPlayerID int64,
 	timeControlMinutes int,
+	rated bool,
 ) (string, error) {
 	gameID := uuid.New()
 
@@ -42,15 +43,17 @@ func (r *Repository) CreateGame(
 			white_player_id,
 			black_player_id,
 			time_control_minutes,
+			rated,
 			position,
 			status,
 			started_at
 		)
-		VALUES ($1, $2, $3, $4, $5, 'active', NOW())`,
+		VALUES ($1, $2, $3, $4, $5, $6, 'active', NOW())`,
 		gameID,
 		whitePlayerID,
 		blackPlayerID,
 		timeControlMinutes,
+		rated,
 		NewChessGame().FEN(),
 	)
 
@@ -75,6 +78,7 @@ func (r *Repository) FindGameByID(
 			white_player_id,
 			black_player_id,
 			time_control_minutes,
+			rated,
 			position,
 			status,
 			COALESCE(result, ''),
@@ -89,6 +93,7 @@ func (r *Repository) FindGameByID(
 		&g.WhitePlayerID,
 		&g.BlackPlayerID,
 		&g.TimeControlMinutes,
+		&g.Rated,
 		&g.Position,
 		&g.Status,
 		&g.Result,
