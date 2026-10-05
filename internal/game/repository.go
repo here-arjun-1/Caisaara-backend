@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -12,7 +13,7 @@ import (
 type GameRepository interface {
 	CreateGame(ctx context.Context, whitePlayerID int64, blackPlayerID int64, timeControlMinutes int, rated bool) (string, error)
 	FindGameByID(ctx context.Context, gameID string) (*Game, error)
-	UpdateGameState(ctx context.Context, gameID string, position string, status string, result string, currentTurn string) error
+	UpdateGameState(ctx context.Context, gameID string, position string, status string, result string, currentTurn string, whiteTimeMs int64, blackTimeMs int64, turnStartedAt *time.Time) error
 	AddMove(ctx context.Context, move *GameMove) error
 	GetMoves(ctx context.Context, gameID string) ([]GameMove, error)
 }
@@ -145,6 +146,9 @@ func (r *Repository) UpdateGameState(
 	status string,
 	result string,
 	currentTurn string,
+	whiteTimeMs int64,
+	blackTimeMs int64,
+	turnStartedAt *time.Time,
 ) error {
 	_, err := r.DB.Exec(
 		ctx,
@@ -153,15 +157,21 @@ func (r *Repository) UpdateGameState(
 			status = $2,
 			result = $3,
 			current_turn = $4,
+			white_time_ms = $5,
+			black_time_ms = $6,
+			turn_started_at = $7,
 			ended_at = CASE
 				WHEN $2 = 'finished' THEN NOW()
 				ELSE ended_at
 			END
-		WHERE id = $5`,
+		WHERE id = $8`,
 		position,
 		status,
 		result,
 		currentTurn,
+		whiteTimeMs,
+		blackTimeMs,
+		turnStartedAt,
 		gameID,
 	)
 
