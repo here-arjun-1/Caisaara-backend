@@ -1,0 +1,7 @@
+DROP TABLE IF EXISTS game_moves;
+
+ALTER TABLE games
+DROP COLUMN IF EXISTS result;
+
+ALTER TABLE games
+DROP COLUMN IF EXISTS position;
