@@ -155,11 +155,15 @@ func (h *Handler) readPump(
 		}
 
 		response := game.GameStateMessage{
-			Type:     "game_state",
-			GameID:   currentGame.ID,
-			Position: currentGame.Position,
-			Status:   currentGame.Status,
-			Result:   currentGame.Result,
+			Type:          "game_state",
+			GameID:        currentGame.ID,
+			Position:      currentGame.Position,
+			Status:        currentGame.Status,
+			Result:        currentGame.Result,
+			WhiteTimeMs:   currentGame.WhiteTimeMs,
+			BlackTimeMs:   currentGame.BlackTimeMs,
+			CurrentTurn:   currentGame.CurrentTurn,
+			TurnStartedAt: currentGame.TurnStartedAt,
 		}
 
 		data, err := json.Marshal(response)
