@@ -10,6 +10,7 @@ import (
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/player/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player/model"
+	"github.com/here-arjun-1/Caisaara-backend/internal/rating/glicko2"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -61,6 +62,7 @@ func (h *ProfileService) GetPublicProfile(ctx context.Context, username string) 
 		Bio:         p.Bio,
 		AvatarURL:   p.AvatarURL,
 		Rating:      p.Rating,
+		Provisional: glicko2.IsProvisional(p.RatingDeviation),
 		JoinedAt:    p.CreatedAt,
 	}, nil
 }
@@ -124,6 +126,7 @@ func toMyProfileResponse(p *model.Profile) *dto.MyProfileResponse {
 		Bio:         p.Bio,
 		AvatarURL:   p.AvatarURL,
 		Rating:      p.Rating,
+		Provisional: glicko2.IsProvisional(p.RatingDeviation),
 		SkillLevel:  p.SkillLevel,
 		NeedsRating: p.SkillLevel == nil,
 		JoinedAt:    p.CreatedAt,

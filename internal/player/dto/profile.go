@@ -10,6 +10,7 @@ type MyProfileResponse struct {
 	Bio         *string   `json:"bio"`
 	AvatarURL   *string   `json:"avatar_url"`
 	Rating      *int      `json:"rating"`
+	Provisional bool      `json:"provisional"`
 	SkillLevel  *string   `json:"skill_level"`
 	NeedsRating bool      `json:"needs_rating"`
 	JoinedAt    time.Time `json:"joined_at"`
@@ -29,5 +30,6 @@ type PublicProfileResponse struct {
 	Bio         *string   `json:"bio"`
 	AvatarURL   *string   `json:"avatar_url"`
 	Rating      *int      `json:"rating"`
+	Provisional bool      `json:"provisional"`
 	JoinedAt    time.Time `json:"joined_at"`
 }
