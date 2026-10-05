@@ -1,31 +1,31 @@
 package invitation
 
 import (
+	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 )
 
-type Handler struct {
-	Service *Service
-}
-
-func NewHandler(service *Service) *Handler {
-	return &Handler{
-		Service: service,
-	}
-}
-
 type CreateInviteRequest struct {
 	TimeControlMinutes int    `json:"time_control_minutes" binding:"required"`
 	Color              string `json:"color" binding:"required"`
 }
 
+type Handler struct {
+	Service InvitationService
+}
+
+func NewHandler(service InvitationService) *Handler {
+	return &Handler{
+		Service: service,
+	}
+}
+
 func (h *Handler) Create(c *gin.Context) {
-
 	userIDValue, exists := c.Get("user_id")
-
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "user not authenticated",
@@ -34,7 +34,6 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 
 	userID, ok := userIDValue.(int64)
-
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "invalid user id",
@@ -43,20 +42,35 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 
 	var req CreateInviteRequest
-
 	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid request body",
+		})
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	invite, err := h.Service.CreateInvite(
+		ctx,
+		userID,
+		req.TimeControlMinutes,
+		strings.ToLower(req.Color),
+	)
+
+	if errors.Is(err, ErrInternal) {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	if errors.Is(err, ErrInvalidTimeControl) || errors.Is(err, ErrInvalidColor) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
 		return
 	}
-
-	invite, err := h.Service.CreateInvite(
-		c.Request.Context(),
-		userID,
-		req.TimeControlMinutes,
-		strings.ToLower(req.Color),
-	)
 
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -73,15 +87,12 @@ func (h *Handler) Create(c *gin.Context) {
 		"status":               "waiting",
 	})
 }
+
 func (h *Handler) Preview(c *gin.Context) {
-
 	code := c.Param("code")
+	ctx := c.Request.Context()
 
-	invite, err := h.Service.GetInvite(
-		c.Request.Context(),
-		code,
-	)
-
+	invite, err := h.Service.GetInvite(ctx, code)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "invite not found or expired",
@@ -89,11 +100,9 @@ func (h *Handler) Preview(c *gin.Context) {
 		return
 	}
 
-	user, err := h.Service.UserRepository.FindUserByID(
-		invite.CreatorID,
-	)
-
+	user, err := h.Service.FindInviteCreator(ctx, invite.CreatorID)
 	if err != nil {
+		slog.ErrorContext(ctx, "find invite creator failed", "error", err)
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "inviter not found",
 		})
@@ -112,9 +121,7 @@ func (h *Handler) Preview(c *gin.Context) {
 }
 
 func (h *Handler) Join(c *gin.Context) {
-
 	userIDValue, exists := c.Get("user_id")
-
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "user not authenticated",
@@ -123,7 +130,6 @@ func (h *Handler) Join(c *gin.Context) {
 	}
 
 	userID, ok := userIDValue.(int64)
-
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "invalid user id",
@@ -132,12 +138,30 @@ func (h *Handler) Join(c *gin.Context) {
 	}
 
 	code := c.Param("code")
+	ctx := c.Request.Context()
 
-	gameID, err := h.Service.JoinInvite(
-		c.Request.Context(),
-		code,
-		userID,
-	)
+	gameID, err := h.Service.JoinInvite(ctx, code, userID)
+
+	if errors.Is(err, ErrInternal) {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	if errors.Is(err, ErrInviteNotFound) || errors.Is(err, ErrInviteUsed) {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if errors.Is(err, ErrSelfJoin) || errors.Is(err, ErrAlreadyJoining) {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
 
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
