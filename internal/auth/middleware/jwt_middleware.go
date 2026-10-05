@@ -95,3 +95,46 @@ func RequireRegisteredUser() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+func OptionalJWTMiddleware(secret string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var tokenString string
+
+		authHeader := c.GetHeader("Authorization")
+		if authHeader != "" {
+			parts := strings.Fields(authHeader)
+			if len(parts) == 2 && parts[0] == "Bearer" {
+				tokenString = parts[1]
+			}
+		}
+
+		if tokenString == "" {
+			if cookieToken, err := c.Cookie("access_token"); err == nil && cookieToken != "" {
+				tokenString = cookieToken
+			}
+		}
+
+		if tokenString == "" {
+			c.Next()
+			return
+		}
+
+		claims := &token.AccessTokenClaims{}
+		jwtToken, err := jwt.ParseWithClaims(
+			tokenString,
+			claims,
+			func(t *jwt.Token) (interface{}, error) {
+				if t.Method != jwt.SigningMethodHS256 {
+					return nil, errors.New("unexpected signing method")
+				}
+				return []byte(secret), nil
+			},
+		)
+
+		if err == nil && jwtToken.Valid && !claims.IsGuest && claims.UserID > 0 {
+			c.Set("user_id", claims.UserID)
+		}
+
+		c.Next()
+	}
+}
