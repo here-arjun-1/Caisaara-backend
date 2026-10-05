@@ -56,6 +56,64 @@ func (s *Service) MakeMove(
 		return nil, errors.New("not your turn")
 	}
 
+	now := time.Now()
+	var turnStartedAt time.Time
+	if currentGame.TurnStartedAt != nil {
+		turnStartedAt = *currentGame.TurnStartedAt
+	} else if currentGame.StartedAt != nil {
+		turnStartedAt = *currentGame.StartedAt
+	} else {
+		turnStartedAt = now
+	}
+
+	elapsedMs := now.Sub(turnStartedAt).Milliseconds()
+	if elapsedMs < 0 {
+		elapsedMs = 0
+	}
+
+	isWhiteTurn := currentGame.CurrentTurn == "w" || currentGame.CurrentTurn == "White"
+	status := StatusActive
+	result := ""
+
+	if isWhiteTurn {
+		currentGame.WhiteTimeMs = currentGame.WhiteTimeMs - elapsedMs + currentGame.IncrementMs
+		if currentGame.WhiteTimeMs <= 0 {
+			currentGame.WhiteTimeMs = 0
+			status = StatusFinished
+			result = ResultBlackWin
+		}
+	} else {
+		currentGame.BlackTimeMs = currentGame.BlackTimeMs - elapsedMs + currentGame.IncrementMs
+		if currentGame.BlackTimeMs <= 0 {
+			currentGame.BlackTimeMs = 0
+			status = StatusFinished
+			result = ResultWhiteWin
+		}
+	}
+
+	if status == StatusFinished {
+		err = s.Repository.UpdateGameState(
+			ctx,
+			gameID,
+			currentGame.Position,
+			status,
+			result,
+			currentGame.CurrentTurn,
+			currentGame.WhiteTimeMs,
+			currentGame.BlackTimeMs,
+			&now,
+		)
+		if err != nil {
+			slog.ErrorContext(ctx, "update game state on time expiry failed", "game_id", gameID, "error", err)
+			return nil, err
+		}
+
+		currentGame.Status = status
+		currentGame.Result = result
+		currentGame.TurnStartedAt = &now
+		return currentGame, nil
+	}
+
 	if err := chessGame.MakeMove(move); err != nil {
 		slog.WarnContext(ctx, "invalid move execution", "game_id", gameID, "player_id", playerID, "move", move, "error", err)
 		return nil, errors.New("invalid move")
@@ -69,15 +127,13 @@ func (s *Service) MakeMove(
 	moveNumber := len(existingMoves) + 1
 
 	position := chessGame.FEN()
-	status := StatusActive
-	result := ""
 
 	if chessGame.IsFinished() {
 		status = StatusFinished
 		result = getGameResult(chessGame)
 	}
 
-	currentTurn := chessGame.Turn()
+	nextTurn := chessGame.Turn()
 
 	err = s.Repository.UpdateGameState(
 		ctx,
@@ -85,7 +141,10 @@ func (s *Service) MakeMove(
 		position,
 		status,
 		result,
-		currentTurn,
+		nextTurn,
+		currentGame.WhiteTimeMs,
+		currentGame.BlackTimeMs,
+		&now,
 	)
 	if err != nil {
 		slog.ErrorContext(ctx, "update game state failed in make move", "game_id", gameID, "error", err)
@@ -99,7 +158,7 @@ func (s *Service) MakeMove(
 		move,
 		position,
 	)
-	gameMove.CreatedAt = time.Now()
+	gameMove.CreatedAt = now
 
 	err = s.Repository.AddMove(ctx, gameMove)
 	if err != nil {
@@ -110,7 +169,8 @@ func (s *Service) MakeMove(
 	currentGame.Position = position
 	currentGame.Status = status
 	currentGame.Result = result
-	currentGame.CurrentTurn = currentTurn
+	currentGame.CurrentTurn = nextTurn
+	currentGame.TurnStartedAt = &now
 
 	slog.InfoContext(ctx, "move completed successfully", "game_id", gameID, "player_id", playerID, "move", move, "status", status)
 
