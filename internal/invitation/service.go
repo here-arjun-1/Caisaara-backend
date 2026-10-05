@@ -4,44 +4,50 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
-	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
-	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
 	"github.com/redis/go-redis/v9"
 )
 
+type UserFinder interface {
+	FindUserByID(id int64) (*model.User, error)
+}
+
+type InvitationService interface {
+	CreateInvite(ctx context.Context, userID int64, timeControlMinutes int, color string) (*Invite, error)
+	GetInvite(ctx context.Context, code string) (*Invite, error)
+	JoinInvite(ctx context.Context, code string, player2ID int64) (string, error)
+	FindInviteCreator(ctx context.Context, creatorID int64) (*model.User, error)
+}
+
 type Service struct {
-	Redis          *redis.Client
-	GameRepository *game.Repository
-	UserRepository *repository.UserRepository
+	InviteRepo     InviteRepository
+	GameRepository game.GameRepository
+	UserFinder     UserFinder
 }
 
 func NewService(
-	redisClient *redis.Client,
-	gameRepository *game.Repository,
-	userRepository *repository.UserRepository,
+	inviteRepo InviteRepository,
+	gameRepository game.GameRepository,
+	userFinder UserFinder,
 ) *Service {
-
 	return &Service{
-		Redis:          redisClient,
+		InviteRepo:     inviteRepo,
 		GameRepository: gameRepository,
-		UserRepository: userRepository,
+		UserFinder:     userFinder,
 	}
 }
 
 func generateInviteCode() (string, error) {
-
 	b := make([]byte, 4)
-
 	_, err := rand.Read(b)
 	if err != nil {
 		return "", err
 	}
-
 	return hex.EncodeToString(b), nil
 }
 
@@ -53,19 +59,17 @@ func (s *Service) CreateInvite(
 ) (*Invite, error) {
 
 	if timeControlMinutes <= 0 {
-		return nil, errors.New("invalid time control")
+		return nil, ErrInvalidTimeControl
 	}
 
-	if color != "white" &&
-		color != "black" &&
-		color != "random" {
-
-		return nil, errors.New("invalid color")
+	if color != "white" && color != "black" && color != "random" {
+		return nil, ErrInvalidColor
 	}
 
 	code, err := generateInviteCode()
 	if err != nil {
-		return nil, err
+		slog.ErrorContext(ctx, "generate invite code failed", "error", err)
+		return nil, ErrInternal
 	}
 
 	invite := &Invite{
@@ -75,25 +79,10 @@ func (s *Service) CreateInvite(
 		Color:              color,
 	}
 
-	data, err := json.Marshal(invite)
+	err = s.InviteRepo.SaveInvite(ctx, invite, 30*time.Minute)
 	if err != nil {
-		return nil, err
-	}
-
-	key := "invite:" + code
-
-	err = s.Redis.Set(
-		ctx,
-		key,
-		data,
-		30*time.Minute,
-	).Err()
-
-	if err != nil {
-		return nil, fmt.Errorf(
-			"failed to store invite: %w",
-			err,
-		)
+		slog.ErrorContext(ctx, "save invite failed", "error", err)
+		return nil, fmt.Errorf("failed to store invite: %w", err)
 	}
 
 	return invite, nil
@@ -104,32 +93,25 @@ func (s *Service) GetInvite(
 	code string,
 ) (*Invite, error) {
 
-	key := "invite:" + code
-
-	data, err := s.Redis.Get(
-		ctx,
-		key,
-	).Bytes()
-
+	invite, err := s.InviteRepo.GetInvite(ctx, code)
 	if err != nil {
-
-		if errors.Is(err, redis.Nil) {
-			return nil, errors.New(
-				"invite not found or expired",
-			)
+		if err == redis.Nil {
+			return nil, ErrInviteNotFound
 		}
-
-		return nil, err
+		slog.ErrorContext(ctx, "get invite failed", "error", err)
+		return nil, ErrInternal
 	}
 
-	var invite Invite
+	return invite, nil
+}
 
-	err = json.Unmarshal(data, &invite)
+func (s *Service) FindInviteCreator(ctx context.Context, creatorID int64) (*model.User, error) {
+	user, err := s.UserFinder.FindUserByID(creatorID)
 	if err != nil {
+		slog.ErrorContext(ctx, "find invite creator failed", "error", err, "creator_id", creatorID)
 		return nil, err
 	}
-
-	return &invite, nil
+	return user, nil
 }
 
 func (s *Service) JoinInvite(
@@ -138,103 +120,61 @@ func (s *Service) JoinInvite(
 	player2ID int64,
 ) (string, error) {
 
-	key := "invite:" + code
-
-	data, err := s.Redis.Get(
-		ctx,
-		key,
-	).Bytes()
-
+	invite, err := s.InviteRepo.GetInvite(ctx, code)
 	if err != nil {
-
-		if errors.Is(err, redis.Nil) {
-			return "", errors.New(
-				"invite not found or expired",
-			)
+		if err == redis.Nil {
+			return "", ErrInviteNotFound
 		}
-
-		return "", err
-	}
-
-	var invite Invite
-
-	err = json.Unmarshal(data, &invite)
-	if err != nil {
-		return "", err
+		slog.ErrorContext(ctx, "get invite for join failed", "error", err)
+		return "", ErrInternal
 	}
 
 	if invite.CreatorID == player2ID {
-		return "", errors.New(
-			"you cannot join your own game",
-		)
+		return "", ErrSelfJoin
 	}
 
-	lockKey := "invite:lock:" + code
-
-	locked, err := s.Redis.SetNX(
-		ctx,
-		lockKey,
-		player2ID,
-		10*time.Second,
-	).Result()
-
+	locked, err := s.InviteRepo.AcquireLock(ctx, code, player2ID, 10*time.Second)
 	if err != nil {
-		return "", err
+		slog.ErrorContext(ctx, "acquire invite lock failed", "error", err)
+		return "", ErrInternal
 	}
 
 	if !locked {
-		return "", errors.New(
-			"someone is already joining this game",
-		)
+		return "", ErrAlreadyJoining
 	}
 
-	defer s.Redis.Del(ctx, lockKey)
-
-	data, err = s.Redis.Get(
-		ctx,
-		key,
-	).Bytes()
-
-	if err != nil {
-
-		if errors.Is(err, redis.Nil) {
-			return "", errors.New(
-				"invite already used or expired",
-			)
+	defer func() {
+		if releaseErr := s.InviteRepo.ReleaseLock(ctx, code); releaseErr != nil {
+			slog.ErrorContext(ctx, "release invite lock failed", "error", releaseErr)
 		}
+	}()
 
-		return "", err
-	}
-
-	err = json.Unmarshal(data, &invite)
+	invite, err = s.InviteRepo.GetInvite(ctx, code)
 	if err != nil {
-		return "", err
+		if err == redis.Nil {
+			return "", ErrInviteUsed
+		}
+		slog.ErrorContext(ctx, "re-fetch invite failed", "error", err)
+		return "", ErrInternal
 	}
 
 	var whitePlayerID int64
 	var blackPlayerID int64
 
 	switch invite.Color {
-
 	case "white":
-
 		whitePlayerID = invite.CreatorID
 		blackPlayerID = player2ID
-
 	case "black":
-
 		blackPlayerID = invite.CreatorID
 		whitePlayerID = player2ID
-
 	case "random":
-
 		random := make([]byte, 1)
-
 		_, err := rand.Read(random)
 		if err != nil {
-			return "", err
+			slog.ErrorContext(ctx, "generate random color failed", "error", err)
+			return "", ErrInternal
 		}
-
 		if random[0]%2 == 0 {
 			whitePlayerID = invite.CreatorID
 			blackPlayerID = player2ID
@@ -252,23 +192,21 @@ func (s *Service) JoinInvite(
 	)
 
 	if err != nil {
-		return "", fmt.Errorf(
-			"failed to create game: %w",
-			err,
-		)
+		slog.ErrorContext(ctx, "create game from invite failed", "error", err)
+		return "", fmt.Errorf("failed to create game: %w", err)
 	}
 
-	err = s.Redis.Del(
-		ctx,
-		key,
-	).Err()
-
+	err = s.InviteRepo.DeleteInvite(ctx, code)
 	if err != nil {
-		return "", fmt.Errorf(
-			"game created but failed to remove invite: %w",
-			err,
-		)
+		slog.ErrorContext(ctx, "delete invite after join failed", "error", err)
+		return "", fmt.Errorf("game created but failed to remove invite: %w", err)
 	}
+
+	slog.InfoContext(ctx, "invite joined successfully",
+		"code", code,
+		"game_id", gameID,
+		"player2_id", player2ID,
+	)
 
 	return gameID, nil
 }
