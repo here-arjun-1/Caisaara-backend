@@ -55,6 +55,8 @@ type GameStateMessage struct {
 	Position      string     `json:"position"`
 	Status        string     `json:"status"`
 	Result        string     `json:"result,omitempty"`
+	InitialTimeMs int64      `json:"initial_time_ms"`
+	IncrementMs   int64      `json:"increment_ms"`
 	WhiteTimeMs   int64      `json:"white_time_ms"`
 	BlackTimeMs   int64      `json:"black_time_ms"`
 	CurrentTurn   string     `json:"current_turn"`

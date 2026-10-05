@@ -80,7 +80,7 @@ func (h *Handler) Connect(c *gin.Context) {
 	room.AddClient(client)
 
 	if room.Count() == 2 {
-		sendGameStart(ctx, room)
+		h.sendGameStart(ctx, room)
 	}
 
 	go h.writePump(ctx, client)
@@ -160,6 +160,8 @@ func (h *Handler) readPump(
 			Position:      currentGame.Position,
 			Status:        currentGame.Status,
 			Result:        currentGame.Result,
+			InitialTimeMs: currentGame.InitialTimeMs,
+			IncrementMs:   currentGame.IncrementMs,
 			WhiteTimeMs:   currentGame.WhiteTimeMs,
 			BlackTimeMs:   currentGame.BlackTimeMs,
 			CurrentTurn:   currentGame.CurrentTurn,
@@ -177,13 +179,28 @@ func (h *Handler) readPump(
 	}
 }
 
-func sendGameStart(ctx context.Context, room *Room) {
-	message := map[string]string{
-		"type":    "game_start",
-		"game_id": room.GameID,
+func (h *Handler) sendGameStart(ctx context.Context, room *Room) {
+	g, err := h.GameService.GetGame(ctx, room.GameID)
+	if err != nil {
+		slog.ErrorContext(ctx, "get game failed for game_start", "game_id", room.GameID, "error", err)
+		return
 	}
 
-	data, err := json.Marshal(message)
+	response := game.GameStateMessage{
+		Type:          "game_start",
+		GameID:        g.ID,
+		Position:      g.Position,
+		Status:        g.Status,
+		Result:        g.Result,
+		InitialTimeMs: g.InitialTimeMs,
+		IncrementMs:   g.IncrementMs,
+		WhiteTimeMs:   g.WhiteTimeMs,
+		BlackTimeMs:   g.BlackTimeMs,
+		CurrentTurn:   g.CurrentTurn,
+		TurnStartedAt: g.TurnStartedAt,
+	}
+
+	data, err := json.Marshal(response)
 	if err != nil {
 		slog.ErrorContext(
 			ctx,

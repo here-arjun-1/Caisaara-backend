@@ -76,14 +76,14 @@ func (s *Service) MakeMove(
 	result := ""
 
 	if isWhiteTurn {
-		currentGame.WhiteTimeMs = currentGame.WhiteTimeMs - elapsedMs + currentGame.IncrementMs
+		currentGame.WhiteTimeMs = currentGame.WhiteTimeMs - elapsedMs
 		if currentGame.WhiteTimeMs <= 0 {
 			currentGame.WhiteTimeMs = 0
 			status = StatusFinished
 			result = ResultBlackWin
 		}
 	} else {
-		currentGame.BlackTimeMs = currentGame.BlackTimeMs - elapsedMs + currentGame.IncrementMs
+		currentGame.BlackTimeMs = currentGame.BlackTimeMs - elapsedMs
 		if currentGame.BlackTimeMs <= 0 {
 			currentGame.BlackTimeMs = 0
 			status = StatusFinished
@@ -117,6 +117,12 @@ func (s *Service) MakeMove(
 	if err := chessGame.MakeMove(move); err != nil {
 		slog.WarnContext(ctx, "invalid move execution", "game_id", gameID, "player_id", playerID, "move", move, "error", err)
 		return nil, errors.New("invalid move")
+	}
+
+	if isWhiteTurn {
+		currentGame.WhiteTimeMs += currentGame.IncrementMs
+	} else {
+		currentGame.BlackTimeMs += currentGame.IncrementMs
 	}
 
 	existingMoves, err := s.Repository.GetMoves(ctx, gameID)
