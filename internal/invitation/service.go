@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -95,7 +96,7 @@ func (s *Service) GetInvite(
 
 	invite, err := s.InviteRepo.GetInvite(ctx, code)
 	if err != nil {
-		if err == redis.Nil {
+		if errors.Is(err, redis.Nil) {
 			return nil, ErrInviteNotFound
 		}
 		slog.ErrorContext(ctx, "get invite failed", "error", err)
@@ -122,7 +123,7 @@ func (s *Service) JoinInvite(
 
 	invite, err := s.InviteRepo.GetInvite(ctx, code)
 	if err != nil {
-		if err == redis.Nil {
+		if errors.Is(err, redis.Nil) {
 			return "", ErrInviteNotFound
 		}
 		slog.ErrorContext(ctx, "get invite for join failed", "error", err)
@@ -151,7 +152,7 @@ func (s *Service) JoinInvite(
 
 	invite, err = s.InviteRepo.GetInvite(ctx, code)
 	if err != nil {
-		if err == redis.Nil {
+		if errors.Is(err, redis.Nil) {
 			return "", ErrInviteUsed
 		}
 		slog.ErrorContext(ctx, "re-fetch invite failed", "error", err)
