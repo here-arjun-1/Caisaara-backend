@@ -11,6 +11,9 @@ import (
 type GameRepository interface {
 	CreateGame(ctx context.Context, whitePlayerID int64, blackPlayerID int64, timeControlMinutes int) (string, error)
 	FindGameByID(ctx context.Context, gameID string) (*Game, error)
+	UpdateGameState(ctx context.Context, gameID string, position string, status string, result string) error
+	AddMove(ctx context.Context, move *GameMove) error
+	GetMoves(ctx context.Context, gameID string) ([]GameMove, error)
 }
 
 type Repository struct {
@@ -29,7 +32,6 @@ func (r *Repository) CreateGame(
 	blackPlayerID int64,
 	timeControlMinutes int,
 ) (string, error) {
-
 	gameID := uuid.New()
 
 	_, err := r.DB.Exec(
@@ -39,14 +41,16 @@ func (r *Repository) CreateGame(
 			white_player_id,
 			black_player_id,
 			time_control_minutes,
+			position,
 			status,
 			started_at
 		)
-		VALUES ($1, $2, $3, $4, 'active', NOW())`,
+		VALUES ($1, $2, $3, $4, $5, 'active', NOW())`,
 		gameID,
 		whitePlayerID,
 		blackPlayerID,
 		timeControlMinutes,
+		NewChessGame().FEN(),
 	)
 
 	if err != nil {
@@ -57,8 +61,12 @@ func (r *Repository) CreateGame(
 	return gameID.String(), nil
 }
 
-func (r *Repository) FindGameByID(ctx context.Context, gameID string) (*Game, error) {
+func (r *Repository) FindGameByID(
+	ctx context.Context,
+	gameID string,
+) (*Game, error) {
 	var g Game
+
 	err := r.DB.QueryRow(
 		ctx,
 		`SELECT
@@ -66,7 +74,9 @@ func (r *Repository) FindGameByID(ctx context.Context, gameID string) (*Game, er
 			white_player_id,
 			black_player_id,
 			time_control_minutes,
+			position,
 			status,
+			result,
 			created_at,
 			started_at,
 			ended_at
@@ -78,7 +88,9 @@ func (r *Repository) FindGameByID(ctx context.Context, gameID string) (*Game, er
 		&g.WhitePlayerID,
 		&g.BlackPlayerID,
 		&g.TimeControlMinutes,
+		&g.Position,
 		&g.Status,
+		&g.Result,
 		&g.CreatedAt,
 		&g.StartedAt,
 		&g.EndedAt,
@@ -89,4 +101,131 @@ func (r *Repository) FindGameByID(ctx context.Context, gameID string) (*Game, er
 	}
 
 	return &g, nil
+}
+
+func (r *Repository) UpdateGameState(
+	ctx context.Context,
+	gameID string,
+	position string,
+	status string,
+	result string,
+) error {
+	_, err := r.DB.Exec(
+		ctx,
+		`UPDATE games
+		SET position = $1,
+			status = $2,
+			result = $3,
+			ended_at = CASE
+				WHEN $2 = 'finished' THEN NOW()
+				ELSE ended_at
+			END
+		WHERE id = $4`,
+		position,
+		status,
+		result,
+		gameID,
+	)
+
+	return err
+}
+
+func (r *Repository) AddMove(
+	ctx context.Context,
+	move *GameMove,
+) error {
+	_, err := r.DB.Exec(
+		ctx,
+		`INSERT INTO game_moves (
+			id,
+			game_id,
+			move_number,
+			player_id,
+			move,
+			position_after,
+			created_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		move.ID,
+		move.GameID,
+		move.MoveNumber,
+		move.PlayerID,
+		move.Move,
+		move.PositionAfter,
+		move.CreatedAt,
+	)
+
+	return err
+}
+
+func (r *Repository) GetMoves(
+	ctx context.Context,
+	gameID string,
+) ([]GameMove, error) {
+	rows, err := r.DB.Query(
+		ctx,
+		`SELECT
+			id,
+			game_id,
+			move_number,
+			player_id,
+			move,
+			position_after,
+			created_at
+		FROM game_moves
+		WHERE game_id = $1
+		ORDER BY move_number ASC`,
+		gameID,
+	)
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	var moves []GameMove
+
+	for rows.Next() {
+		var move GameMove
+
+		err := rows.Scan(
+			&move.ID,
+			&move.GameID,
+			&move.MoveNumber,
+			&move.PlayerID,
+			&move.Move,
+			&move.PositionAfter,
+			&move.CreatedAt,
+		)
+
+		if err != nil {
+			return nil, err
+		}
+
+		moves = append(moves, move)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return moves, nil
+}
+
+func NewGameMove(
+	gameID string,
+	playerID int64,
+	moveNumber int,
+	move string,
+	position string,
+) *GameMove {
+	return &GameMove{
+		ID:            uuid.NewString(),
+		GameID:        gameID,
+		PlayerID:      playerID,
+		MoveNumber:    moveNumber,
+		Move:          move,
+		PositionAfter: position,
+	}
 }
