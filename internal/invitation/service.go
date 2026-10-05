@@ -190,6 +190,7 @@ func (s *Service) JoinInvite(
 		whitePlayerID,
 		blackPlayerID,
 		invite.TimeControlMinutes,
+		false,
 	)
 
 	if err != nil {

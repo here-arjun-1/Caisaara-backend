@@ -7,6 +7,7 @@ type Game struct {
 	WhitePlayerID      int64      `json:"white_player_id"`
 	BlackPlayerID      int64      `json:"black_player_id"`
 	TimeControlMinutes int        `json:"time_control_minutes"`
+	Rated              bool       `json:"rated"`
 	Position           string     `json:"position"`
 	Status             string     `json:"status"`
 	Result             string     `json:"result,omitempty"`
