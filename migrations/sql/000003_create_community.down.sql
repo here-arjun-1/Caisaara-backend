@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS post_reactions;
+DROP TABLE IF EXISTS post_comments;
+DROP TABLE IF EXISTS posts;
