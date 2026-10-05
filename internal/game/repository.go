@@ -12,7 +12,7 @@ import (
 type GameRepository interface {
 	CreateGame(ctx context.Context, whitePlayerID int64, blackPlayerID int64, timeControlMinutes int, rated bool) (string, error)
 	FindGameByID(ctx context.Context, gameID string) (*Game, error)
-	UpdateGameState(ctx context.Context, gameID string, position string, status string, result string) error
+	UpdateGameState(ctx context.Context, gameID string, position string, status string, result string, currentTurn string) error
 	AddMove(ctx context.Context, move *GameMove) error
 	GetMoves(ctx context.Context, gameID string) ([]GameMove, error)
 }
@@ -36,6 +36,12 @@ func (r *Repository) CreateGame(
 ) (string, error) {
 	gameID := uuid.New()
 
+	initialTimeMs := int64(timeControlMinutes) * 60 * 1000
+	if initialTimeMs <= 0 {
+		initialTimeMs = 10 * 60 * 1000
+	}
+	incrementMs := int64(0)
+
 	_, err := r.DB.Exec(
 		ctx,
 		`INSERT INTO games (
@@ -46,15 +52,25 @@ func (r *Repository) CreateGame(
 			rated,
 			position,
 			status,
-			started_at
+			started_at,
+			initial_time_ms,
+			increment_ms,
+			white_time_ms,
+			black_time_ms,
+			current_turn,
+			turn_started_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, 'active', NOW())`,
+		VALUES ($1, $2, $3, $4, $5, $6, 'active', NOW(), $7, $8, $9, $10, 'w', NOW())`,
 		gameID,
 		whitePlayerID,
 		blackPlayerID,
 		timeControlMinutes,
 		rated,
 		NewChessGame().FEN(),
+		initialTimeMs,
+		incrementMs,
+		initialTimeMs,
+		initialTimeMs,
 	)
 
 	if err != nil {
@@ -82,6 +98,12 @@ func (r *Repository) FindGameByID(
 			position,
 			status,
 			COALESCE(result, ''),
+			COALESCE(initial_time_ms, 600000),
+			COALESCE(increment_ms, 0),
+			COALESCE(white_time_ms, 600000),
+			COALESCE(black_time_ms, 600000),
+			COALESCE(current_turn, 'w'),
+			turn_started_at,
 			created_at,
 			started_at,
 			ended_at
@@ -97,6 +119,12 @@ func (r *Repository) FindGameByID(
 		&g.Position,
 		&g.Status,
 		&g.Result,
+		&g.InitialTimeMs,
+		&g.IncrementMs,
+		&g.WhiteTimeMs,
+		&g.BlackTimeMs,
+		&g.CurrentTurn,
+		&g.TurnStartedAt,
 		&g.CreatedAt,
 		&g.StartedAt,
 		&g.EndedAt,
@@ -116,6 +144,7 @@ func (r *Repository) UpdateGameState(
 	position string,
 	status string,
 	result string,
+	currentTurn string,
 ) error {
 	_, err := r.DB.Exec(
 		ctx,
@@ -123,14 +152,16 @@ func (r *Repository) UpdateGameState(
 		SET position = $1,
 			status = $2,
 			result = $3,
+			current_turn = $4,
 			ended_at = CASE
 				WHEN $2 = 'finished' THEN NOW()
 				ELSE ended_at
 			END
-		WHERE id = $4`,
+		WHERE id = $5`,
 		position,
 		status,
 		result,
+		currentTurn,
 		gameID,
 	)
 

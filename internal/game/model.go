@@ -11,6 +11,12 @@ type Game struct {
 	Position           string     `json:"position"`
 	Status             string     `json:"status"`
 	Result             string     `json:"result,omitempty"`
+	InitialTimeMs      int64      `json:"initial_time_ms"`
+	IncrementMs        int64      `json:"increment_ms"`
+	WhiteTimeMs        int64      `json:"white_time_ms"`
+	BlackTimeMs        int64      `json:"black_time_ms"`
+	CurrentTurn        string     `json:"current_turn"`
+	TurnStartedAt      *time.Time `json:"turn_started_at,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	StartedAt          *time.Time `json:"started_at,omitempty"`
 	EndedAt            *time.Time `json:"ended_at,omitempty"`
@@ -44,11 +50,15 @@ type MoveMessage struct {
 }
 
 type GameStateMessage struct {
-	Type     string `json:"type"`
-	GameID   string `json:"game_id"`
-	Position string `json:"position"`
-	Status   string `json:"status"`
-	Result   string `json:"result,omitempty"`
+	Type          string     `json:"type"`
+	GameID        string     `json:"game_id"`
+	Position      string     `json:"position"`
+	Status        string     `json:"status"`
+	Result        string     `json:"result,omitempty"`
+	WhiteTimeMs   int64      `json:"white_time_ms"`
+	BlackTimeMs   int64      `json:"black_time_ms"`
+	CurrentTurn   string     `json:"current_turn"`
+	TurnStartedAt *time.Time `json:"turn_started_at,omitempty"`
 }
 
 type ErrorMessage struct {

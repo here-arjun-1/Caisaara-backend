@@ -77,12 +77,15 @@ func (s *Service) MakeMove(
 		result = getGameResult(chessGame)
 	}
 
+	currentTurn := chessGame.Turn()
+
 	err = s.Repository.UpdateGameState(
 		ctx,
 		gameID,
 		position,
 		status,
 		result,
+		currentTurn,
 	)
 	if err != nil {
 		slog.ErrorContext(ctx, "update game state failed in make move", "game_id", gameID, "error", err)
@@ -107,6 +110,7 @@ func (s *Service) MakeMove(
 	currentGame.Position = position
 	currentGame.Status = status
 	currentGame.Result = result
+	currentGame.CurrentTurn = currentTurn
 
 	slog.InfoContext(ctx, "move completed successfully", "game_id", gameID, "player_id", playerID, "move", move, "status", status)
 
