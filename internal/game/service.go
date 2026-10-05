@@ -132,7 +132,8 @@ func (s *Service) isPlayerTurn(
 	currentGame *Game,
 	playerID int64,
 ) bool {
-	if chessGame.Turn() == "White" {
+	turn := chessGame.Turn()
+	if turn == "w" || turn == "White" {
 		return playerID == currentGame.WhitePlayerID
 	}
 	return playerID == currentGame.BlackPlayerID
