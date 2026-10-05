@@ -16,6 +16,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/email"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/validation"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/worker"
+	"github.com/here-arjun-1/Caisaara-backend/internal/community"
 	"github.com/here-arjun-1/Caisaara-backend/internal/config"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
 	"github.com/here-arjun-1/Caisaara-backend/internal/router"
@@ -63,8 +64,9 @@ func run() error {
 
 	authModule := auth.NewModule(conn, redisClient, taskDistributor, cfg.JWTSecret)
 	playerModule := player.NewModule(conn)
+	communityModule := community.NewModule(conn)
 
-	r, err := router.New(cfg.JWTSecret, authModule, playerModule)
+	r, err := router.New(cfg.JWTSecret, authModule, playerModule, communityModule)
 	if err != nil {
 		return fmt.Errorf("setup router: %w", err)
 	}
