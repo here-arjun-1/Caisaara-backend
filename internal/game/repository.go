@@ -3,6 +3,7 @@ package game
 import (
 	"context"
 	"log/slog"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,7 +21,7 @@ type Repository struct {
 	DB *pgxpool.Pool
 }
 
-func NewRepository(db *pgxpool.Pool) *Repository {
+func NewRepository(db *pgxpool.Pool) GameRepository {
 	return &Repository{
 		DB: db,
 	}
@@ -76,7 +77,7 @@ func (r *Repository) FindGameByID(
 			time_control_minutes,
 			position,
 			status,
-			result,
+			COALESCE(result, ''),
 			created_at,
 			started_at,
 			ended_at
@@ -97,6 +98,7 @@ func (r *Repository) FindGameByID(
 	)
 
 	if err != nil {
+		slog.ErrorContext(ctx, "find game by id failed", "game_id", gameID, "error", err)
 		return nil, err
 	}
 
@@ -127,7 +129,12 @@ func (r *Repository) UpdateGameState(
 		gameID,
 	)
 
-	return err
+	if err != nil {
+		slog.ErrorContext(ctx, "update game state failed", "game_id", gameID, "error", err)
+		return err
+	}
+
+	return nil
 }
 
 func (r *Repository) AddMove(
@@ -155,7 +162,12 @@ func (r *Repository) AddMove(
 		move.CreatedAt,
 	)
 
-	return err
+	if err != nil {
+		slog.ErrorContext(ctx, "add move failed", "game_id", move.GameID, "move_number", move.MoveNumber, "error", err)
+		return err
+	}
+
+	return nil
 }
 
 func (r *Repository) GetMoves(
@@ -179,6 +191,7 @@ func (r *Repository) GetMoves(
 	)
 
 	if err != nil {
+		slog.ErrorContext(ctx, "get moves query failed", "game_id", gameID, "error", err)
 		return nil, err
 	}
 
@@ -200,6 +213,7 @@ func (r *Repository) GetMoves(
 		)
 
 		if err != nil {
+			slog.ErrorContext(ctx, "scan move row failed", "game_id", gameID, "error", err)
 			return nil, err
 		}
 
@@ -207,10 +221,15 @@ func (r *Repository) GetMoves(
 	}
 
 	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "get moves rows iteration error", "game_id", gameID, "error", err)
 		return nil, err
 	}
 
 	return moves, nil
+}
+
+func FormatPlayerUUID(playerID int64) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(strconv.FormatInt(playerID, 10))).String()
 }
 
 func NewGameMove(
@@ -223,7 +242,7 @@ func NewGameMove(
 	return &GameMove{
 		ID:            uuid.NewString(),
 		GameID:        gameID,
-		PlayerID:      playerID,
+		PlayerID:      FormatPlayerUUID(playerID),
 		MoveNumber:    moveNumber,
 		Move:          move,
 		PositionAfter: position,

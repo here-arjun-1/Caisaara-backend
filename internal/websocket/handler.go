@@ -15,10 +15,10 @@ import (
 
 type Handler struct {
 	Hub         *Hub
-	GameService *game.Service
+	GameService game.GameService
 }
 
-func NewHandler(hub *Hub, gameService *game.Service) *Handler {
+func NewHandler(hub *Hub, gameService game.GameService) *Handler {
 	return &Handler{
 		Hub:         hub,
 		GameService: gameService,
@@ -32,6 +32,7 @@ var upgrader = websocket.Upgrader{
 }
 
 func (h *Handler) Connect(c *gin.Context) {
+	ctx := c.Request.Context()
 	gameID := c.Param("gameID")
 	accessToken := c.Query("token")
 
@@ -44,8 +45,10 @@ func (h *Handler) Connect(c *gin.Context) {
 
 	claims, err := token.ValidateToken(accessToken)
 	if err != nil {
-		slog.Error(
+		slog.ErrorContext(
+			ctx,
 			"websocket token validation failed",
+			"game_id", gameID,
 			"error", err,
 		)
 
@@ -57,8 +60,10 @@ func (h *Handler) Connect(c *gin.Context) {
 
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
-		slog.Error(
+		slog.ErrorContext(
+			ctx,
 			"websocket upgrade failed",
+			"game_id", gameID,
 			"error", err,
 		)
 		return
@@ -68,21 +73,21 @@ func (h *Handler) Connect(c *gin.Context) {
 		Conn:   conn,
 		UserID: claims.UserID,
 		GameID: gameID,
-		Send:   make(chan []byte, 16),
+		Send:   make(chan []byte, 256),
 	}
 
 	room := h.Hub.GetOrCreateRoom(gameID)
 	room.AddClient(client)
 
 	if room.Count() == 2 {
-		sendGameStart(room)
+		sendGameStart(ctx, room)
 	}
 
-	go h.writePump(client)
-	go h.readPump(c.Request.Context(), client, room)
+	go h.writePump(ctx, client)
+	go h.readPump(ctx, client, room)
 }
 
-func (h *Handler) writePump(client *Client) {
+func (h *Handler) writePump(ctx context.Context, client *Client) {
 	defer client.Close()
 
 	for message := range client.Send {
@@ -90,7 +95,8 @@ func (h *Handler) writePump(client *Client) {
 			websocket.TextMessage,
 			message,
 		); err != nil {
-			slog.Error(
+			slog.ErrorContext(
+				ctx,
 				"websocket write failed",
 				"user_id", client.UserID,
 				"game_id", client.GameID,
@@ -118,18 +124,21 @@ func (h *Handler) readPump(
 	for {
 		_, message, err := client.Conn.ReadMessage()
 		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				slog.WarnContext(ctx, "websocket read error", "user_id", client.UserID, "game_id", client.GameID, "error", err)
+			}
 			return
 		}
 
 		var moveMessage game.MoveMessage
 
 		if err := json.Unmarshal(message, &moveMessage); err != nil {
-			sendError(client, "invalid message")
+			sendError(ctx, client, "invalid message format")
 			continue
 		}
 
 		if moveMessage.Type != "move" {
-			sendError(client, "unsupported message type")
+			sendError(ctx, client, "unsupported message type")
 			continue
 		}
 
@@ -140,7 +149,8 @@ func (h *Handler) readPump(
 			moveMessage.Move,
 		)
 		if err != nil {
-			sendError(client, err.Error())
+			slog.WarnContext(ctx, "make move failed", "game_id", client.GameID, "user_id", client.UserID, "move", moveMessage.Move, "error", err)
+			sendError(ctx, client, err.Error())
 			continue
 		}
 
@@ -154,7 +164,8 @@ func (h *Handler) readPump(
 
 		data, err := json.Marshal(response)
 		if err != nil {
-			sendError(client, "failed to create game state")
+			slog.ErrorContext(ctx, "marshal game state failed", "game_id", client.GameID, "error", err)
+			sendError(ctx, client, "failed to create game state")
 			continue
 		}
 
@@ -162,7 +173,7 @@ func (h *Handler) readPump(
 	}
 }
 
-func sendGameStart(room *Room) {
+func sendGameStart(ctx context.Context, room *Room) {
 	message := map[string]string{
 		"type":    "game_start",
 		"game_id": room.GameID,
@@ -170,8 +181,10 @@ func sendGameStart(room *Room) {
 
 	data, err := json.Marshal(message)
 	if err != nil {
-		slog.Error(
+		slog.ErrorContext(
+			ctx,
 			"marshal game_start failed",
+			"game_id", room.GameID,
 			"error", err,
 		)
 		return
@@ -180,7 +193,7 @@ func sendGameStart(room *Room) {
 	room.Broadcast(data)
 }
 
-func sendError(client *Client, message string) {
+func sendError(ctx context.Context, client *Client, message string) {
 	response := game.ErrorMessage{
 		Type:    "error",
 		Message: message,
@@ -188,11 +201,13 @@ func sendError(client *Client, message string) {
 
 	data, err := json.Marshal(response)
 	if err != nil {
+		slog.ErrorContext(ctx, "marshal error message failed", "user_id", client.UserID, "error", err)
 		return
 	}
 
 	select {
 	case client.Send <- data:
 	default:
+		slog.WarnContext(ctx, "client send buffer full, dropped error message", "user_id", client.UserID)
 	}
 }
