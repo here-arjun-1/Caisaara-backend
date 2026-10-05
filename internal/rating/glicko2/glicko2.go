@@ -109,7 +109,7 @@ func calculateVolatility(phi, sigma, v, delta float64) float64 {
 			A = B
 			fA = fB
 		} else {
-			fA = fA / 2
+			fA /= 2
 		}
 
 		B = C
