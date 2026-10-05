@@ -31,7 +31,7 @@ type GameMove struct {
 	ID            string    `json:"id"`
 	GameID        string    `json:"game_id"`
 	MoveNumber    int       `json:"move_number"`
-	PlayerID      int64     `json:"player_id"`
+	PlayerID      string    `json:"player_id"`
 	Move          string    `json:"move"`
 	PositionAfter string    `json:"position_after"`
 	CreatedAt     time.Time `json:"created_at"`

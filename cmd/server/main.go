@@ -70,6 +70,9 @@ func run() error {
 	communityModule := community.NewModule(conn)
 
 	gameRepository := game.NewRepository(conn)
+	gameService := game.NewService(gameRepository)
+	gameHandler := game.NewHandler(gameService)
+
 	inviteRepo := invitation.NewRedisInviteRepository(redisClient)
 	invitationService := invitation.NewService(
 		inviteRepo,
@@ -79,9 +82,9 @@ func run() error {
 	invitationHandler := invitation.NewHandler(invitationService)
 
 	wsHub := websocket.NewHub()
-	wsHandler := websocket.NewHandler(wsHub)
+	wsHandler := websocket.NewHandler(wsHub, gameService)
 
-	r, err := router.New(cfg.JWTSecret, authModule, playerModule, communityModule, invitationHandler, wsHandler)
+	r, err := router.New(cfg.JWTSecret, authModule, playerModule, communityModule, invitationHandler, gameHandler, wsHandler)
 	if err != nil {
 		return fmt.Errorf("setup router: %w", err)
 	}

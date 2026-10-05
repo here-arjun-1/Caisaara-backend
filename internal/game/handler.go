@@ -1,16 +1,17 @@
 package game
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 )
 
 type Handler struct {
-	Service *Service
+	Service GameService
 }
 
-func NewHandler(service *Service) *Handler {
+func NewHandler(service GameService) *Handler {
 	return &Handler{
 		Service: service,
 	}
@@ -18,12 +19,14 @@ func NewHandler(service *Service) *Handler {
 
 func (h *Handler) GetGame(c *gin.Context) {
 	gameID := c.Param("gameID")
+	ctx := c.Request.Context()
 
 	currentGame, err := h.Service.GetGame(
-		c.Request.Context(),
+		ctx,
 		gameID,
 	)
 	if err != nil {
+		slog.WarnContext(ctx, "get game failed", "game_id", gameID, "error", err)
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "game not found",
 		})
@@ -35,12 +38,14 @@ func (h *Handler) GetGame(c *gin.Context) {
 
 func (h *Handler) GetMoves(c *gin.Context) {
 	gameID := c.Param("gameID")
+	ctx := c.Request.Context()
 
 	moves, err := h.Service.GetMoves(
-		c.Request.Context(),
+		ctx,
 		gameID,
 	)
 	if err != nil {
+		slog.ErrorContext(ctx, "get moves handler failed", "game_id", gameID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to get game moves",
 		})
