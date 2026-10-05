@@ -46,7 +46,7 @@ func NewEmailTaskProcessor(sender *email.Sender) *EmailTaskProcessor {
 func (p *EmailTaskProcessor) ProcessTaskEmailRegistration(ctx context.Context, t *asynq.Task) error {
 	var pld EmailPayload
 	if err := json.Unmarshal(t.Payload(), &pld); err != nil {
-		return fmt.Errorf("json.Unmarshal failed: %v: %w", err, asynq.SkipRetry)
+		return fmt.Errorf("json.Unmarshal failed: %w: %w", err, asynq.SkipRetry)
 	}
 
 	err := p.sender.SendRegistrationEmail(pld.To, pld.Code)
@@ -60,7 +60,7 @@ func (p *EmailTaskProcessor) ProcessTaskEmailRegistration(ctx context.Context, t
 func (p *EmailTaskProcessor) ProcessTaskEmailPasswordReset(ctx context.Context, t *asynq.Task) error {
 	var pld EmailPayload
 	if err := json.Unmarshal(t.Payload(), &pld); err != nil {
-		return fmt.Errorf("json.Unmarshal failed: %v: %w", err, asynq.SkipRetry)
+		return fmt.Errorf("json.Unmarshal failed: %w: %w", err, asynq.SkipRetry)
 	}
 
 	err := p.sender.SendPasswordResetEmail(pld.To, pld.Code)

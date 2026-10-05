@@ -90,8 +90,9 @@ func run() error {
 	worker.StartSessionCleanup(authModule.SessionRepository)
 
 	srv := &http.Server{
-		Addr:    ":" + cfg.Port,
-		Handler: r,
+		Addr:              ":" + cfg.Port,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	go func() {

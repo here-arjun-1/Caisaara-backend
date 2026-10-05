@@ -8,6 +8,9 @@ linters:
     - ineffassign
     - unused
     - gocritic
+    - gosec
+    - errorlint
+    - bodyclose
 
 formatters:
   enable:
