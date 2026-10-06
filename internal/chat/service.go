@@ -17,15 +17,20 @@ type ChatService interface {
 }
 
 type Service struct {
-	ChatRepo ChatRepository
-	GameRepo game.GameRepository
+	ChatRepo    ChatRepository
+	GameRepo    game.GameRepository
+	RateLimiter RateLimiter
 }
 
-func NewService(chatRepo ChatRepository, gameRepo game.GameRepository) ChatService {
-	return &Service{
+func NewService(chatRepo ChatRepository, gameRepo game.GameRepository, rateLimiter ...RateLimiter) ChatService {
+	s := &Service{
 		ChatRepo: chatRepo,
 		GameRepo: gameRepo,
 	}
+	if len(rateLimiter) > 0 {
+		s.RateLimiter = rateLimiter[0]
+	}
+	return s
 }
 
 func (s *Service) SendMessage(
@@ -52,6 +57,14 @@ func (s *Service) SendMessage(
 	if userID != g.WhitePlayerID && userID != g.BlackPlayerID {
 		slog.WarnContext(ctx, "unauthorized chat message attempt", "game_id", gameID, "user_id", userID)
 		return nil, errors.New("player is not part of this game")
+	}
+
+	if s.RateLimiter != nil {
+		allowed, err := s.RateLimiter.Allow(ctx, gameID, userID)
+		if err == nil && !allowed {
+			slog.WarnContext(ctx, "chat rate limit exceeded", "game_id", gameID, "user_id", userID)
+			return nil, errors.New("rate limit exceeded, please wait")
+		}
 	}
 
 	msg := &ChatMessage{
