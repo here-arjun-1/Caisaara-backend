@@ -155,17 +155,19 @@ func (h *Handler) readPump(
 		}
 
 		response := game.GameStateMessage{
-			Type:          "game_state",
-			GameID:        currentGame.ID,
-			Position:      currentGame.Position,
-			Status:        currentGame.Status,
-			Result:        currentGame.Result,
-			InitialTimeMs: currentGame.InitialTimeMs,
-			IncrementMs:   currentGame.IncrementMs,
-			WhiteTimeMs:   currentGame.WhiteTimeMs,
-			BlackTimeMs:   currentGame.BlackTimeMs,
-			CurrentTurn:   currentGame.CurrentTurn,
-			TurnStartedAt: currentGame.TurnStartedAt,
+			Type:            "game_state",
+			GameID:          currentGame.ID,
+			Position:        currentGame.Position,
+			Status:          currentGame.Status,
+			Result:          currentGame.Result,
+			TimeControlMode: currentGame.TimeControlMode,
+			DailyMoveTimeMs: currentGame.DailyMoveTimeMs,
+			InitialTimeMs:   currentGame.InitialTimeMs,
+			IncrementMs:     currentGame.IncrementMs,
+			WhiteTimeMs:     currentGame.WhiteTimeMs,
+			BlackTimeMs:     currentGame.BlackTimeMs,
+			CurrentTurn:     currentGame.CurrentTurn,
+			TurnStartedAt:   currentGame.TurnStartedAt,
 		}
 
 		data, err := json.Marshal(response)
@@ -187,17 +189,19 @@ func (h *Handler) sendGameStart(ctx context.Context, room *Room) {
 	}
 
 	response := game.GameStateMessage{
-		Type:          "game_start",
-		GameID:        g.ID,
-		Position:      g.Position,
-		Status:        g.Status,
-		Result:        g.Result,
-		InitialTimeMs: g.InitialTimeMs,
-		IncrementMs:   g.IncrementMs,
-		WhiteTimeMs:   g.WhiteTimeMs,
-		BlackTimeMs:   g.BlackTimeMs,
-		CurrentTurn:   g.CurrentTurn,
-		TurnStartedAt: g.TurnStartedAt,
+		Type:            "game_start",
+		GameID:          g.ID,
+		Position:        g.Position,
+		Status:          g.Status,
+		Result:          g.Result,
+		TimeControlMode: g.TimeControlMode,
+		DailyMoveTimeMs: g.DailyMoveTimeMs,
+		InitialTimeMs:   g.InitialTimeMs,
+		IncrementMs:     g.IncrementMs,
+		WhiteTimeMs:     g.WhiteTimeMs,
+		BlackTimeMs:     g.BlackTimeMs,
+		CurrentTurn:     g.CurrentTurn,
+		TurnStartedAt:   g.TurnStartedAt,
 	}
 
 	data, err := json.Marshal(response)
