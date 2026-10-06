@@ -16,6 +16,9 @@ type GameRepository interface {
 	UpdateGameState(ctx context.Context, gameID string, position string, status string, result string, currentTurn string, whiteTimeMs int64, blackTimeMs int64, turnStartedAt *time.Time) error
 	AddMove(ctx context.Context, move *GameMove) error
 	GetMoves(ctx context.Context, gameID string) ([]GameMove, error)
+	GetPlayerGames(ctx context.Context, playerID int64) ([]Game, error)
+	EnforceRetention(ctx context.Context, playerID int64) error
+	DeleteGameWithMoves(ctx context.Context, gameID string) error
 }
 
 type Repository struct {
@@ -334,3 +337,162 @@ func NewGameMove(
 		PositionAfter: position,
 	}
 }
+
+func (r *Repository) GetPlayerGames(
+	ctx context.Context,
+	playerID int64,
+) ([]Game, error) {
+	rows, err := r.DB.Query(
+		ctx,
+		`SELECT
+			id,
+			white_player_id,
+			black_player_id,
+			time_control_minutes,
+			rated,
+			COALESCE(time_control_mode, 'rapid'),
+			COALESCE(daily_move_time_ms, 86400000),
+			position,
+			status,
+			COALESCE(result, ''),
+			COALESCE(initial_time_ms, 600000),
+			COALESCE(increment_ms, 0),
+			COALESCE(white_time_ms, 600000),
+			COALESCE(black_time_ms, 600000),
+			COALESCE(current_turn, 'w'),
+			turn_started_at,
+			created_at,
+			started_at,
+			ended_at
+		FROM games
+		WHERE white_player_id = $1 OR black_player_id = $1
+		ORDER BY created_at DESC`,
+		playerID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "get player games query failed", "player_id", playerID, "error", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var games []Game
+	for rows.Next() {
+		var g Game
+		err := rows.Scan(
+			&g.ID,
+			&g.WhitePlayerID,
+			&g.BlackPlayerID,
+			&g.TimeControlMinutes,
+			&g.Rated,
+			&g.TimeControlMode,
+			&g.DailyMoveTimeMs,
+			&g.Position,
+			&g.Status,
+			&g.Result,
+			&g.InitialTimeMs,
+			&g.IncrementMs,
+			&g.WhiteTimeMs,
+			&g.BlackTimeMs,
+			&g.CurrentTurn,
+			&g.TurnStartedAt,
+			&g.CreatedAt,
+			&g.StartedAt,
+			&g.EndedAt,
+		)
+		if err != nil {
+			slog.ErrorContext(ctx, "scan player game row failed", "player_id", playerID, "error", err)
+			return nil, err
+		}
+		games = append(games, g)
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "get player games rows iteration error", "player_id", playerID, "error", err)
+		return nil, err
+	}
+
+	return games, nil
+}
+
+func (r *Repository) DeleteGameWithMoves(
+	ctx context.Context,
+	gameID string,
+) error {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "begin transaction failed for delete game", "game_id", gameID, "error", err)
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(
+		ctx,
+		`DELETE FROM game_moves WHERE game_id = $1`,
+		gameID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete game moves in transaction failed", "game_id", gameID, "error", err)
+		return err
+	}
+
+	_, err = tx.Exec(
+		ctx,
+		`DELETE FROM games WHERE id = $1 AND status = 'finished'`,
+		gameID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete completed game in transaction failed", "game_id", gameID, "error", err)
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "commit transaction failed for delete game", "game_id", gameID, "error", err)
+		return err
+	}
+
+	return nil
+}
+
+func (r *Repository) EnforceRetention(
+	ctx context.Context,
+	playerID int64,
+) error {
+	rows, err := r.DB.Query(
+		ctx,
+		`SELECT id
+		FROM games
+		WHERE (white_player_id = $1 OR black_player_id = $1)
+		  AND status = 'finished'
+		ORDER BY COALESCE(ended_at, started_at, created_at) DESC, id DESC`,
+		playerID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "enforce retention query failed", "player_id", playerID, "error", err)
+		return err
+	}
+
+	var completedGameIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		completedGameIDs = append(completedGameIDs, id)
+	}
+	rows.Close()
+
+	if len(completedGameIDs) <= 10 {
+		return nil
+	}
+
+	for _, gameIDToDelete := range completedGameIDs[10:] {
+		if err := r.DeleteGameWithMoves(ctx, gameIDToDelete); err != nil {
+			slog.ErrorContext(ctx, "enforce retention delete failed", "game_id", gameIDToDelete, "player_id", playerID, "error", err)
+			return err
+		}
+	}
+
+	return nil
+}
+

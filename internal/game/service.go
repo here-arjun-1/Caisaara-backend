@@ -11,6 +11,7 @@ type GameService interface {
 	MakeMove(ctx context.Context, gameID string, playerID int64, move string) (*Game, error)
 	GetGame(ctx context.Context, gameID string) (*Game, error)
 	GetMoves(ctx context.Context, gameID string) ([]GameMove, error)
+	GetPlayerGames(ctx context.Context, playerID int64) ([]Game, error)
 }
 
 type Service struct {
@@ -127,6 +128,9 @@ func (s *Service) MakeMove(
 			return nil, err
 		}
 
+		_ = s.Repository.EnforceRetention(ctx, currentGame.WhitePlayerID)
+		_ = s.Repository.EnforceRetention(ctx, currentGame.BlackPlayerID)
+
 		currentGame.Status = status
 		currentGame.Result = result
 		currentGame.WhiteTimeMs = newWhiteTimeMs
@@ -195,6 +199,11 @@ func (s *Service) MakeMove(
 		return nil, err
 	}
 
+	if status == StatusFinished {
+		_ = s.Repository.EnforceRetention(ctx, currentGame.WhitePlayerID)
+		_ = s.Repository.EnforceRetention(ctx, currentGame.BlackPlayerID)
+	}
+
 	currentGame.Position = position
 	currentGame.Status = status
 	currentGame.Result = result
@@ -220,6 +229,14 @@ func (s *Service) GetMoves(
 	gameID string,
 ) ([]GameMove, error) {
 	return s.Repository.GetMoves(ctx, gameID)
+}
+
+func (s *Service) GetPlayerGames(
+	ctx context.Context,
+	playerID int64,
+) ([]Game, error) {
+	_ = s.Repository.EnforceRetention(ctx, playerID)
+	return s.Repository.GetPlayerGames(ctx, playerID)
 }
 
 func (s *Service) isPlayerTurn(
