@@ -283,6 +283,18 @@ func (h *Handler) broadcastChatMessage(ctx context.Context, room *Room, msg *cha
 	room.Broadcast(data)
 }
 
+func (h *Handler) BroadcastChatMessage(gameID string, msg *chat.ChatMessage) {
+	if h.Hub == nil {
+		return
+	}
+	h.Hub.Mutex.RLock()
+	room, exists := h.Hub.Rooms[gameID]
+	h.Hub.Mutex.RUnlock()
+	if exists && room != nil {
+		h.broadcastChatMessage(context.Background(), room, msg)
+	}
+}
+
 func (h *Handler) sendClientGameState(
 	ctx context.Context,
 	client *Client,

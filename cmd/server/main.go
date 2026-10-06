@@ -91,10 +91,10 @@ func run() error {
 	chatRepo := chat.NewRepository(conn)
 	chatLimiter := chat.NewRedisRateLimiter(redisClient, 10, time.Minute)
 	chatService := chat.NewService(chatRepo, gameRepository, chatLimiter)
-	chatHandler := chat.NewHandler(chatService)
 
 	wsHub := websocket.NewHub()
 	wsHandler := websocket.NewHandler(wsHub, gameService, chatService)
+	chatHandler := chat.NewHandler(chatService, wsHandler.BroadcastChatMessage)
 
 	r, err := router.New(
 		cfg.JWTSecret,
