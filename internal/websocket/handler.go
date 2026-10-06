@@ -10,19 +10,25 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
+	"github.com/here-arjun-1/Caisaara-backend/internal/chat"
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
 )
 
 type Handler struct {
 	Hub         *Hub
 	GameService game.GameService
+	ChatService chat.ChatService
 }
 
-func NewHandler(hub *Hub, gameService game.GameService) *Handler {
-	return &Handler{
+func NewHandler(hub *Hub, gameService game.GameService, chatService ...chat.ChatService) *Handler {
+	h := &Handler{
 		Hub:         hub,
 		GameService: gameService,
 	}
+	if len(chatService) > 0 {
+		h.ChatService = chatService[0]
+	}
+	return h
 }
 
 var upgrader = websocket.Upgrader{
@@ -151,74 +157,130 @@ func (h *Handler) readPump(
 			return
 		}
 
-		var moveMessage game.MoveMessage
+		var incomingMsg struct {
+			Type    string `json:"type"`
+			Move    string `json:"move,omitempty"`
+			Message string `json:"message,omitempty"`
+		}
 
-		if err := json.Unmarshal(message, &moveMessage); err != nil {
+		if err := json.Unmarshal(message, &incomingMsg); err != nil {
 			sendError(ctx, client, "invalid message format")
 			continue
 		}
 
-		var currentGame *game.Game
-		switch moveMessage.Type {
+		switch incomingMsg.Type {
 		case "move":
-			currentGame, err = h.GameService.MakeMove(
+			currentGame, err := h.GameService.MakeMove(
 				ctx,
 				client.GameID,
 				client.UserID,
-				moveMessage.Move,
+				incomingMsg.Move,
 			)
+			if err != nil {
+				slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", incomingMsg.Type, "error", err)
+				sendError(ctx, client, err.Error())
+				continue
+			}
+			h.broadcastGameState(ctx, room, currentGame)
+
 		case "resign":
-			currentGame, err = h.GameService.ResignGame(
+			currentGame, err := h.GameService.ResignGame(
 				ctx,
 				client.GameID,
 				client.UserID,
 			)
+			if err != nil {
+				slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", incomingMsg.Type, "error", err)
+				sendError(ctx, client, err.Error())
+				continue
+			}
+			h.broadcastGameState(ctx, room, currentGame)
+
 		case "draw", "offer_draw", "accept_draw":
-			currentGame, err = h.GameService.DrawGame(
+			currentGame, err := h.GameService.DrawGame(
 				ctx,
 				client.GameID,
 				client.UserID,
 			)
+			if err != nil {
+				slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", incomingMsg.Type, "error", err)
+				sendError(ctx, client, err.Error())
+				continue
+			}
+			h.broadcastGameState(ctx, room, currentGame)
+
+		case "chat", "chat_message":
+			if h.ChatService == nil {
+				sendError(ctx, client, "chat service not available")
+				continue
+			}
+			chatMsg, err := h.ChatService.SendMessage(
+				ctx,
+				client.GameID,
+				client.UserID,
+				incomingMsg.Message,
+			)
+			if err != nil {
+				slog.WarnContext(ctx, "chat message failed", "game_id", client.GameID, "user_id", client.UserID, "error", err)
+				sendError(ctx, client, err.Error())
+				continue
+			}
+			h.broadcastChatMessage(ctx, room, chatMsg)
+
 		default:
 			sendError(ctx, client, "unsupported message type")
 			continue
 		}
-
-		if err != nil {
-			slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", moveMessage.Type, "error", err)
-			sendError(ctx, client, err.Error())
-			continue
-		}
-
-		moves, _ := h.GameService.GetMoves(ctx, client.GameID)
-
-		response := game.GameStateMessage{
-			Type:            "game_state",
-			GameID:          currentGame.ID,
-			Position:        currentGame.Position,
-			Status:          currentGame.Status,
-			Result:          currentGame.Result,
-			EndReason:       currentGame.EndReason,
-			TimeControlMode: currentGame.TimeControlMode,
-			DailyMoveTimeMs: currentGame.DailyMoveTimeMs,
-			InitialTimeMs:   currentGame.InitialTimeMs,
-			IncrementMs:     currentGame.IncrementMs,
-			WhiteTimeMs:     currentGame.WhiteTimeMs,
-			BlackTimeMs:     currentGame.BlackTimeMs,
-			CurrentTurn:     currentGame.CurrentTurn,
-			TurnStartedAt:   currentGame.TurnStartedAt,
-			Moves:           moves,
-		}
-
-		data, err := json.Marshal(response)
-		if err != nil {
-			slog.ErrorContext(ctx, "marshal game state failed", "game_id", client.GameID, "error", err)
-			sendError(ctx, client, "failed to create game state")
-			continue
-		}
-
-		room.Broadcast(data)
 	}
+}
+
+func (h *Handler) broadcastGameState(ctx context.Context, room *Room, currentGame *game.Game) {
+	moves, _ := h.GameService.GetMoves(ctx, currentGame.ID)
+
+	response := game.GameStateMessage{
+		Type:            "game_state",
+		GameID:          currentGame.ID,
+		Position:        currentGame.Position,
+		Status:          currentGame.Status,
+		Result:          currentGame.Result,
+		EndReason:       currentGame.EndReason,
+		TimeControlMode: currentGame.TimeControlMode,
+		DailyMoveTimeMs: currentGame.DailyMoveTimeMs,
+		InitialTimeMs:   currentGame.InitialTimeMs,
+		IncrementMs:     currentGame.IncrementMs,
+		WhiteTimeMs:     currentGame.WhiteTimeMs,
+		BlackTimeMs:     currentGame.BlackTimeMs,
+		CurrentTurn:     currentGame.CurrentTurn,
+		TurnStartedAt:   currentGame.TurnStartedAt,
+		Moves:           moves,
+	}
+
+	data, err := json.Marshal(response)
+	if err != nil {
+		slog.ErrorContext(ctx, "marshal game state failed", "game_id", currentGame.ID, "error", err)
+		return
+	}
+
+	room.Broadcast(data)
+}
+
+func (h *Handler) broadcastChatMessage(ctx context.Context, room *Room, msg *chat.ChatMessage) {
+	wsMsg := chat.ChatWSMessage{
+		Type:      "chat",
+		ID:        msg.ID,
+		GameID:    msg.GameID,
+		UserID:    msg.UserID,
+		Message:   msg.Message,
+		CreatedAt: msg.CreatedAt,
+	}
+
+	data, err := json.Marshal(wsMsg)
+	if err != nil {
+		slog.ErrorContext(ctx, "marshal chat message failed", "game_id", msg.GameID, "error", err)
+		return
+	}
+
+	room.Broadcast(data)
 }
 
 func (h *Handler) sendClientGameState(
