@@ -9,6 +9,8 @@ import (
 
 type GameService interface {
 	MakeMove(ctx context.Context, gameID string, playerID int64, move string) (*Game, error)
+	ResignGame(ctx context.Context, gameID string, playerID int64) (*Game, error)
+	DrawGame(ctx context.Context, gameID string, playerID int64) (*Game, error)
 	GetGame(ctx context.Context, gameID string) (*Game, error)
 	GetMoves(ctx context.Context, gameID string) ([]GameMove, error)
 	GetPlayerGames(ctx context.Context, playerID int64) ([]Game, error)
@@ -38,7 +40,7 @@ func (s *Service) MakeMove(
 
 	if currentGame.Status != StatusActive {
 		slog.WarnContext(ctx, "game is not active", "game_id", gameID, "status", currentGame.Status)
-		return nil, errors.New("game is not active")
+		return nil, errors.New("game is already finished")
 	}
 
 	if playerID != currentGame.WhitePlayerID && playerID != currentGame.BlackPlayerID {
@@ -76,6 +78,7 @@ func (s *Service) MakeMove(
 	isWhiteTurn := currentGame.CurrentTurn == "w" || currentGame.CurrentTurn == "White"
 	status := StatusActive
 	result := ""
+	endReason := ""
 
 	newWhiteTimeMs := currentGame.WhiteTimeMs
 	newBlackTimeMs := currentGame.BlackTimeMs
@@ -87,6 +90,7 @@ func (s *Service) MakeMove(
 		}
 		if elapsedMs > dailyLimitMs {
 			status = StatusFinished
+			endReason = EndReasonDailyTimeout
 			if isWhiteTurn {
 				result = ResultBlackWin
 			} else {
@@ -99,6 +103,7 @@ func (s *Service) MakeMove(
 			if newWhiteTimeMs <= 0 {
 				newWhiteTimeMs = 0
 				status = StatusFinished
+				endReason = EndReasonTimeout
 				result = ResultBlackWin
 			}
 		} else {
@@ -106,6 +111,7 @@ func (s *Service) MakeMove(
 			if newBlackTimeMs <= 0 {
 				newBlackTimeMs = 0
 				status = StatusFinished
+				endReason = EndReasonTimeout
 				result = ResultWhiteWin
 			}
 		}
@@ -118,6 +124,7 @@ func (s *Service) MakeMove(
 			currentGame.Position,
 			status,
 			result,
+			endReason,
 			currentGame.CurrentTurn,
 			newWhiteTimeMs,
 			newBlackTimeMs,
@@ -133,6 +140,7 @@ func (s *Service) MakeMove(
 
 		currentGame.Status = status
 		currentGame.Result = result
+		currentGame.EndReason = endReason
 		currentGame.WhiteTimeMs = newWhiteTimeMs
 		currentGame.BlackTimeMs = newBlackTimeMs
 		currentGame.TurnStartedAt = &now
@@ -163,7 +171,7 @@ func (s *Service) MakeMove(
 
 	if chessGame.IsFinished() {
 		status = StatusFinished
-		result = getGameResult(chessGame)
+		result, endReason = getGameResultAndEndReason(chessGame)
 	}
 
 	nextTurn := chessGame.Turn()
@@ -174,6 +182,7 @@ func (s *Service) MakeMove(
 		position,
 		status,
 		result,
+		endReason,
 		nextTurn,
 		newWhiteTimeMs,
 		newBlackTimeMs,
@@ -207,12 +216,119 @@ func (s *Service) MakeMove(
 	currentGame.Position = position
 	currentGame.Status = status
 	currentGame.Result = result
+	currentGame.EndReason = endReason
 	currentGame.CurrentTurn = nextTurn
 	currentGame.WhiteTimeMs = newWhiteTimeMs
 	currentGame.BlackTimeMs = newBlackTimeMs
 	currentGame.TurnStartedAt = &now
 
 	slog.InfoContext(ctx, "move completed successfully", "game_id", gameID, "player_id", playerID, "move", move, "status", status)
+
+	return currentGame, nil
+}
+
+func (s *Service) ResignGame(
+	ctx context.Context,
+	gameID string,
+	playerID int64,
+) (*Game, error) {
+	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+
+	if currentGame.Status != StatusActive {
+		return nil, errors.New("game is already finished")
+	}
+
+	if playerID != currentGame.WhitePlayerID && playerID != currentGame.BlackPlayerID {
+		return nil, errors.New("player is not part of this game")
+	}
+
+	now := time.Now()
+	status := StatusFinished
+	endReason := EndReasonResignation
+
+	var result string
+	if playerID == currentGame.WhitePlayerID {
+		result = ResultBlackWin
+	} else {
+		result = ResultWhiteWin
+	}
+
+	err = s.Repository.UpdateGameState(
+		ctx,
+		gameID,
+		currentGame.Position,
+		status,
+		result,
+		endReason,
+		currentGame.CurrentTurn,
+		currentGame.WhiteTimeMs,
+		currentGame.BlackTimeMs,
+		&now,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	_ = s.Repository.EnforceRetention(ctx, currentGame.WhitePlayerID)
+	_ = s.Repository.EnforceRetention(ctx, currentGame.BlackPlayerID)
+
+	currentGame.Status = status
+	currentGame.Result = result
+	currentGame.EndReason = endReason
+	currentGame.TurnStartedAt = &now
+
+	return currentGame, nil
+}
+
+func (s *Service) DrawGame(
+	ctx context.Context,
+	gameID string,
+	playerID int64,
+) (*Game, error) {
+	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+
+	if currentGame.Status != StatusActive {
+		return nil, errors.New("game is already finished")
+	}
+
+	if playerID != currentGame.WhitePlayerID && playerID != currentGame.BlackPlayerID {
+		return nil, errors.New("player is not part of this game")
+	}
+
+	now := time.Now()
+	status := StatusFinished
+	result := ResultDraw
+	endReason := EndReasonDrawAgreement
+
+	err = s.Repository.UpdateGameState(
+		ctx,
+		gameID,
+		currentGame.Position,
+		status,
+		result,
+		endReason,
+		currentGame.CurrentTurn,
+		currentGame.WhiteTimeMs,
+		currentGame.BlackTimeMs,
+		&now,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	_ = s.Repository.EnforceRetention(ctx, currentGame.WhitePlayerID)
+	_ = s.Repository.EnforceRetention(ctx, currentGame.BlackPlayerID)
+
+	currentGame.Status = status
+	currentGame.Result = result
+	currentGame.EndReason = endReason
+	currentGame.TurnStartedAt = &now
 
 	return currentGame, nil
 }
@@ -251,13 +367,3 @@ func (s *Service) isPlayerTurn(
 	return playerID == currentGame.BlackPlayerID
 }
 
-func getGameResult(chessGame *ChessGame) string {
-	switch chessGame.Outcome() {
-	case "1-0":
-		return ResultWhiteWin
-	case "0-1":
-		return ResultBlackWin
-	default:
-		return ResultDraw
-	}
-}

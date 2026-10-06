@@ -137,19 +137,34 @@ func (h *Handler) readPump(
 			continue
 		}
 
-		if moveMessage.Type != "move" {
+		var currentGame *game.Game
+		switch moveMessage.Type {
+		case "move":
+			currentGame, err = h.GameService.MakeMove(
+				ctx,
+				client.GameID,
+				client.UserID,
+				moveMessage.Move,
+			)
+		case "resign":
+			currentGame, err = h.GameService.ResignGame(
+				ctx,
+				client.GameID,
+				client.UserID,
+			)
+		case "draw", "offer_draw", "accept_draw":
+			currentGame, err = h.GameService.DrawGame(
+				ctx,
+				client.GameID,
+				client.UserID,
+			)
+		default:
 			sendError(ctx, client, "unsupported message type")
 			continue
 		}
 
-		currentGame, err := h.GameService.MakeMove(
-			ctx,
-			client.GameID,
-			client.UserID,
-			moveMessage.Move,
-		)
 		if err != nil {
-			slog.WarnContext(ctx, "make move failed", "game_id", client.GameID, "user_id", client.UserID, "move", moveMessage.Move, "error", err)
+			slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", moveMessage.Type, "error", err)
 			sendError(ctx, client, err.Error())
 			continue
 		}
@@ -160,6 +175,7 @@ func (h *Handler) readPump(
 			Position:        currentGame.Position,
 			Status:          currentGame.Status,
 			Result:          currentGame.Result,
+			EndReason:       currentGame.EndReason,
 			TimeControlMode: currentGame.TimeControlMode,
 			DailyMoveTimeMs: currentGame.DailyMoveTimeMs,
 			InitialTimeMs:   currentGame.InitialTimeMs,
@@ -194,6 +210,7 @@ func (h *Handler) sendGameStart(ctx context.Context, room *Room) {
 		Position:        g.Position,
 		Status:          g.Status,
 		Result:          g.Result,
+		EndReason:       g.EndReason,
 		TimeControlMode: g.TimeControlMode,
 		DailyMoveTimeMs: g.DailyMoveTimeMs,
 		InitialTimeMs:   g.InitialTimeMs,

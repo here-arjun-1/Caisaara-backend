@@ -109,3 +109,76 @@ func (h *Handler) GetGameHistory(c *gin.Context) {
 	c.JSON(http.StatusOK, games)
 }
 
+func (h *Handler) Resign(c *gin.Context) {
+	gameID := c.Param("gameID")
+	ctx := c.Request.Context()
+
+	var playerID int64
+	if val, exists := c.Get("user_id"); exists {
+		if id, ok := val.(int64); ok {
+			playerID = id
+		}
+	}
+	if playerID == 0 {
+		if param := c.Query("player_id"); param != "" {
+			if parsed, err := strconv.ParseInt(param, 10, 64); err == nil {
+				playerID = parsed
+			}
+		}
+	}
+	if playerID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "player id required",
+		})
+		return
+	}
+
+	currentGame, err := h.Service.ResignGame(ctx, gameID, playerID)
+	if err != nil {
+		slog.WarnContext(ctx, "resign game failed", "game_id", gameID, "player_id", playerID, "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, currentGame)
+}
+
+func (h *Handler) Draw(c *gin.Context) {
+	gameID := c.Param("gameID")
+	ctx := c.Request.Context()
+
+	var playerID int64
+	if val, exists := c.Get("user_id"); exists {
+		if id, ok := val.(int64); ok {
+			playerID = id
+		}
+	}
+	if playerID == 0 {
+		if param := c.Query("player_id"); param != "" {
+			if parsed, err := strconv.ParseInt(param, 10, 64); err == nil {
+				playerID = parsed
+			}
+		}
+	}
+	if playerID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "player id required",
+		})
+		return
+	}
+
+	currentGame, err := h.Service.DrawGame(ctx, gameID, playerID)
+	if err != nil {
+		slog.WarnContext(ctx, "draw game failed", "game_id", gameID, "player_id", playerID, "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, currentGame)
+}
+
+

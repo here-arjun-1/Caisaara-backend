@@ -13,7 +13,7 @@ import (
 type GameRepository interface {
 	CreateGame(ctx context.Context, whitePlayerID int64, blackPlayerID int64, timeControlMinutes int, rated bool) (string, error)
 	FindGameByID(ctx context.Context, gameID string) (*Game, error)
-	UpdateGameState(ctx context.Context, gameID string, position string, status string, result string, currentTurn string, whiteTimeMs int64, blackTimeMs int64, turnStartedAt *time.Time) error
+	UpdateGameState(ctx context.Context, gameID string, position string, status string, result string, endReason string, currentTurn string, whiteTimeMs int64, blackTimeMs int64, turnStartedAt *time.Time) error
 	AddMove(ctx context.Context, move *GameMove) error
 	GetMoves(ctx context.Context, gameID string) ([]GameMove, error)
 	GetPlayerGames(ctx context.Context, playerID int64) ([]Game, error)
@@ -140,6 +140,7 @@ func (r *Repository) FindGameByID(
 			position,
 			status,
 			COALESCE(result, ''),
+			COALESCE(end_reason, ''),
 			COALESCE(initial_time_ms, 600000),
 			COALESCE(increment_ms, 0),
 			COALESCE(white_time_ms, 600000),
@@ -163,6 +164,7 @@ func (r *Repository) FindGameByID(
 		&g.Position,
 		&g.Status,
 		&g.Result,
+		&g.EndReason,
 		&g.InitialTimeMs,
 		&g.IncrementMs,
 		&g.WhiteTimeMs,
@@ -188,6 +190,7 @@ func (r *Repository) UpdateGameState(
 	position string,
 	status string,
 	result string,
+	endReason string,
 	currentTurn string,
 	whiteTimeMs int64,
 	blackTimeMs int64,
@@ -199,18 +202,20 @@ func (r *Repository) UpdateGameState(
 		SET position = $1,
 			status = $2,
 			result = $3,
-			current_turn = $4,
-			white_time_ms = $5,
-			black_time_ms = $6,
-			turn_started_at = $7,
+			end_reason = $4,
+			current_turn = $5,
+			white_time_ms = $6,
+			black_time_ms = $7,
+			turn_started_at = $8,
 			ended_at = CASE
 				WHEN $2 = 'finished' THEN NOW()
 				ELSE ended_at
 			END
-		WHERE id = $8`,
+		WHERE id = $9`,
 		position,
 		status,
 		result,
+		endReason,
 		currentTurn,
 		whiteTimeMs,
 		blackTimeMs,
@@ -355,6 +360,7 @@ func (r *Repository) GetPlayerGames(
 			position,
 			status,
 			COALESCE(result, ''),
+			COALESCE(end_reason, ''),
 			COALESCE(initial_time_ms, 600000),
 			COALESCE(increment_ms, 0),
 			COALESCE(white_time_ms, 600000),
@@ -389,6 +395,7 @@ func (r *Repository) GetPlayerGames(
 			&g.Position,
 			&g.Status,
 			&g.Result,
+			&g.EndReason,
 			&g.InitialTimeMs,
 			&g.IncrementMs,
 			&g.WhiteTimeMs,

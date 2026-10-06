@@ -1,0 +1,1 @@
+ALTER TABLE games DROP COLUMN IF EXISTS end_reason;
