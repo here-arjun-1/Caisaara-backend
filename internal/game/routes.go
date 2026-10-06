@@ -15,5 +15,3 @@ func RegisterRoutes(
 	games.POST("/:gameID/resign", handler.Resign)
 	games.POST("/:gameID/draw", handler.Draw)
 }
-
-

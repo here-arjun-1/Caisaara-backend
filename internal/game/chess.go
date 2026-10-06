@@ -104,4 +104,3 @@ func getGameResultAndEndReason(chessGame *ChessGame) (string, string) {
 
 	return result, endReason
 }
-
