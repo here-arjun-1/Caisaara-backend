@@ -59,7 +59,7 @@ func (r *Repository) CreateGame(
 	rated bool,
 ) (string, error) {
 	mode, initialTimeMs, incrementMs, dailyMoveMs := ResolveTimeControlMode(timeControlMinutes)
-	return r.CreateGameWithDetails(ctx, whitePlayerID, blackPlayerID, timeControlMinutes, mode, initialTimeMs, incrementMs, dailyMoveMs)
+	return r.CreateGameWithDetails(ctx, whitePlayerID, blackPlayerID, timeControlMinutes, rated, mode, initialTimeMs, incrementMs, dailyMoveMs)
 }
 
 func (r *Repository) CreateGameWithDetails(
@@ -67,6 +67,7 @@ func (r *Repository) CreateGameWithDetails(
 	whitePlayerID int64,
 	blackPlayerID int64,
 	timeControlMinutes int,
+	rated bool,
 	mode string,
 	initialTimeMs int64,
 	incrementMs int64,
