@@ -59,6 +59,11 @@ func (s *Service) SendMessage(
 		return nil, errors.New("player is not part of this game")
 	}
 
+	if g.Status != game.StatusActive {
+		slog.WarnContext(ctx, "cannot send chat message in finished game", "game_id", gameID, "status", g.Status)
+		return nil, errors.New("cannot send chat messages in a finished game")
+	}
+
 	if s.RateLimiter != nil {
 		allowed, err := s.RateLimiter.Allow(ctx, gameID, userID)
 		if err == nil && !allowed {
