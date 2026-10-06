@@ -430,7 +430,7 @@ func (r *Repository) DeleteGameWithMoves(
 		slog.ErrorContext(ctx, "begin transaction failed for delete game", "game_id", gameID, "error", err)
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	_, err = tx.Exec(
 		ctx,
