@@ -89,7 +89,9 @@ func run() error {
 	matcher := matchmaking.NewMatcher(queueRepo, gameRepository)
 
 	chatRepo := chat.NewRepository(conn)
-	chatService := chat.NewService(chatRepo, gameRepository)
+	chatLimiter := chat.NewRedisRateLimiter(redisClient, 10, time.Minute)
+	chatService := chat.NewService(chatRepo, gameRepository, chatLimiter)
+	chatHandler := chat.NewHandler(chatService)
 
 	wsHub := websocket.NewHub()
 	wsHandler := websocket.NewHandler(wsHub, gameService, chatService)
@@ -103,6 +105,7 @@ func run() error {
 		gameHandler,
 		matchmakingHandler,
 		wsHandler,
+		chatHandler,
 	)
 	if err != nil {
 		return fmt.Errorf("setup router: %w", err)

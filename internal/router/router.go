@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
+	"github.com/here-arjun-1/Caisaara-backend/internal/chat"
 	"github.com/here-arjun-1/Caisaara-backend/internal/community"
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
 	"github.com/here-arjun-1/Caisaara-backend/internal/invitation"
@@ -25,6 +26,7 @@ func New(
 	gameHandler *game.Handler,
 	matchmakingHandler *matchmaking.Handler,
 	wsHandler *websocket.Handler,
+	chatHandler ...*chat.Handler,
 ) (*gin.Engine, error) {
 	r := gin.Default()
 
@@ -56,6 +58,10 @@ func New(
 
 	if matchmakingHandler != nil {
 		matchmaking.RegisterRoutes(matchmakingHandler, protected)
+	}
+
+	if len(chatHandler) > 0 && chatHandler[0] != nil {
+		chat.RegisterRoutes(chatHandler[0], protected)
 	}
 
 	if wsHandler != nil {
