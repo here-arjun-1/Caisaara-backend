@@ -2,12 +2,22 @@ package game
 
 import "time"
 
+const (
+	ModeBullet = "bullet"
+	ModeBlitz  = "blitz"
+	ModeRapid  = "rapid"
+	ModeCustom = "custom"
+	ModeDaily  = "daily"
+)
+
 type Game struct {
 	ID                 string     `json:"id"`
 	WhitePlayerID      int64      `json:"white_player_id"`
 	BlackPlayerID      int64      `json:"black_player_id"`
 	TimeControlMinutes int        `json:"time_control_minutes"`
 	Rated              bool       `json:"rated"`
+	TimeControlMode    string     `json:"time_control_mode"`
+	DailyMoveTimeMs    int64      `json:"daily_move_time_ms,omitempty"`
 	Position           string     `json:"position"`
 	Status             string     `json:"status"`
 	Result             string     `json:"result,omitempty"`
@@ -50,17 +60,19 @@ type MoveMessage struct {
 }
 
 type GameStateMessage struct {
-	Type          string     `json:"type"`
-	GameID        string     `json:"game_id"`
-	Position      string     `json:"position"`
-	Status        string     `json:"status"`
-	Result        string     `json:"result,omitempty"`
-	InitialTimeMs int64      `json:"initial_time_ms"`
-	IncrementMs   int64      `json:"increment_ms"`
-	WhiteTimeMs   int64      `json:"white_time_ms"`
-	BlackTimeMs   int64      `json:"black_time_ms"`
-	CurrentTurn   string     `json:"current_turn"`
-	TurnStartedAt *time.Time `json:"turn_started_at,omitempty"`
+	Type            string     `json:"type"`
+	GameID          string     `json:"game_id"`
+	Position        string     `json:"position"`
+	Status          string     `json:"status"`
+	Result          string     `json:"result,omitempty"`
+	TimeControlMode string     `json:"time_control_mode"`
+	DailyMoveTimeMs int64      `json:"daily_move_time_ms,omitempty"`
+	InitialTimeMs   int64      `json:"initial_time_ms"`
+	IncrementMs     int64      `json:"increment_ms"`
+	WhiteTimeMs     int64      `json:"white_time_ms"`
+	BlackTimeMs     int64      `json:"black_time_ms"`
+	CurrentTurn     string     `json:"current_turn"`
+	TurnStartedAt   *time.Time `json:"turn_started_at,omitempty"`
 }
 
 type ErrorMessage struct {

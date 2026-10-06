@@ -58,11 +58,12 @@ func (s *Service) MakeMove(
 
 	now := time.Now()
 	var turnStartedAt time.Time
-	if currentGame.TurnStartedAt != nil {
+	switch {
+	case currentGame.TurnStartedAt != nil:
 		turnStartedAt = *currentGame.TurnStartedAt
-	} else if currentGame.StartedAt != nil {
+	case currentGame.StartedAt != nil:
 		turnStartedAt = *currentGame.StartedAt
-	} else {
+	default:
 		turnStartedAt = now
 	}
 
@@ -75,19 +76,37 @@ func (s *Service) MakeMove(
 	status := StatusActive
 	result := ""
 
-	if isWhiteTurn {
-		currentGame.WhiteTimeMs = currentGame.WhiteTimeMs - elapsedMs
-		if currentGame.WhiteTimeMs <= 0 {
-			currentGame.WhiteTimeMs = 0
+	newWhiteTimeMs := currentGame.WhiteTimeMs
+	newBlackTimeMs := currentGame.BlackTimeMs
+
+	if currentGame.TimeControlMode == ModeDaily {
+		dailyLimitMs := currentGame.DailyMoveTimeMs
+		if dailyLimitMs <= 0 {
+			dailyLimitMs = 86400000
+		}
+		if elapsedMs > dailyLimitMs {
 			status = StatusFinished
-			result = ResultBlackWin
+			if isWhiteTurn {
+				result = ResultBlackWin
+			} else {
+				result = ResultWhiteWin
+			}
 		}
 	} else {
-		currentGame.BlackTimeMs = currentGame.BlackTimeMs - elapsedMs
-		if currentGame.BlackTimeMs <= 0 {
-			currentGame.BlackTimeMs = 0
-			status = StatusFinished
-			result = ResultWhiteWin
+		if isWhiteTurn {
+			newWhiteTimeMs = currentGame.WhiteTimeMs - elapsedMs
+			if newWhiteTimeMs <= 0 {
+				newWhiteTimeMs = 0
+				status = StatusFinished
+				result = ResultBlackWin
+			}
+		} else {
+			newBlackTimeMs = currentGame.BlackTimeMs - elapsedMs
+			if newBlackTimeMs <= 0 {
+				newBlackTimeMs = 0
+				status = StatusFinished
+				result = ResultWhiteWin
+			}
 		}
 	}
 
@@ -99,8 +118,8 @@ func (s *Service) MakeMove(
 			status,
 			result,
 			currentGame.CurrentTurn,
-			currentGame.WhiteTimeMs,
-			currentGame.BlackTimeMs,
+			newWhiteTimeMs,
+			newBlackTimeMs,
 			&now,
 		)
 		if err != nil {
@@ -110,6 +129,8 @@ func (s *Service) MakeMove(
 
 		currentGame.Status = status
 		currentGame.Result = result
+		currentGame.WhiteTimeMs = newWhiteTimeMs
+		currentGame.BlackTimeMs = newBlackTimeMs
 		currentGame.TurnStartedAt = &now
 		return currentGame, nil
 	}
@@ -119,10 +140,12 @@ func (s *Service) MakeMove(
 		return nil, errors.New("invalid move")
 	}
 
-	if isWhiteTurn {
-		currentGame.WhiteTimeMs += currentGame.IncrementMs
-	} else {
-		currentGame.BlackTimeMs += currentGame.IncrementMs
+	if currentGame.TimeControlMode != ModeDaily {
+		if isWhiteTurn {
+			newWhiteTimeMs += currentGame.IncrementMs
+		} else {
+			newBlackTimeMs += currentGame.IncrementMs
+		}
 	}
 
 	existingMoves, err := s.Repository.GetMoves(ctx, gameID)
@@ -148,8 +171,8 @@ func (s *Service) MakeMove(
 		status,
 		result,
 		nextTurn,
-		currentGame.WhiteTimeMs,
-		currentGame.BlackTimeMs,
+		newWhiteTimeMs,
+		newBlackTimeMs,
 		&now,
 	)
 	if err != nil {
@@ -176,6 +199,8 @@ func (s *Service) MakeMove(
 	currentGame.Status = status
 	currentGame.Result = result
 	currentGame.CurrentTurn = nextTurn
+	currentGame.WhiteTimeMs = newWhiteTimeMs
+	currentGame.BlackTimeMs = newBlackTimeMs
 	currentGame.TurnStartedAt = &now
 
 	slog.InfoContext(ctx, "move completed successfully", "game_id", gameID, "player_id", playerID, "move", move, "status", status)

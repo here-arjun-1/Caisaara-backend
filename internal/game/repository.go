@@ -28,6 +28,29 @@ func NewRepository(db *pgxpool.Pool) GameRepository {
 	}
 }
 
+func ResolveTimeControlMode(timeControlMinutes int) (mode string, initialTimeMs int64, incrementMs int64, dailyMoveMs int64) {
+	switch timeControlMinutes {
+	case 1:
+		return ModeBullet, 60000, 0, 0
+	case 5:
+		return ModeBlitz, 300000, 0, 0
+	case 10:
+		return ModeRapid, 600000, 0, 0
+	case 1440:
+		return ModeDaily, 86400000, 0, 86400000
+	default:
+		if timeControlMinutes > 180 {
+			dailyMs := int64(timeControlMinutes) * 60 * 1000
+			return ModeDaily, dailyMs, 0, dailyMs
+		}
+		initialMs := int64(timeControlMinutes) * 60 * 1000
+		if initialMs <= 0 {
+			initialMs = 600000
+		}
+		return ModeCustom, initialMs, 0, 0
+	}
+}
+
 func (r *Repository) CreateGame(
 	ctx context.Context,
 	whitePlayerID int64,
@@ -35,13 +58,21 @@ func (r *Repository) CreateGame(
 	timeControlMinutes int,
 	rated bool,
 ) (string, error) {
-	gameID := uuid.New()
+	mode, initialTimeMs, incrementMs, dailyMoveMs := ResolveTimeControlMode(timeControlMinutes)
+	return r.CreateGameWithDetails(ctx, whitePlayerID, blackPlayerID, timeControlMinutes, mode, initialTimeMs, incrementMs, dailyMoveMs)
+}
 
-	initialTimeMs := int64(timeControlMinutes) * 60 * 1000
-	if initialTimeMs <= 0 {
-		initialTimeMs = 10 * 60 * 1000
-	}
-	incrementMs := int64(0)
+func (r *Repository) CreateGameWithDetails(
+	ctx context.Context,
+	whitePlayerID int64,
+	blackPlayerID int64,
+	timeControlMinutes int,
+	mode string,
+	initialTimeMs int64,
+	incrementMs int64,
+	dailyMoveMs int64,
+) (string, error) {
+	gameID := uuid.New()
 
 	_, err := r.DB.Exec(
 		ctx,
@@ -51,6 +82,8 @@ func (r *Repository) CreateGame(
 			black_player_id,
 			time_control_minutes,
 			rated,
+			time_control_mode,
+			daily_move_time_ms,
 			position,
 			status,
 			started_at,
@@ -61,12 +94,14 @@ func (r *Repository) CreateGame(
 			current_turn,
 			turn_started_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, 'active', NOW(), $7, $8, $9, $10, 'w', NOW())`,
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'active', NOW(), $9, $10, $11, $12, 'w', NOW())`,
 		gameID,
 		whitePlayerID,
 		blackPlayerID,
 		timeControlMinutes,
 		rated,
+		mode,
+		dailyMoveMs,
 		NewChessGame().FEN(),
 		initialTimeMs,
 		incrementMs,
@@ -96,6 +131,8 @@ func (r *Repository) FindGameByID(
 			black_player_id,
 			time_control_minutes,
 			rated,
+			COALESCE(time_control_mode, 'rapid'),
+			COALESCE(daily_move_time_ms, 86400000),
 			position,
 			status,
 			COALESCE(result, ''),
@@ -117,6 +154,8 @@ func (r *Repository) FindGameByID(
 		&g.BlackPlayerID,
 		&g.TimeControlMinutes,
 		&g.Rated,
+		&g.TimeControlMode,
+		&g.DailyMoveTimeMs,
 		&g.Position,
 		&g.Status,
 		&g.Result,
