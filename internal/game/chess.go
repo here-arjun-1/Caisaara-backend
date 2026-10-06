@@ -72,7 +72,7 @@ func (g *ChessGame) PGN() string {
 }
 
 func getGameResultAndEndReason(chessGame *ChessGame) (string, string) {
-	result := ResultDraw
+	var result string
 	switch chessGame.Outcome() {
 	case "1-0":
 		result = ResultWhiteWin
