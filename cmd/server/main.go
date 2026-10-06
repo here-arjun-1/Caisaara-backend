@@ -20,6 +20,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/config"
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
 	"github.com/here-arjun-1/Caisaara-backend/internal/invitation"
+	"github.com/here-arjun-1/Caisaara-backend/internal/matchmaking"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
 	"github.com/here-arjun-1/Caisaara-backend/internal/router"
 	"github.com/here-arjun-1/Caisaara-backend/internal/websocket"
@@ -81,16 +82,31 @@ func run() error {
 	)
 	invitationHandler := invitation.NewHandler(invitationService)
 
+	queueRepo := matchmaking.NewRedisQueueRepository(redisClient)
+	matchmakingService := matchmaking.NewService(queueRepo, authModule.UserRepository)
+	matchmakingHandler := matchmaking.NewHandler(matchmakingService)
+	matcher := matchmaking.NewMatcher(queueRepo, gameRepository)
+
 	wsHub := websocket.NewHub()
 	wsHandler := websocket.NewHandler(wsHub, gameService)
 
-	r, err := router.New(cfg.JWTSecret, authModule, playerModule, communityModule, invitationHandler, gameHandler, wsHandler)
+	r, err := router.New(
+		cfg.JWTSecret,
+		authModule,
+		playerModule,
+		communityModule,
+		invitationHandler,
+		gameHandler,
+		matchmakingHandler,
+		wsHandler,
+	)
 	if err != nil {
 		return fmt.Errorf("setup router: %w", err)
 	}
 
 	asynqServer := worker.StartEmailServer(asynqRedisOpt, email.NewSender(cfg.SMTP))
 	worker.StartSessionCleanup(authModule.SessionRepository)
+	matcher.Start()
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

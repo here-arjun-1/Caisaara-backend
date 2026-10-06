@@ -10,6 +10,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/community"
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
 	"github.com/here-arjun-1/Caisaara-backend/internal/invitation"
+	"github.com/here-arjun-1/Caisaara-backend/internal/matchmaking"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
 	"github.com/here-arjun-1/Caisaara-backend/internal/response"
 	"github.com/here-arjun-1/Caisaara-backend/internal/websocket"
@@ -22,6 +23,7 @@ func New(
 	communityModule *community.Module,
 	invitationHandler *invitation.Handler,
 	gameHandler *game.Handler,
+	matchmakingHandler *matchmaking.Handler,
 	wsHandler *websocket.Handler,
 ) (*gin.Engine, error) {
 	r := gin.Default()
@@ -50,6 +52,10 @@ func New(
 
 	if gameHandler != nil {
 		game.RegisterRoutes(gameHandler, r, protected)
+	}
+
+	if matchmakingHandler != nil {
+		matchmaking.RegisterRoutes(matchmakingHandler, protected)
 	}
 
 	if wsHandler != nil {
