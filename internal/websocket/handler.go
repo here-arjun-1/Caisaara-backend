@@ -58,6 +58,23 @@ func (h *Handler) Connect(c *gin.Context) {
 		return
 	}
 
+	currentGame, err := h.GameService.GetGame(ctx, gameID)
+	if err != nil {
+		slog.ErrorContext(ctx, "get game failed for websocket connect", "game_id", gameID, "error", err)
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "game not found",
+		})
+		return
+	}
+
+	if claims.UserID != currentGame.WhitePlayerID && claims.UserID != currentGame.BlackPlayerID {
+		slog.WarnContext(ctx, "unauthorized player websocket connect attempt", "game_id", gameID, "user_id", claims.UserID)
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "unauthorized player for this game",
+		})
+		return
+	}
+
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		slog.ErrorContext(
@@ -79,12 +96,16 @@ func (h *Handler) Connect(c *gin.Context) {
 	room := h.Hub.GetOrCreateRoom(gameID)
 	room.AddClient(client)
 
-	if room.Count() == 2 {
-		h.sendGameStart(ctx, room)
-	}
+	moves, _ := h.GameService.GetMoves(ctx, gameID)
 
 	go h.writePump(ctx, client)
 	go h.readPump(ctx, client, room)
+
+	h.sendClientGameState(ctx, client, currentGame, moves, "game_state")
+
+	if room.Count() == 2 {
+		h.sendGameStart(ctx, room, currentGame, moves)
+	}
 }
 
 func (h *Handler) writePump(ctx context.Context, client *Client) {
@@ -169,6 +190,8 @@ func (h *Handler) readPump(
 			continue
 		}
 
+		moves, _ := h.GameService.GetMoves(ctx, client.GameID)
+
 		response := game.GameStateMessage{
 			Type:            "game_state",
 			GameID:          currentGame.ID,
@@ -184,6 +207,7 @@ func (h *Handler) readPump(
 			BlackTimeMs:     currentGame.BlackTimeMs,
 			CurrentTurn:     currentGame.CurrentTurn,
 			TurnStartedAt:   currentGame.TurnStartedAt,
+			Moves:           moves,
 		}
 
 		data, err := json.Marshal(response)
@@ -197,11 +221,61 @@ func (h *Handler) readPump(
 	}
 }
 
-func (h *Handler) sendGameStart(ctx context.Context, room *Room) {
-	g, err := h.GameService.GetGame(ctx, room.GameID)
+func (h *Handler) sendClientGameState(
+	ctx context.Context,
+	client *Client,
+	g *game.Game,
+	moves []game.GameMove,
+	messageType string,
+) {
+	if moves == nil {
+		moves = []game.GameMove{}
+	}
+
+	response := game.GameStateMessage{
+		Type:            messageType,
+		GameID:          g.ID,
+		Position:        g.Position,
+		Status:          g.Status,
+		Result:          g.Result,
+		EndReason:       g.EndReason,
+		TimeControlMode: g.TimeControlMode,
+		DailyMoveTimeMs: g.DailyMoveTimeMs,
+		InitialTimeMs:   g.InitialTimeMs,
+		IncrementMs:     g.IncrementMs,
+		WhiteTimeMs:     g.WhiteTimeMs,
+		BlackTimeMs:     g.BlackTimeMs,
+		CurrentTurn:     g.CurrentTurn,
+		TurnStartedAt:   g.TurnStartedAt,
+		Moves:           moves,
+	}
+
+	data, err := json.Marshal(response)
 	if err != nil {
-		slog.ErrorContext(ctx, "get game failed for game_start", "game_id", room.GameID, "error", err)
+		slog.ErrorContext(ctx, "marshal client game state failed", "game_id", g.ID, "error", err)
 		return
+	}
+
+	select {
+	case client.Send <- data:
+	default:
+	}
+}
+
+func (h *Handler) sendGameStart(ctx context.Context, room *Room, g *game.Game, moves []game.GameMove) {
+	if g == nil {
+		var err error
+		g, err = h.GameService.GetGame(ctx, room.GameID)
+		if err != nil {
+			slog.ErrorContext(ctx, "get game failed for game_start", "game_id", room.GameID, "error", err)
+			return
+		}
+	}
+	if moves == nil {
+		moves, _ = h.GameService.GetMoves(ctx, room.GameID)
+	}
+	if moves == nil {
+		moves = []game.GameMove{}
 	}
 
 	response := game.GameStateMessage{
@@ -219,6 +293,7 @@ func (h *Handler) sendGameStart(ctx context.Context, room *Room) {
 		BlackTimeMs:     g.BlackTimeMs,
 		CurrentTurn:     g.CurrentTurn,
 		TurnStartedAt:   g.TurnStartedAt,
+		Moves:           moves,
 	}
 
 	data, err := json.Marshal(response)
