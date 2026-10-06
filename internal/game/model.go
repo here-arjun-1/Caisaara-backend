@@ -88,6 +88,7 @@ type GameStateMessage struct {
 	BlackTimeMs     int64      `json:"black_time_ms"`
 	CurrentTurn     string     `json:"current_turn"`
 	TurnStartedAt   *time.Time `json:"turn_started_at,omitempty"`
+	Moves           []GameMove `json:"moves,omitempty"`
 }
 
 type ErrorMessage struct {
