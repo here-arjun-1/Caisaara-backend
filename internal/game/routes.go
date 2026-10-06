@@ -9,6 +9,8 @@ func RegisterRoutes(
 ) {
 	games := api.Group("/games")
 
+	games.GET("/history", handler.GetGameHistory)
 	games.GET("/:gameID", handler.GetGame)
 	games.GET("/:gameID/moves", handler.GetMoves)
 }
+
