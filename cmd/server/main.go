@@ -16,6 +16,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/email"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/validation"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/worker"
+	"github.com/here-arjun-1/Caisaara-backend/internal/chat"
 	"github.com/here-arjun-1/Caisaara-backend/internal/community"
 	"github.com/here-arjun-1/Caisaara-backend/internal/config"
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
@@ -87,8 +88,11 @@ func run() error {
 	matchmakingHandler := matchmaking.NewHandler(matchmakingService)
 	matcher := matchmaking.NewMatcher(queueRepo, gameRepository)
 
+	chatRepo := chat.NewRepository(conn)
+	chatService := chat.NewService(chatRepo, gameRepository)
+
 	wsHub := websocket.NewHub()
-	wsHandler := websocket.NewHandler(wsHub, gameService)
+	wsHandler := websocket.NewHandler(wsHub, gameService, chatService)
 
 	r, err := router.New(
 		cfg.JWTSecret,

@@ -39,8 +39,8 @@ func (s *Service) SendMessage(
 		return nil, errors.New("message cannot be empty")
 	}
 
-	if len(trimmed) > 1000 {
-		return nil, errors.New("message exceeds maximum length of 1000 characters")
+	if len(trimmed) > 500 {
+		return nil, errors.New("message exceeds maximum length of 500 characters")
 	}
 
 	g, err := s.GameRepo.FindGameByID(ctx, gameID)
