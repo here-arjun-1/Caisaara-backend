@@ -444,6 +444,16 @@ func (r *Repository) DeleteGameWithMoves(
 
 	_, err = tx.Exec(
 		ctx,
+		`DELETE FROM game_chat_messages WHERE game_id = $1`,
+		gameID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete game chat messages in transaction failed", "game_id", gameID, "error", err)
+		return err
+	}
+
+	_, err = tx.Exec(
+		ctx,
 		`DELETE FROM games WHERE id = $1 AND status = 'finished'`,
 		gameID,
 	)

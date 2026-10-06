@@ -11,6 +11,7 @@ import (
 type ChatRepository interface {
 	CreateMessage(ctx context.Context, msg *ChatMessage) error
 	GetMessagesByGameID(ctx context.Context, gameID string) ([]ChatMessage, error)
+	DeleteMessagesByGameID(ctx context.Context, gameID string) error
 }
 
 type Repository struct {
@@ -103,4 +104,20 @@ func (r *Repository) GetMessagesByGameID(
 	}
 
 	return messages, nil
+}
+
+func (r *Repository) DeleteMessagesByGameID(
+	ctx context.Context,
+	gameID string,
+) error {
+	_, err := r.DB.Exec(
+		ctx,
+		`DELETE FROM game_chat_messages WHERE game_id = $1`,
+		gameID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete chat messages failed", "game_id", gameID, "error", err)
+		return err
+	}
+	return nil
 }
