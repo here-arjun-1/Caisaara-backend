@@ -12,5 +12,8 @@ func RegisterRoutes(
 	games.GET("/history", handler.GetGameHistory)
 	games.GET("/:gameID", handler.GetGame)
 	games.GET("/:gameID/moves", handler.GetMoves)
+	games.POST("/:gameID/resign", handler.Resign)
+	games.POST("/:gameID/draw", handler.Draw)
 }
+
 
