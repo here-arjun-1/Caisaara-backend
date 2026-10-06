@@ -366,4 +366,3 @@ func (s *Service) isPlayerTurn(
 	}
 	return playerID == currentGame.BlackPlayerID
 }
-

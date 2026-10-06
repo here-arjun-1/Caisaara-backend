@@ -180,5 +180,3 @@ func (h *Handler) Draw(c *gin.Context) {
 
 	c.JSON(http.StatusOK, currentGame)
 }
-
-
