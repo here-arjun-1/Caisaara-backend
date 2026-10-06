@@ -14,6 +14,7 @@ import (
 type ChatService interface {
 	SendMessage(ctx context.Context, gameID string, userID int64, message string) (*ChatMessage, error)
 	GetMessages(ctx context.Context, gameID string, userID int64) ([]ChatMessage, error)
+	DeleteMessages(ctx context.Context, gameID string) error
 }
 
 type Service struct {
@@ -115,4 +116,8 @@ func (s *Service) GetMessages(
 	}
 
 	return messages, nil
+}
+
+func (s *Service) DeleteMessages(ctx context.Context, gameID string) error {
+	return s.ChatRepo.DeleteMessagesByGameID(ctx, gameID)
 }
