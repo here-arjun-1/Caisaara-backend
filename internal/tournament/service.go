@@ -7,6 +7,8 @@ import (
 	"math/big"
 	"strings"
 	"time"
+
+	"github.com/here-arjun-1/Caisaara-backend/internal/game"
 )
 
 type Service interface {
@@ -19,16 +21,22 @@ type Service interface {
 	LeaveTournament(ctx context.Context, tournamentID int64, userID int64) error
 	StartTournament(ctx context.Context, tournamentID int64, userID int64) (*TournamentWithPlayerCount, error)
 	GenerateRoundPairings(ctx context.Context, tournamentID int64, userID int64) ([]*TournamentPairing, error)
+	OnGameCompleted(ctx context.Context, gameID string, result string) error
 }
 
 type TournamentService struct {
-	Repo TournamentRepository
+	Repo     TournamentRepository
+	GameRepo game.GameRepository
 }
 
-func NewService(repo TournamentRepository) Service {
-	return &TournamentService{
+func NewService(repo TournamentRepository, gameRepo ...game.GameRepository) Service {
+	s := &TournamentService{
 		Repo: repo,
 	}
+	if len(gameRepo) > 0 {
+		s.GameRepo = gameRepo[0]
+	}
+	return s
 }
 
 const inviteCodeChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -229,7 +237,7 @@ func (s *TournamentService) StartTournament(ctx context.Context, tournamentID in
 	if err == nil && len(swissPlayers) >= 2 {
 		pairingsResult, err := GenerateSwissPairings(swissPlayers)
 		if err == nil {
-			_, _ = s.Repo.SaveRoundPairings(ctx, tournamentID, 1, pairingsResult)
+			_, _ = s.Repo.SaveRoundPairings(ctx, tournamentID, 1, pairingsResult, s.GameRepo)
 		}
 	}
 
@@ -265,5 +273,38 @@ func (s *TournamentService) GenerateRoundPairings(ctx context.Context, tournamen
 		roundNumber = 1
 	}
 
-	return s.Repo.SaveRoundPairings(ctx, tournamentID, roundNumber, pairingsResult)
+	return s.Repo.SaveRoundPairings(ctx, tournamentID, roundNumber, pairingsResult, s.GameRepo)
+}
+
+func (s *TournamentService) OnGameCompleted(ctx context.Context, gameID string, result string) error {
+	tournamentID, roundCompleted, err := s.Repo.UpdatePairingOnGameCompleted(ctx, gameID, result)
+	if err != nil || tournamentID == 0 {
+		return err
+	}
+
+	if roundCompleted {
+		t, err := s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
+		if err != nil {
+			return err
+		}
+
+		if t.Status == StatusOngoing && t.CurrentRound <= t.TotalRounds {
+			swissPlayers, err := s.Repo.GetSwissPlayers(ctx, tournamentID)
+			if err != nil {
+				return err
+			}
+
+			pairingsResult, err := GenerateSwissPairings(swissPlayers)
+			if err != nil {
+				return err
+			}
+
+			_, err = s.Repo.SaveRoundPairings(ctx, tournamentID, t.CurrentRound, pairingsResult, s.GameRepo)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
