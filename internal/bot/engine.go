@@ -24,7 +24,7 @@ func (e *Engine) BestMove(
 	fen string,
 	settings EngineSettings,
 ) (string, error) {
-	cmd := exec.CommandContext(ctx, e.Path)
+	cmd := exec.CommandContext(ctx, e.Path) //nolint:gosec // path comes from server config, not from users
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
