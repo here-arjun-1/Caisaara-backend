@@ -10,11 +10,12 @@ import (
 )
 
 type Config struct {
-	Port        string
-	DatabaseURL string
-	RedisURL    string
-	JWTSecret   string
-	SMTP        SMTPConfig
+	Port          string
+	DatabaseURL   string
+	RedisURL      string
+	JWTSecret     string
+	SMTP          SMTPConfig
+	StockfishPath string
 }
 
 type SMTPConfig struct {
@@ -30,10 +31,11 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		Port:        getEnv("PORT", "8050"),
-		DatabaseURL: os.Getenv("dbURL"),
-		RedisURL:    getEnv("REDIS_URL", "localhost:6379"),
-		JWTSecret:   os.Getenv("JWT_SECRET"),
+		Port:          getEnv("PORT", "8050"),
+		DatabaseURL:   os.Getenv("dbURL"),
+		RedisURL:      getEnv("REDIS_URL", "localhost:6379"),
+		JWTSecret:     os.Getenv("JWT_SECRET"),
+		StockfishPath: getEnv("STOCKFISH_PATH", "stockfish"),
 		SMTP: SMTPConfig{
 			Host:     getEnv("SMTP_HOST", "smtp.gmail.com"),
 			Port:     getEnv("SMTP_PORT", "587"),

@@ -13,7 +13,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o caisaara-backend ./cmd
 
 FROM alpine:3.24
 
-RUN apk add --no-cache ca-certificates && adduser -D -H -u 10001 app
+RUN apk add --no-cache ca-certificates stockfish && adduser -D -H -u 10001 app
 
 WORKDIR /app
 

@@ -16,6 +16,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/email"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/validation"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/worker"
+	"github.com/here-arjun-1/Caisaara-backend/internal/bot"
 	"github.com/here-arjun-1/Caisaara-backend/internal/chat"
 	"github.com/here-arjun-1/Caisaara-backend/internal/community"
 	"github.com/here-arjun-1/Caisaara-backend/internal/config"
@@ -75,6 +76,11 @@ func run() error {
 	gameService := game.NewService(gameRepository)
 	gameHandler := game.NewHandler(gameService)
 
+	botRepository := bot.NewRepository(conn)
+	botEngine := bot.NewEngine(cfg.StockfishPath)
+	botService := bot.NewService(botRepository, botEngine)
+	botHandler := bot.NewHandler(botService)
+
 	inviteRepo := invitation.NewRedisInviteRepository(redisClient)
 	invitationService := invitation.NewService(
 		inviteRepo,
@@ -105,6 +111,7 @@ func run() error {
 		gameHandler,
 		matchmakingHandler,
 		wsHandler,
+		botHandler,
 		chatHandler,
 	)
 	if err != nil {
