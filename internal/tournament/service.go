@@ -10,6 +10,10 @@ import (
 
 type Service interface {
 	CreateTournament(ctx context.Context, userID int64, req CreateTournamentRequest) (*Tournament, error)
+	ListPublicTournaments(ctx context.Context) ([]*TournamentWithPlayerCount, error)
+	GetTournamentDetails(ctx context.Context, id int64) (*TournamentWithPlayerCount, error)
+	GetTournamentByInviteCode(ctx context.Context, code string) (*TournamentWithPlayerCount, error)
+	JoinTournament(ctx context.Context, tournamentID int64, userID int64, inviteCode string) (*TournamentPlayer, error)
 }
 
 type TournamentService struct {
@@ -99,4 +103,68 @@ func (s *TournamentService) CreateTournament(ctx context.Context, userID int64, 
 	}
 
 	return tournament, nil
+}
+
+func (s *TournamentService) ListPublicTournaments(ctx context.Context) ([]*TournamentWithPlayerCount, error) {
+	return s.Repo.ListPublicTournaments(ctx)
+}
+
+func (s *TournamentService) GetTournamentDetails(ctx context.Context, id int64) (*TournamentWithPlayerCount, error) {
+	return s.Repo.FindByIDWithPlayerCount(ctx, id)
+}
+
+func (s *TournamentService) GetTournamentByInviteCode(ctx context.Context, code string) (*TournamentWithPlayerCount, error) {
+	trimmedCode := strings.TrimSpace(code)
+	if trimmedCode == "" {
+		return nil, ErrTournamentNotFound
+	}
+	return s.Repo.FindByInviteCode(ctx, trimmedCode)
+}
+
+func (s *TournamentService) JoinTournament(ctx context.Context, tournamentID int64, userID int64, inviteCode string) (*TournamentPlayer, error) {
+	t, err := s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
+	if err != nil {
+		return nil, err
+	}
+
+	if t.Status != StatusRegistration {
+		return nil, ErrNotRegistration
+	}
+
+	if t.Players >= t.MaxPlayers {
+		return nil, ErrTournamentFull
+	}
+
+	if t.Visibility == VisibilityPrivate {
+		trimmedCode := strings.TrimSpace(inviteCode)
+		if trimmedCode == "" || t.InviteCode == nil || !strings.EqualFold(trimmedCode, *t.InviteCode) {
+			return nil, ErrInvalidInviteCode
+		}
+	}
+
+	joined, err := s.Repo.IsPlayerJoined(ctx, tournamentID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if joined {
+		return nil, ErrAlreadyJoined
+	}
+
+	now := time.Now()
+	player := &TournamentPlayer{
+		TournamentID: tournamentID,
+		UserID:       userID,
+		Score:        0.0,
+		Wins:         0,
+		Draws:        0,
+		Losses:       0,
+		GamesPlayed:  0,
+		JoinedAt:     now,
+	}
+
+	if err := s.Repo.AddPlayer(ctx, player); err != nil {
+		return nil, err
+	}
+
+	return player, nil
 }
