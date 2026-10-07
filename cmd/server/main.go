@@ -26,6 +26,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/matchmaking"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
 	"github.com/here-arjun-1/Caisaara-backend/internal/router"
+	"github.com/here-arjun-1/Caisaara-backend/internal/tournament"
 	"github.com/here-arjun-1/Caisaara-backend/internal/websocket"
 	"github.com/here-arjun-1/Caisaara-backend/migrations"
 	"github.com/hibiken/asynq"
@@ -107,6 +108,10 @@ func run() error {
 	wsHandler := websocket.NewHandler(wsHub, gameService, chatService)
 	chatHandler := chat.NewHandler(chatService, wsHandler.BroadcastChatMessage)
 
+	tournamentRepo := tournament.NewRepository(conn)
+	tournamentService := tournament.NewService(tournamentRepo)
+	tournamentHandler := tournament.NewHandler(tournamentService)
+
 	r, err := router.New(
 		cfg.JWTSecret,
 		authModule,
@@ -119,6 +124,7 @@ func run() error {
 		botHandler,
 		clubHandler,
 		chatHandler,
+		tournamentHandler,
 	)
 	if err != nil {
 		return fmt.Errorf("setup router: %w", err)

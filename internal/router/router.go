@@ -16,6 +16,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/matchmaking"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
 	"github.com/here-arjun-1/Caisaara-backend/internal/response"
+	"github.com/here-arjun-1/Caisaara-backend/internal/tournament"
 	"github.com/here-arjun-1/Caisaara-backend/internal/websocket"
 )
 
@@ -30,7 +31,8 @@ func New(
 	wsHandler *websocket.Handler,
 	botHandler *bot.Handler,
 	clubHandler *club.Handler,
-	chatHandler ...*chat.Handler,
+	chatHandler *chat.Handler,
+	tournamentHandler ...*tournament.Handler,
 ) (*gin.Engine, error) {
 	r := gin.Default()
 
@@ -72,8 +74,12 @@ func New(
 		club.RegisterRoutes(clubHandler, r, protected)
 	}
 
-	if len(chatHandler) > 0 && chatHandler[0] != nil {
-		chat.RegisterRoutes(chatHandler[0], protected)
+	if chatHandler != nil {
+		chat.RegisterRoutes(chatHandler, protected)
+	}
+
+	if len(tournamentHandler) > 0 && tournamentHandler[0] != nil {
+		tournament.RegisterRoutes(tournamentHandler[0], protected)
 	}
 
 	if wsHandler != nil {
