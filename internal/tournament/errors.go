@@ -15,4 +15,8 @@ var (
 	ErrTournamentFull       = errors.New("tournament is full")
 	ErrAlreadyJoined        = errors.New("user has already joined this tournament")
 	ErrInvalidInviteCode    = errors.New("invalid or missing invite code for private tournament")
+	ErrNotJoined            = errors.New("user is not joined in this tournament")
+	ErrCannotLeaveStarted   = errors.New("cannot leave a tournament that has already started or finished")
+	ErrNotCreator           = errors.New("only the tournament creator can start the tournament")
+	ErrNotEnoughPlayers     = errors.New("at least 2 players are required to start the tournament")
 )

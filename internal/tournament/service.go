@@ -14,6 +14,9 @@ type Service interface {
 	GetTournamentDetails(ctx context.Context, id int64) (*TournamentWithPlayerCount, error)
 	GetTournamentByInviteCode(ctx context.Context, code string) (*TournamentWithPlayerCount, error)
 	JoinTournament(ctx context.Context, tournamentID int64, userID int64, inviteCode string) (*TournamentPlayer, error)
+	JoinTournamentByInviteCode(ctx context.Context, code string, userID int64) (*TournamentPlayer, error)
+	LeaveTournament(ctx context.Context, tournamentID int64, userID int64) error
+	StartTournament(ctx context.Context, tournamentID int64, userID int64) (*TournamentWithPlayerCount, error)
 }
 
 type TournamentService struct {
@@ -167,4 +170,58 @@ func (s *TournamentService) JoinTournament(ctx context.Context, tournamentID int
 	}
 
 	return player, nil
+}
+
+func (s *TournamentService) JoinTournamentByInviteCode(ctx context.Context, code string, userID int64) (*TournamentPlayer, error) {
+	tw, err := s.GetTournamentByInviteCode(ctx, code)
+	if err != nil {
+		return nil, err
+	}
+	return s.JoinTournament(ctx, tw.ID, userID, code)
+}
+
+func (s *TournamentService) LeaveTournament(ctx context.Context, tournamentID int64, userID int64) error {
+	t, err := s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
+	if err != nil {
+		return err
+	}
+
+	if t.Status != StatusRegistration {
+		return ErrCannotLeaveStarted
+	}
+
+	joined, err := s.Repo.IsPlayerJoined(ctx, tournamentID, userID)
+	if err != nil {
+		return err
+	}
+	if !joined {
+		return ErrNotJoined
+	}
+
+	return s.Repo.RemovePlayer(ctx, tournamentID, userID)
+}
+
+func (s *TournamentService) StartTournament(ctx context.Context, tournamentID int64, userID int64) (*TournamentWithPlayerCount, error) {
+	t, err := s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
+	if err != nil {
+		return nil, err
+	}
+
+	if t.CreatedBy != userID {
+		return nil, ErrNotCreator
+	}
+
+	if t.Status != StatusRegistration {
+		return nil, ErrNotRegistration
+	}
+
+	if t.Players < 2 {
+		return nil, ErrNotEnoughPlayers
+	}
+
+	if err := s.Repo.StartTournament(ctx, tournamentID); err != nil {
+		return nil, err
+	}
+
+	return s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
 }
