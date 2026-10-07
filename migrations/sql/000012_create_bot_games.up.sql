@@ -13,6 +13,6 @@ CREATE TABLE IF NOT EXISTS bot_games (
     ended_at TIMESTAMPTZ
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_bot_games_one_active
+CREATE INDEX IF NOT EXISTS idx_bot_games_player_active
     ON bot_games(player_id)
     WHERE status = 'active';
