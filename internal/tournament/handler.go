@@ -4,6 +4,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -67,4 +69,137 @@ func (h *Handler) CreateTournament(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, ToTournamentResponse(t))
+}
+
+func (h *Handler) ListPublicTournaments(c *gin.Context) {
+	ctx := c.Request.Context()
+	list, err := h.Service.ListPublicTournaments(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "list public tournaments handler failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	res := make([]*TournamentDetailsResponse, 0, len(list))
+	for _, tw := range list {
+		res = append(res, ToTournamentDetailsResponse(tw))
+	}
+
+	c.JSON(http.StatusOK, res)
+}
+
+func (h *Handler) GetTournamentDetails(c *gin.Context) {
+	idParam := c.Param("id")
+	id, err := strconv.ParseInt(idParam, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid tournament id",
+		})
+		return
+	}
+
+	ctx := c.Request.Context()
+	tw, err := h.Service.GetTournamentDetails(ctx, id)
+	if err != nil {
+		if errors.Is(err, ErrTournamentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "tournament not found",
+			})
+			return
+		}
+
+		slog.ErrorContext(ctx, "get tournament details handler failed", "id", id, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, ToTournamentDetailsResponse(tw))
+}
+
+func (h *Handler) GetTournamentByInviteCode(c *gin.Context) {
+	code := c.Param("code")
+	ctx := c.Request.Context()
+
+	tw, err := h.Service.GetTournamentByInviteCode(ctx, code)
+	if err != nil {
+		if errors.Is(err, ErrTournamentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "tournament not found",
+			})
+			return
+		}
+
+		slog.ErrorContext(ctx, "get tournament by invite code handler failed", "code", code, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, ToTournamentDetailsResponse(tw))
+}
+
+func (h *Handler) JoinTournament(c *gin.Context) {
+	userID, ok := getUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "user not authenticated",
+		})
+		return
+	}
+
+	idParam := c.Param("id")
+	id, err := strconv.ParseInt(idParam, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid tournament id",
+		})
+		return
+	}
+
+	var req JoinTournamentRequest
+	_ = c.ShouldBindJSON(&req)
+
+	inviteCode := strings.TrimSpace(req.InviteCode)
+	if inviteCode == "" {
+		inviteCode = strings.TrimSpace(c.Query("invite_code"))
+	}
+
+	ctx := c.Request.Context()
+	_, err = h.Service.JoinTournament(ctx, id, userID, inviteCode)
+	if err != nil {
+		if errors.Is(err, ErrTournamentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "tournament not found",
+			})
+			return
+		}
+
+		if errors.Is(err, ErrNotRegistration) ||
+			errors.Is(err, ErrTournamentFull) ||
+			errors.Is(err, ErrAlreadyJoined) ||
+			errors.Is(err, ErrInvalidInviteCode) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		slog.ErrorContext(ctx, "join tournament handler failed", "tournament_id", id, "user_id", userID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, JoinTournamentResponse{
+		Message:      "successfully joined tournament",
+		TournamentID: strconv.FormatInt(id, 10),
+		UserID:       userID,
+		Status:       "joined",
+	})
 }

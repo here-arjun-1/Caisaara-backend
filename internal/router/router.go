@@ -79,7 +79,7 @@ func New(
 	}
 
 	if len(tournamentHandler) > 0 && tournamentHandler[0] != nil {
-		tournament.RegisterRoutes(tournamentHandler[0], protected)
+		tournament.RegisterRoutes(tournamentHandler[0], protected, public)
 	}
 
 	if wsHandler != nil {
