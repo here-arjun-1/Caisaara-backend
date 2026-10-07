@@ -1,0 +1,4 @@
+DROP TABLE IF EXISTS tournament_pairings CASCADE;
+DROP TABLE IF EXISTS tournament_rounds CASCADE;
+DROP TABLE IF EXISTS tournament_players CASCADE;
+DROP TABLE IF EXISTS tournaments CASCADE;
