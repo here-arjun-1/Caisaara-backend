@@ -3,6 +3,7 @@ package tournament
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"math/big"
 	"strings"
 	"time"
@@ -17,6 +18,7 @@ type Service interface {
 	JoinTournamentByInviteCode(ctx context.Context, code string, userID int64) (*TournamentPlayer, error)
 	LeaveTournament(ctx context.Context, tournamentID int64, userID int64) error
 	StartTournament(ctx context.Context, tournamentID int64, userID int64) (*TournamentWithPlayerCount, error)
+	GenerateRoundPairings(ctx context.Context, tournamentID int64, userID int64) ([]*TournamentPairing, error)
 }
 
 type TournamentService struct {
@@ -223,5 +225,45 @@ func (s *TournamentService) StartTournament(ctx context.Context, tournamentID in
 		return nil, err
 	}
 
+	swissPlayers, err := s.Repo.GetSwissPlayers(ctx, tournamentID)
+	if err == nil && len(swissPlayers) >= 2 {
+		pairingsResult, err := GenerateSwissPairings(swissPlayers)
+		if err == nil {
+			_, _ = s.Repo.SaveRoundPairings(ctx, tournamentID, 1, pairingsResult)
+		}
+	}
+
 	return s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
+}
+
+func (s *TournamentService) GenerateRoundPairings(ctx context.Context, tournamentID int64, userID int64) ([]*TournamentPairing, error) {
+	t, err := s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
+	if err != nil {
+		return nil, err
+	}
+
+	if t.CreatedBy != userID {
+		return nil, ErrNotCreator
+	}
+
+	if t.Status != StatusOngoing {
+		return nil, errors.New("tournament is not ongoing")
+	}
+
+	swissPlayers, err := s.Repo.GetSwissPlayers(ctx, tournamentID)
+	if err != nil {
+		return nil, err
+	}
+
+	pairingsResult, err := GenerateSwissPairings(swissPlayers)
+	if err != nil {
+		return nil, err
+	}
+
+	roundNumber := t.CurrentRound
+	if roundNumber <= 0 {
+		roundNumber = 1
+	}
+
+	return s.Repo.SaveRoundPairings(ctx, tournamentID, roundNumber, pairingsResult)
 }

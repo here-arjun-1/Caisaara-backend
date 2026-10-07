@@ -24,6 +24,8 @@ type TournamentRepository interface {
 	AddPlayer(ctx context.Context, player *TournamentPlayer) error
 	RemovePlayer(ctx context.Context, tournamentID int64, userID int64) error
 	StartTournament(ctx context.Context, tournamentID int64) error
+	GetSwissPlayers(ctx context.Context, tournamentID int64) ([]*SwissPlayer, error)
+	SaveRoundPairings(ctx context.Context, tournamentID int64, roundNumber int, pairings []SwissPairingResult) ([]*TournamentPairing, error)
 }
 
 type Repository struct {
@@ -415,4 +417,180 @@ func (r *Repository) StartTournament(ctx context.Context, tournamentID int64) er
 	}
 
 	return tx.Commit(ctx)
+}
+
+func (r *Repository) GetSwissPlayers(ctx context.Context, tournamentID int64) ([]*SwissPlayer, error) {
+	rows, err := r.DB.Query(
+		ctx,
+		`SELECT tp.user_id, COALESCE(u.rating, 1200) AS rating, tp.score, tp.wins, tp.draws, tp.losses, tp.games_played
+		FROM tournament_players tp
+		LEFT JOIN users u ON tp.user_id = u.id
+		WHERE tp.tournament_id = $1`,
+		tournamentID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "get swiss players query failed", "tournament_id", tournamentID, "error", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	playerMap := make(map[int64]*SwissPlayer)
+	for rows.Next() {
+		var p SwissPlayer
+		p.PreviousOpponents = make(map[int64]bool)
+		if err := rows.Scan(&p.UserID, &p.Rating, &p.Score, &p.Wins, &p.Draws, &p.Losses, &p.GamesPlayed); err != nil {
+			return nil, err
+		}
+		playerMap[p.UserID] = &p
+	}
+	rows.Close()
+
+	pairingRows, err := r.DB.Query(
+		ctx,
+		`SELECT white_player_id, black_player_id, is_bye, status
+		FROM tournament_pairings
+		WHERE tournament_id = $1
+		ORDER BY created_at ASC`,
+		tournamentID,
+	)
+	if err == nil {
+		defer pairingRows.Close()
+		for pairingRows.Next() {
+			var whiteID, blackID *int64
+			var isBye bool
+			var status string
+			if err := pairingRows.Scan(&whiteID, &blackID, &isBye, &status); err == nil {
+				if isBye && whiteID != nil {
+					if sp, ok := playerMap[*whiteID]; ok {
+						sp.ReceivedBye = true
+					}
+				} else if whiteID != nil && blackID != nil {
+					wSp, wOk := playerMap[*whiteID]
+					bSp, bOk := playerMap[*blackID]
+					if wOk {
+						wSp.PreviousOpponents[*blackID] = true
+						wSp.WhiteCount++
+						if wSp.LastColor == "W" {
+							wSp.ColorStreak++
+						} else {
+							wSp.LastColor = "W"
+							wSp.ColorStreak = 1
+						}
+					}
+					if bOk {
+						bSp.PreviousOpponents[*whiteID] = true
+						bSp.BlackCount++
+						if bSp.LastColor == "B" {
+							bSp.ColorStreak++
+						} else {
+							bSp.LastColor = "B"
+							bSp.ColorStreak = 1
+						}
+					}
+				}
+			}
+		}
+	}
+
+	for _, sp := range playerMap {
+		for oppID := range sp.PreviousOpponents {
+			if opp, ok := playerMap[oppID]; ok {
+				sp.Buchholz += opp.Score
+			}
+		}
+	}
+
+	players := make([]*SwissPlayer, 0, len(playerMap))
+	for _, p := range playerMap {
+		players = append(players, p)
+	}
+
+	return players, nil
+}
+
+func (r *Repository) SaveRoundPairings(ctx context.Context, tournamentID int64, roundNumber int, pairings []SwissPairingResult) ([]*TournamentPairing, error) {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var roundID int64
+	err = tx.QueryRow(
+		ctx,
+		`INSERT INTO tournament_rounds (tournament_id, round_number, status, started_at)
+		VALUES ($1, $2, 'ongoing', NOW())
+		ON CONFLICT (tournament_id, round_number)
+		DO UPDATE SET status = 'ongoing', started_at = NOW()
+		RETURNING id`,
+		tournamentID,
+		roundNumber,
+	).Scan(&roundID)
+	if err != nil {
+		slog.ErrorContext(ctx, "insert or update round failed", "tournament_id", tournamentID, "round", roundNumber, "error", err)
+		return nil, err
+	}
+
+	resultPairings := make([]*TournamentPairing, 0, len(pairings))
+	for _, p := range pairings {
+		var tp TournamentPairing
+		tp.TournamentID = tournamentID
+		tp.RoundID = roundID
+		tp.WhitePlayerID = p.WhitePlayerID
+		tp.BlackPlayerID = p.BlackPlayerID
+		tp.IsBye = p.IsBye
+		tp.Status = "pending"
+
+		if p.IsBye {
+			resultStr := ResultBye
+			tp.Result = &resultStr
+			tp.Status = "completed"
+
+			err = tx.QueryRow(
+				ctx,
+				`INSERT INTO tournament_pairings (
+					tournament_id, round_id, white_player_id, black_player_id, result, status, is_bye, created_at, completed_at
+				) VALUES ($1, $2, $3, NULL, $4, $5, TRUE, NOW(), NOW())
+				RETURNING id, created_at, completed_at`,
+				tournamentID, roundID, p.WhitePlayerID, resultStr, tp.Status,
+			).Scan(&tp.ID, &tp.CreatedAt, &tp.CompletedAt)
+
+			if err != nil {
+				return nil, err
+			}
+
+			if p.WhitePlayerID != nil {
+				_, err = tx.Exec(
+					ctx,
+					`UPDATE tournament_players
+					SET score = score + 1.0, wins = wins + 1, games_played = games_played + 1
+					WHERE tournament_id = $1 AND user_id = $2`,
+					tournamentID, *p.WhitePlayerID,
+				)
+				if err != nil {
+					return nil, err
+				}
+			}
+		} else {
+			err = tx.QueryRow(
+				ctx,
+				`INSERT INTO tournament_pairings (
+					tournament_id, round_id, white_player_id, black_player_id, status, is_bye, created_at
+				) VALUES ($1, $2, $3, $4, 'pending', FALSE, NOW())
+				RETURNING id, created_at`,
+				tournamentID, roundID, p.WhitePlayerID, p.BlackPlayerID,
+			).Scan(&tp.ID, &tp.CreatedAt)
+
+			if err != nil {
+				return nil, err
+			}
+		}
+		resultPairings = append(resultPairings, &tp)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return resultPairings, nil
 }
