@@ -64,6 +64,19 @@ type JoinTournamentResponse struct {
 	Status       string `json:"status"`
 }
 
+type LeaveTournamentResponse struct {
+	Message      string `json:"message"`
+	TournamentID string `json:"tournament_id"`
+	UserID       int64  `json:"user_id"`
+}
+
+type StartTournamentResponse struct {
+	Message      string `json:"message"`
+	TournamentID string `json:"tournament_id"`
+	Status       string `json:"status"`
+	CurrentRound int    `json:"current_round"`
+}
+
 func ToTournamentResponse(t *Tournament) *TournamentResponse {
 	inviteCode := ""
 	if t.InviteCode != nil {
@@ -104,8 +117,8 @@ func ToTournamentDetailsResponse(tw *TournamentWithPlayerCount) *TournamentDetai
 		Visibility:   tw.Visibility,
 		InviteCode:   inviteCode,
 		Status:       tw.Status,
-		CurrentRound: tw.CurrentRound,
 		TotalRounds:  tw.TotalRounds,
+		CurrentRound: tw.CurrentRound,
 		CreatedBy:    tw.CreatedBy,
 		StartAt:      tw.StartAt,
 		CreatedAt:    tw.CreatedAt,

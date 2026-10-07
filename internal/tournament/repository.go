@@ -22,6 +22,8 @@ type TournamentRepository interface {
 	FindByInviteCode(ctx context.Context, code string) (*TournamentWithPlayerCount, error)
 	IsPlayerJoined(ctx context.Context, tournamentID int64, userID int64) (bool, error)
 	AddPlayer(ctx context.Context, player *TournamentPlayer) error
+	RemovePlayer(ctx context.Context, tournamentID int64, userID int64) error
+	StartTournament(ctx context.Context, tournamentID int64) error
 }
 
 type Repository struct {
@@ -356,4 +358,61 @@ func (r *Repository) AddPlayer(ctx context.Context, player *TournamentPlayer) er
 	}
 
 	return nil
+}
+
+func (r *Repository) RemovePlayer(ctx context.Context, tournamentID int64, userID int64) error {
+	tag, err := r.DB.Exec(
+		ctx,
+		`DELETE FROM tournament_players
+		WHERE tournament_id = $1 AND user_id = $2`,
+		tournamentID,
+		userID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "remove tournament player failed", "tournament_id", tournamentID, "user_id", userID, "error", err)
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotJoined
+	}
+	return nil
+}
+
+func (r *Repository) StartTournament(ctx context.Context, tournamentID int64) error {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "begin transaction failed for start tournament", "tournament_id", tournamentID, "error", err)
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(
+		ctx,
+		`UPDATE tournaments
+		SET status = 'ongoing', current_round = 1, updated_at = NOW()
+		WHERE id = $1 AND status = 'registration'`,
+		tournamentID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "update tournament status to ongoing failed", "tournament_id", tournamentID, "error", err)
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotRegistration
+	}
+
+	_, err = tx.Exec(
+		ctx,
+		`INSERT INTO tournament_rounds (tournament_id, round_number, status, started_at)
+		VALUES ($1, 1, 'ongoing', NOW())
+		ON CONFLICT (tournament_id, round_number)
+		DO UPDATE SET status = 'ongoing', started_at = NOW()`,
+		tournamentID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "insert round 1 failed", "tournament_id", tournamentID, "error", err)
+		return err
+	}
+
+	return tx.Commit(ctx)
 }
