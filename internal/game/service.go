@@ -14,15 +14,27 @@ type GameService interface {
 	GetGame(ctx context.Context, gameID string) (*Game, error)
 	GetMoves(ctx context.Context, gameID string) ([]GameMove, error)
 	GetPlayerGames(ctx context.Context, playerID int64) ([]Game, error)
+	SetGameCompletionListener(listener func(ctx context.Context, gameID string, result string))
 }
 
 type Service struct {
-	Repository GameRepository
+	Repository      GameRepository
+	OnGameCompleted func(ctx context.Context, gameID string, result string)
 }
 
 func NewService(repository GameRepository) GameService {
 	return &Service{
 		Repository: repository,
+	}
+}
+
+func (s *Service) SetGameCompletionListener(listener func(ctx context.Context, gameID string, result string)) {
+	s.OnGameCompleted = listener
+}
+
+func (s *Service) notifyGameCompleted(ctx context.Context, gameID string, result string) {
+	if s.OnGameCompleted != nil {
+		s.OnGameCompleted(ctx, gameID, result)
 	}
 }
 
@@ -144,6 +156,9 @@ func (s *Service) MakeMove(
 		currentGame.WhiteTimeMs = newWhiteTimeMs
 		currentGame.BlackTimeMs = newBlackTimeMs
 		currentGame.TurnStartedAt = &now
+
+		s.notifyGameCompleted(ctx, currentGame.ID, currentGame.Result)
+
 		return currentGame, nil
 	}
 
@@ -222,6 +237,10 @@ func (s *Service) MakeMove(
 	currentGame.BlackTimeMs = newBlackTimeMs
 	currentGame.TurnStartedAt = &now
 
+	if status == StatusFinished {
+		s.notifyGameCompleted(ctx, currentGame.ID, currentGame.Result)
+	}
+
 	slog.InfoContext(ctx, "move completed successfully", "game_id", gameID, "player_id", playerID, "move", move, "status", status)
 
 	return currentGame, nil
@@ -280,6 +299,8 @@ func (s *Service) ResignGame(
 	currentGame.EndReason = endReason
 	currentGame.TurnStartedAt = &now
 
+	s.notifyGameCompleted(ctx, currentGame.ID, currentGame.Result)
+
 	return currentGame, nil
 }
 
@@ -329,6 +350,8 @@ func (s *Service) DrawGame(
 	currentGame.Result = result
 	currentGame.EndReason = endReason
 	currentGame.TurnStartedAt = &now
+
+	s.notifyGameCompleted(ctx, currentGame.ID, currentGame.Result)
 
 	return currentGame, nil
 }
