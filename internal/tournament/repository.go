@@ -34,6 +34,7 @@ type TournamentRepository interface {
 	GetStandings(ctx context.Context, tournamentID int64) ([]*StandingsPlayerResponse, error)
 	GetRounds(ctx context.Context, tournamentID int64, roundNumber ...int) ([]*RoundResponse, error)
 	GetGames(ctx context.Context, tournamentID int64, userID ...int64) ([]*TournamentGameItem, error)
+	UpdateTotalRounds(ctx context.Context, tournamentID int64, totalRounds int) error
 }
 
 type Repository struct {
@@ -913,4 +914,9 @@ func (r *Repository) GetGames(ctx context.Context, tournamentID int64, userID ..
 	}
 
 	return games, nil
+}
+
+func (r *Repository) UpdateTotalRounds(ctx context.Context, tournamentID int64, totalRounds int) error {
+	_, err := r.DB.Exec(ctx, `UPDATE tournaments SET total_rounds = $2, updated_at = NOW() WHERE id = $1`, tournamentID, totalRounds)
+	return err
 }
