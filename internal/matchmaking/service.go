@@ -4,14 +4,39 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"slices"
 	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tilt"
 )
 
-var AllowedTimeControls = []int{1, 3, 5, 10, 15, 30}
+type TimeControl struct {
+	Minutes   int `json:"time_control_minutes"`
+	Increment int `json:"increment_seconds"`
+}
+
+var AllowedTimeControls = []TimeControl{
+	{Minutes: 1, Increment: 0},
+	{Minutes: 1, Increment: 1},
+	{Minutes: 2, Increment: 1},
+	{Minutes: 3, Increment: 0},
+	{Minutes: 3, Increment: 2},
+	{Minutes: 5, Increment: 0},
+	{Minutes: 5, Increment: 2},
+	{Minutes: 5, Increment: 5},
+	{Minutes: 10, Increment: 0},
+	{Minutes: 10, Increment: 5},
+	{Minutes: 15, Increment: 10},
+	{Minutes: 20, Increment: 0},
+	{Minutes: 30, Increment: 0},
+	{Minutes: 60, Increment: 0},
+	{Minutes: 1440, Increment: 0},
+	{Minutes: 2880, Increment: 0},
+	{Minutes: 4320, Increment: 0},
+	{Minutes: 7200, Increment: 0},
+	{Minutes: 10080, Increment: 0},
+	{Minutes: 20160, Increment: 0},
+}
 
 const queueTTL = 10 * time.Minute
 
@@ -24,7 +49,7 @@ type TiltChecker interface {
 }
 
 type MatchmakingService interface {
-	Join(ctx context.Context, userID int64, timeControlMinutes int, rated bool, ignoreTilt bool) (*tilt.Status, error)
+	Join(ctx context.Context, userID int64, timeControlMinutes int, incrementSeconds int, rated bool, ignoreTilt bool) (*tilt.Status, error)
 	Cancel(ctx context.Context, userID int64) error
 	GetStatus(ctx context.Context, userID int64) (*Status, error)
 }
@@ -43,15 +68,30 @@ func NewService(queueRepo QueueRepository, userFinder UserFinder, tiltChecker Ti
 	}
 }
 
+func isAllowedTimeControl(timeControlMinutes int, incrementSeconds int) bool {
+	for _, tc := range AllowedTimeControls {
+		if tc.Minutes == timeControlMinutes && tc.Increment == incrementSeconds {
+			return true
+		}
+	}
+
+	if timeControlMinutes >= 0 && timeControlMinutes <= 120 && incrementSeconds >= 0 && incrementSeconds <= 60 && (timeControlMinutes > 0 || incrementSeconds > 0) {
+		return true
+	}
+
+	return false
+}
+
 func (s *Service) Join(
 	ctx context.Context,
 	userID int64,
 	timeControlMinutes int,
+	incrementSeconds int,
 	rated bool,
 	ignoreTilt bool,
 ) (*tilt.Status, error) {
 
-	if !slices.Contains(AllowedTimeControls, timeControlMinutes) {
+	if !isAllowedTimeControl(timeControlMinutes, incrementSeconds) {
 		return nil, ErrInvalidTimeControl
 	}
 
@@ -59,7 +99,7 @@ func (s *Service) Join(
 		tiltStatus, err := s.TiltChecker.Check(ctx, userID)
 		if err != nil {
 			slog.ErrorContext(ctx, "tilt check failed", "error", err, "user_id", userID)
-		} else if tiltStatus.Tilted {
+		} else if tiltStatus != nil && tiltStatus.Tilted {
 			return tiltStatus, ErrTilted
 		}
 	}
@@ -74,6 +114,7 @@ func (s *Service) Join(
 		UserID:             userID,
 		Rating:             user.Rating,
 		TimeControlMinutes: timeControlMinutes,
+		IncrementSeconds:   incrementSeconds,
 		Rated:              rated,
 		JoinedAt:           time.Now(),
 	}

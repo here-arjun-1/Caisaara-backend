@@ -50,16 +50,41 @@ func NewRepository(db *pgxpool.Pool) TournamentRepository {
 	}
 }
 
-func parseTimeControlMinutes(tcStr string) int {
-	tcStr = strings.TrimSpace(tcStr)
-	if idx := strings.Index(tcStr, "+"); idx != -1 {
-		tcStr = tcStr[:idx]
+func parseTimeControl(tcStr string) (int, int) {
+	tcStr = strings.ToLower(strings.TrimSpace(tcStr))
+	if strings.HasSuffix(tcStr, "d") || strings.Contains(tcStr, "day") {
+		fields := strings.Fields(tcStr)
+		if len(fields) > 0 {
+			valStr := strings.TrimSuffix(fields[0], "d")
+			if val, err := strconv.Atoi(valStr); err == nil && val > 0 {
+				return val * 1440, 0
+			}
+		}
+		return 1440, 0
 	}
-	val, err := strconv.Atoi(tcStr)
-	if err != nil || val <= 0 {
-		return 5
+
+	sep := "+"
+	if strings.Contains(tcStr, "|") {
+		sep = "|"
 	}
-	return val
+	if strings.Contains(tcStr, sep) {
+		parts := strings.Split(tcStr, sep)
+		minVal, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+		incVal, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+		if err1 == nil && minVal >= 0 {
+			if err2 != nil || incVal < 0 {
+				incVal = 0
+			}
+			return minVal, incVal
+		}
+	}
+
+	tcClean := strings.TrimSuffix(strings.TrimSuffix(tcStr, "min"), "m")
+	if val, err := strconv.Atoi(strings.TrimSpace(tcClean)); err == nil && val > 0 {
+		return val, 0
+	}
+
+	return 5, 0
 }
 
 func (r *Repository) CreateTournament(ctx context.Context, tournament *Tournament) error {
@@ -551,7 +576,7 @@ func (r *Repository) SaveRoundPairings(ctx context.Context, tournamentID int64, 
 
 	var timeControlStr string
 	_ = tx.QueryRow(ctx, `SELECT time_control FROM tournaments WHERE id = $1`, tournamentID).Scan(&timeControlStr)
-	tcMinutes := parseTimeControlMinutes(timeControlStr)
+	tcMinutes, tcIncrement := parseTimeControl(timeControlStr)
 
 	var roundID int64
 	err = tx.QueryRow(
@@ -612,7 +637,7 @@ func (r *Repository) SaveRoundPairings(ctx context.Context, tournamentID int64, 
 		} else {
 			var createdGameID *string
 			if len(gameRepo) > 0 && gameRepo[0] != nil && p.WhitePlayerID != nil && p.BlackPlayerID != nil {
-				gID, gErr := gameRepo[0].CreateGame(ctx, *p.WhitePlayerID, *p.BlackPlayerID, tcMinutes, false)
+				gID, gErr := gameRepo[0].CreateGame(ctx, *p.WhitePlayerID, *p.BlackPlayerID, tcMinutes, tcIncrement, false)
 				if gErr == nil && gID != "" {
 					createdGameID = &gID
 					tp.GameID = &gID

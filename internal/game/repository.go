@@ -11,7 +11,8 @@ import (
 )
 
 type GameRepository interface {
-	CreateGame(ctx context.Context, whitePlayerID int64, blackPlayerID int64, timeControlMinutes int, rated bool) (string, error)
+	CreateGame(ctx context.Context, whitePlayerID int64, blackPlayerID int64, timeControlMinutes int, incrementSeconds int, rated bool) (string, error)
+	CreateGameWithID(ctx context.Context, gameID string, whitePlayerID int64, blackPlayerID int64, timeControlMinutes int, incrementSeconds int, rated bool) (string, error)
 	FindGameByID(ctx context.Context, gameID string) (*Game, error)
 	UpdateGameState(ctx context.Context, gameID string, position string, status string, result string, endReason string, currentTurn string, whiteTimeMs int64, blackTimeMs int64, turnStartedAt *time.Time) error
 	AddMove(ctx context.Context, move *GameMove) error
@@ -31,26 +32,30 @@ func NewRepository(db *pgxpool.Pool) GameRepository {
 	}
 }
 
-func ResolveTimeControlMode(timeControlMinutes int) (mode string, initialTimeMs int64, incrementMs int64, dailyMoveMs int64) {
-	switch timeControlMinutes {
-	case 1:
-		return ModeBullet, 60000, 0, 0
-	case 5:
-		return ModeBlitz, 300000, 0, 0
-	case 10:
-		return ModeRapid, 600000, 0, 0
-	case 1440:
-		return ModeDaily, 86400000, 0, 86400000
+func ResolveTimeControlMode(timeControlMinutes int, incrementSeconds int) (mode string, initialTimeMs int64, incrementMs int64, dailyMoveMs int64) {
+	incrementMs = int64(incrementSeconds) * 1000
+
+	if timeControlMinutes >= 1440 {
+		dailyMs := int64(timeControlMinutes) * 60 * 1000
+		return ModeDaily, dailyMs, 0, dailyMs
+	}
+
+	initialTimeMs = int64(timeControlMinutes) * 60 * 1000
+	if initialTimeMs < 0 {
+		initialTimeMs = 0
+	}
+
+	estTotalSeconds := (timeControlMinutes * 60) + (incrementSeconds * 40)
+
+	switch {
+	case estTotalSeconds < 180:
+		return ModeBullet, initialTimeMs, incrementMs, 0
+	case estTotalSeconds < 600:
+		return ModeBlitz, initialTimeMs, incrementMs, 0
+	case estTotalSeconds <= 10800:
+		return ModeRapid, initialTimeMs, incrementMs, 0
 	default:
-		if timeControlMinutes > 180 {
-			dailyMs := int64(timeControlMinutes) * 60 * 1000
-			return ModeDaily, dailyMs, 0, dailyMs
-		}
-		initialMs := int64(timeControlMinutes) * 60 * 1000
-		if initialMs <= 0 {
-			initialMs = 600000
-		}
-		return ModeCustom, initialMs, 0, 0
+		return ModeCustom, initialTimeMs, incrementMs, 0
 	}
 }
 
@@ -59,10 +64,27 @@ func (r *Repository) CreateGame(
 	whitePlayerID int64,
 	blackPlayerID int64,
 	timeControlMinutes int,
+	incrementSeconds int,
 	rated bool,
 ) (string, error) {
-	mode, initialTimeMs, incrementMs, dailyMoveMs := ResolveTimeControlMode(timeControlMinutes)
-	return r.CreateGameWithDetails(ctx, whitePlayerID, blackPlayerID, timeControlMinutes, rated, mode, initialTimeMs, incrementMs, dailyMoveMs)
+	return r.CreateGameWithID(ctx, uuid.New().String(), whitePlayerID, blackPlayerID, timeControlMinutes, incrementSeconds, rated)
+}
+
+func (r *Repository) CreateGameWithID(
+	ctx context.Context,
+	gameID string,
+	whitePlayerID int64,
+	blackPlayerID int64,
+	timeControlMinutes int,
+	incrementSeconds int,
+	rated bool,
+) (string, error) {
+	mode, initialTimeMs, incrementMs, dailyMoveMs := ResolveTimeControlMode(timeControlMinutes, incrementSeconds)
+	parsedID, err := uuid.Parse(gameID)
+	if err != nil {
+		parsedID = uuid.New()
+	}
+	return r.CreateGameWithSpecificIDAndDetails(ctx, parsedID, whitePlayerID, blackPlayerID, timeControlMinutes, rated, mode, initialTimeMs, incrementMs, dailyMoveMs)
 }
 
 func (r *Repository) CreateGameWithDetails(
@@ -76,8 +98,21 @@ func (r *Repository) CreateGameWithDetails(
 	incrementMs int64,
 	dailyMoveMs int64,
 ) (string, error) {
-	gameID := uuid.New()
+	return r.CreateGameWithSpecificIDAndDetails(ctx, uuid.New(), whitePlayerID, blackPlayerID, timeControlMinutes, rated, mode, initialTimeMs, incrementMs, dailyMoveMs)
+}
 
+func (r *Repository) CreateGameWithSpecificIDAndDetails(
+	ctx context.Context,
+	gameID uuid.UUID,
+	whitePlayerID int64,
+	blackPlayerID int64,
+	timeControlMinutes int,
+	rated bool,
+	mode string,
+	initialTimeMs int64,
+	incrementMs int64,
+	dailyMoveMs int64,
+) (string, error) {
 	_, err := r.DB.Exec(
 		ctx,
 		`INSERT INTO games (

@@ -40,17 +40,17 @@ func (m *Matcher) Start() {
 }
 
 func (m *Matcher) runOnce(ctx context.Context) {
-	for _, timeControl := range AllowedTimeControls {
+	for _, tc := range AllowedTimeControls {
 		for _, rated := range []bool{false, true} {
-			m.matchQueue(ctx, timeControl, rated)
+			m.matchQueue(ctx, tc.Minutes, tc.Increment, rated)
 		}
 	}
 }
 
-func (m *Matcher) matchQueue(ctx context.Context, timeControlMinutes int, rated bool) {
-	entries, err := m.QueueRepo.GetQueue(ctx, timeControlMinutes, rated)
+func (m *Matcher) matchQueue(ctx context.Context, timeControlMinutes int, incrementSeconds int, rated bool) {
+	entries, err := m.QueueRepo.GetQueue(ctx, timeControlMinutes, incrementSeconds, rated)
 	if err != nil {
-		slog.ErrorContext(ctx, "get queue failed", "error", err, "time_control", timeControlMinutes, "rated", rated)
+		slog.ErrorContext(ctx, "get queue failed", "error", err, "time_control", timeControlMinutes, "increment", incrementSeconds, "rated", rated)
 		return
 	}
 
@@ -109,6 +109,7 @@ func (m *Matcher) pair(ctx context.Context, a *QueueEntry, b *QueueEntry) {
 		whitePlayerID,
 		blackPlayerID,
 		entryA.TimeControlMinutes,
+		entryA.IncrementSeconds,
 		entryA.Rated,
 	)
 	if err != nil {
