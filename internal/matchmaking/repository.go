@@ -15,7 +15,7 @@ type QueueRepository interface {
 	AddToQueue(ctx context.Context, entry *QueueEntry, ttl time.Duration) error
 	RemoveFromQueue(ctx context.Context, userID int64) (*QueueEntry, error)
 	GetEntry(ctx context.Context, userID int64) (*QueueEntry, error)
-	GetQueue(ctx context.Context, timeControlMinutes int, rated bool) ([]*QueueEntry, error)
+	GetQueue(ctx context.Context, timeControlMinutes int, incrementSeconds int, rated bool) ([]*QueueEntry, error)
 	SaveMatch(ctx context.Context, userID int64, gameID string, ttl time.Duration) error
 	GetMatch(ctx context.Context, userID int64) (string, error)
 }
@@ -30,12 +30,12 @@ func NewRedisQueueRepository(client *redis.Client) *RedisQueueRepository {
 	}
 }
 
-func queueKey(timeControlMinutes int, rated bool) string {
+func queueKey(timeControlMinutes int, incrementSeconds int, rated bool) string {
 	gameType := "unrated"
 	if rated {
 		gameType = "rated"
 	}
-	return fmt.Sprintf("matchmaking:queue:%d:%s", timeControlMinutes, gameType)
+	return fmt.Sprintf("matchmaking:queue:%d:%d:%s", timeControlMinutes, incrementSeconds, gameType)
 }
 
 func entryKey(userID int64) string {
@@ -60,7 +60,7 @@ func (r *RedisQueueRepository) AddToQueue(ctx context.Context, entry *QueueEntry
 		return ErrAlreadyInQueue
 	}
 
-	err = r.Client.ZAdd(ctx, queueKey(entry.TimeControlMinutes, entry.Rated), redis.Z{
+	err = r.Client.ZAdd(ctx, queueKey(entry.TimeControlMinutes, entry.IncrementSeconds, entry.Rated), redis.Z{
 		Score:  float64(entry.Rating),
 		Member: entry.UserID,
 	}).Err()
@@ -86,7 +86,7 @@ func (r *RedisQueueRepository) RemoveFromQueue(ctx context.Context, userID int64
 		return nil, err
 	}
 
-	err = r.Client.ZRem(ctx, queueKey(entry.TimeControlMinutes, entry.Rated), userID).Err()
+	err = r.Client.ZRem(ctx, queueKey(entry.TimeControlMinutes, entry.IncrementSeconds, entry.Rated), userID).Err()
 	if err != nil {
 		return nil, err
 	}
@@ -111,8 +111,8 @@ func (r *RedisQueueRepository) GetEntry(ctx context.Context, userID int64) (*Que
 	return &entry, nil
 }
 
-func (r *RedisQueueRepository) GetQueue(ctx context.Context, timeControlMinutes int, rated bool) ([]*QueueEntry, error) {
-	key := queueKey(timeControlMinutes, rated)
+func (r *RedisQueueRepository) GetQueue(ctx context.Context, timeControlMinutes int, incrementSeconds int, rated bool) ([]*QueueEntry, error) {
+	key := queueKey(timeControlMinutes, incrementSeconds, rated)
 
 	members, err := r.Client.ZRange(ctx, key, 0, -1).Result()
 	if err != nil {

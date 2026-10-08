@@ -10,7 +10,8 @@ import (
 )
 
 type CreateInviteRequest struct {
-	TimeControlMinutes int    `json:"time_control_minutes" binding:"required"`
+	TimeControlMinutes int    `json:"time_control_minutes"`
+	IncrementSeconds   int    `json:"increment_seconds"`
 	Color              string `json:"color" binding:"required"`
 }
 
@@ -55,6 +56,7 @@ func (h *Handler) Create(c *gin.Context) {
 		ctx,
 		userID,
 		req.TimeControlMinutes,
+		req.IncrementSeconds,
 		strings.ToLower(req.Color),
 	)
 
@@ -81,8 +83,10 @@ func (h *Handler) Create(c *gin.Context) {
 
 	c.JSON(http.StatusCreated, gin.H{
 		"invite_code":          invite.Code,
+		"game_id":              invite.GameID,
 		"link":                 "https://caisaara.app/play/" + invite.Code,
 		"time_control_minutes": invite.TimeControlMinutes,
+		"increment_seconds":    invite.IncrementSeconds,
 		"color":                invite.Color,
 		"status":               "waiting",
 	})
@@ -114,7 +118,9 @@ func (h *Handler) Preview(c *gin.Context) {
 			"id":       user.ID,
 			"username": user.Username,
 		},
+		"game_id":              invite.GameID,
 		"time_control_minutes": invite.TimeControlMinutes,
+		"increment_seconds":    invite.IncrementSeconds,
 		"color":                invite.Color,
 		"status":               "waiting",
 	})

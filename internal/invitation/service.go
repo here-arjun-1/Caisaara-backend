@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
 	"github.com/redis/go-redis/v9"
@@ -19,7 +20,7 @@ type UserFinder interface {
 }
 
 type InvitationService interface {
-	CreateInvite(ctx context.Context, userID int64, timeControlMinutes int, color string) (*Invite, error)
+	CreateInvite(ctx context.Context, userID int64, timeControlMinutes int, incrementSeconds int, color string) (*Invite, error)
 	GetInvite(ctx context.Context, code string) (*Invite, error)
 	JoinInvite(ctx context.Context, code string, player2ID int64) (string, error)
 	FindInviteCreator(ctx context.Context, creatorID int64) (*model.User, error)
@@ -56,10 +57,11 @@ func (s *Service) CreateInvite(
 	ctx context.Context,
 	userID int64,
 	timeControlMinutes int,
+	incrementSeconds int,
 	color string,
 ) (*Invite, error) {
 
-	if timeControlMinutes <= 0 {
+	if timeControlMinutes <= 0 && incrementSeconds <= 0 {
 		return nil, ErrInvalidTimeControl
 	}
 
@@ -73,14 +75,18 @@ func (s *Service) CreateInvite(
 		return nil, ErrInternal
 	}
 
+	gameID := uuid.New().String()
+
 	invite := &Invite{
 		Code:               code,
+		GameID:             gameID,
 		CreatorID:          userID,
 		TimeControlMinutes: timeControlMinutes,
+		IncrementSeconds:   incrementSeconds,
 		Color:              color,
 	}
 
-	err = s.InviteRepo.SaveInvite(ctx, invite, 30*time.Minute)
+	err = s.InviteRepo.SaveInvite(ctx, invite, 10*time.Minute)
 	if err != nil {
 		slog.ErrorContext(ctx, "save invite failed", "error", err)
 		return nil, fmt.Errorf("failed to store invite: %w", err)
@@ -185,11 +191,13 @@ func (s *Service) JoinInvite(
 		}
 	}
 
-	gameID, err := s.GameRepository.CreateGame(
+	gameID, err := s.GameRepository.CreateGameWithID(
 		ctx,
+		invite.GameID,
 		whitePlayerID,
 		blackPlayerID,
 		invite.TimeControlMinutes,
+		invite.IncrementSeconds,
 		false,
 	)
 

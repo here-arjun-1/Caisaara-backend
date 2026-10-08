@@ -8,7 +8,8 @@ import (
 )
 
 type JoinRequest struct {
-	TimeControlMinutes int  `json:"time_control_minutes" binding:"required"`
+	TimeControlMinutes int  `json:"time_control_minutes"`
+	IncrementSeconds   int  `json:"increment_seconds"`
 	Rated              bool `json:"rated"`
 	IgnoreTilt         bool `json:"ignore_tilt"`
 }
@@ -50,7 +51,7 @@ func (h *Handler) Join(c *gin.Context) {
 		return
 	}
 
-	tiltStatus, err := h.Service.Join(c.Request.Context(), userID, req.TimeControlMinutes, req.Rated, req.IgnoreTilt)
+	tiltStatus, err := h.Service.Join(c.Request.Context(), userID, req.TimeControlMinutes, req.IncrementSeconds, req.Rated, req.IgnoreTilt)
 
 	if errors.Is(err, ErrTilted) {
 		c.JSON(http.StatusConflict, gin.H{
