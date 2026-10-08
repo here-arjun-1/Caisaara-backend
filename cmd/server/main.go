@@ -94,6 +94,7 @@ func run() error {
 
 	tiltRepository := tilt.NewRepository(conn)
 	tiltService := tilt.NewService(tiltRepository)
+	tiltHandler := tilt.NewHandler(tiltService)
 
 	queueRepo := matchmaking.NewRedisQueueRepository(redisClient)
 	matchmakingService := matchmaking.NewService(queueRepo, authModule.UserRepository, tiltService)
@@ -132,6 +133,7 @@ func run() error {
 		botHandler,
 		clubHandler,
 		chatHandler,
+		tiltHandler,
 		tournamentHandler,
 	)
 	if err != nil {
