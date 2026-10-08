@@ -65,7 +65,7 @@ func GenerateSwissPairings(players []*SwissPlayer) ([]SwissPairingResult, error)
 
 	matched, err := matchSwissPool(pool)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrPairingFailed, err)
+		return nil, fmt.Errorf("%w: %w", ErrPairingFailed, err)
 	}
 
 	pairings = append(pairings, matched...)
