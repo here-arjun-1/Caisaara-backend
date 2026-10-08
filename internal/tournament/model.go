@@ -46,6 +46,7 @@ type Tournament struct {
 	Description  string     `json:"description,omitempty" db:"description"`
 	Format       string     `json:"format" db:"format"`
 	TimeControl  string     `json:"time_control" db:"time_control"`
+	MinPlayers   int        `json:"min_players" db:"min_players"`
 	MaxPlayers   int        `json:"max_players" db:"max_players"`
 	Visibility   string     `json:"visibility" db:"visibility"`
 	InviteCode   *string    `json:"invite_code,omitempty" db:"invite_code"`

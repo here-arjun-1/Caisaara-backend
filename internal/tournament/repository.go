@@ -35,6 +35,7 @@ type TournamentRepository interface {
 	GetRounds(ctx context.Context, tournamentID int64, roundNumber ...int) ([]*RoundResponse, error)
 	GetGames(ctx context.Context, tournamentID int64, userID ...int64) ([]*TournamentGameItem, error)
 	UpdateTotalRounds(ctx context.Context, tournamentID int64, totalRounds int) error
+	GetRoundWinners(ctx context.Context, tournamentID int64, roundID int64) ([]int64, error)
 }
 
 type Repository struct {
@@ -67,6 +68,7 @@ func (r *Repository) CreateTournament(ctx context.Context, tournament *Tournamen
 			description,
 			format,
 			time_control,
+			min_players,
 			max_players,
 			visibility,
 			invite_code,
@@ -77,12 +79,13 @@ func (r *Repository) CreateTournament(ctx context.Context, tournament *Tournamen
 			start_at,
 			created_at,
 			updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		RETURNING id, created_at, updated_at`,
 		tournament.Name,
 		tournament.Description,
 		tournament.Format,
 		tournament.TimeControl,
+		tournament.MinPlayers,
 		tournament.MaxPlayers,
 		tournament.Visibility,
 		tournament.InviteCode,
@@ -112,6 +115,7 @@ func (r *Repository) FindByID(ctx context.Context, id int64) (*Tournament, error
 			COALESCE(description, ''),
 			format,
 			time_control,
+			min_players,
 			max_players,
 			visibility,
 			invite_code,
@@ -134,6 +138,7 @@ func (r *Repository) FindByID(ctx context.Context, id int64) (*Tournament, error
 		&t.Description,
 		&t.Format,
 		&t.TimeControl,
+		&t.MinPlayers,
 		&t.MaxPlayers,
 		&t.Visibility,
 		&t.InviteCode,
@@ -165,6 +170,7 @@ func (r *Repository) ListPublicTournaments(ctx context.Context) ([]*TournamentWi
 			COALESCE(t.description, ''),
 			t.format,
 			t.time_control,
+			t.min_players,
 			t.max_players,
 			t.visibility,
 			t.invite_code,
@@ -197,6 +203,7 @@ func (r *Repository) ListPublicTournaments(ctx context.Context) ([]*TournamentWi
 			&tw.Description,
 			&tw.Format,
 			&tw.TimeControl,
+			&tw.MinPlayers,
 			&tw.MaxPlayers,
 			&tw.Visibility,
 			&tw.InviteCode,
@@ -228,6 +235,7 @@ func (r *Repository) FindByIDWithPlayerCount(ctx context.Context, id int64) (*To
 			COALESCE(t.description, ''),
 			t.format,
 			t.time_control,
+			t.min_players,
 			t.max_players,
 			t.visibility,
 			t.invite_code,
@@ -253,6 +261,7 @@ func (r *Repository) FindByIDWithPlayerCount(ctx context.Context, id int64) (*To
 		&tw.Description,
 		&tw.Format,
 		&tw.TimeControl,
+		&tw.MinPlayers,
 		&tw.MaxPlayers,
 		&tw.Visibility,
 		&tw.InviteCode,
@@ -285,6 +294,7 @@ func (r *Repository) FindByInviteCode(ctx context.Context, code string) (*Tourna
 			COALESCE(t.description, ''),
 			t.format,
 			t.time_control,
+			t.min_players,
 			t.max_players,
 			t.visibility,
 			t.invite_code,
@@ -310,6 +320,7 @@ func (r *Repository) FindByInviteCode(ctx context.Context, code string) (*Tourna
 		&tw.Description,
 		&tw.Format,
 		&tw.TimeControl,
+		&tw.MinPlayers,
 		&tw.MaxPlayers,
 		&tw.Visibility,
 		&tw.InviteCode,
@@ -919,4 +930,45 @@ func (r *Repository) GetGames(ctx context.Context, tournamentID int64, userID ..
 func (r *Repository) UpdateTotalRounds(ctx context.Context, tournamentID int64, totalRounds int) error {
 	_, err := r.DB.Exec(ctx, `UPDATE tournaments SET total_rounds = $2, updated_at = NOW() WHERE id = $1`, tournamentID, totalRounds)
 	return err
+}
+
+func (r *Repository) GetRoundWinners(ctx context.Context, tournamentID int64, roundID int64) ([]int64, error) {
+	rows, err := r.DB.Query(
+		ctx,
+		`SELECT white_player_id, black_player_id, result, is_bye
+		FROM tournament_pairings
+		WHERE tournament_id = $1 AND round_id = $2 AND status = 'completed'
+		ORDER BY id ASC`,
+		tournamentID, roundID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var winners []int64
+	for rows.Next() {
+		var wID, bID *int64
+		var result *string
+		var isBye bool
+		if err := rows.Scan(&wID, &bID, &result, &isBye); err != nil {
+			return nil, err
+		}
+
+		if isBye && wID != nil {
+			winners = append(winners, *wID)
+		} else if result != nil {
+			if *result == ResultWhiteWin && wID != nil {
+				winners = append(winners, *wID)
+			} else if *result == ResultBlackWin && bID != nil {
+				winners = append(winners, *bID)
+			} else if *result == ResultDraw {
+				if wID != nil {
+					winners = append(winners, *wID)
+				}
+			}
+		}
+	}
+
+	return winners, nil
 }

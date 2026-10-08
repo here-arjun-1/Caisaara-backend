@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS tournaments (
     description TEXT,
     format VARCHAR(20) NOT NULL DEFAULT 'swiss' CHECK (format IN ('swiss', 'knockout', 'round_robin')),
     time_control VARCHAR(50) NOT NULL,
+    min_players INT NOT NULL DEFAULT 2 CHECK (min_players >= 2),
     max_players INT NOT NULL CHECK (max_players > 0),
     visibility VARCHAR(20) NOT NULL DEFAULT 'public' CHECK (visibility IN ('public', 'private')),
     invite_code VARCHAR(50),
