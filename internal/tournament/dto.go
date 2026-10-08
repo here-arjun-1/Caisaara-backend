@@ -125,3 +125,63 @@ func ToTournamentDetailsResponse(tw *TournamentWithPlayerCount) *TournamentDetai
 		UpdatedAt:    tw.UpdatedAt,
 	}
 }
+
+type StandingsPlayerResponse struct {
+	Rank        int     `json:"rank"`
+	PlayerID    int64   `json:"player_id"`
+	Username    string  `json:"username"`
+	Score       float64 `json:"score"`
+	Buchholz    float64 `json:"buchholz"`
+	Wins        int     `json:"wins"`
+	Draws       int     `json:"draws"`
+	Losses      int     `json:"losses"`
+	GamesPlayed int     `json:"games_played"`
+}
+
+type TournamentStandingsResponse struct {
+	TournamentID string                    `json:"tournament_id"`
+	Standings    []*StandingsPlayerResponse `json:"standings"`
+}
+
+type PairingResponse struct {
+	ID            string  `json:"id"`
+	RoundID       string  `json:"round_id"`
+	RoundNumber   int     `json:"round_number"`
+	WhitePlayerID *int64  `json:"white_player_id"`
+	WhiteUsername string  `json:"white_username,omitempty"`
+	BlackPlayerID *int64  `json:"black_player_id"`
+	BlackUsername string  `json:"black_username,omitempty"`
+	GameID        *string `json:"game_id,omitempty"`
+	Result        string  `json:"result"`
+	Status        string  `json:"status"`
+	IsBye         bool    `json:"is_bye"`
+}
+
+type RoundResponse struct {
+	ID          string             `json:"id"`
+	RoundNumber int                `json:"round_number"`
+	Status      string             `json:"status"`
+	Pairings    []*PairingResponse `json:"pairings"`
+}
+
+type TournamentRoundsResponse struct {
+	TournamentID string           `json:"tournament_id"`
+	Rounds       []*RoundResponse `json:"rounds"`
+}
+
+type TournamentGameItem struct {
+	GameID        string `json:"game_id"`
+	PairingID     string `json:"pairing_id"`
+	RoundNumber   int    `json:"round_number"`
+	WhitePlayerID int64  `json:"white_player_id"`
+	WhiteUsername string `json:"white_username"`
+	BlackPlayerID int64  `json:"black_player_id"`
+	BlackUsername string `json:"black_username"`
+	Result        string `json:"result"`
+	Status        string `json:"status"`
+}
+
+type TournamentGamesResponse struct {
+	TournamentID string                `json:"tournament_id"`
+	Games        []*TournamentGameItem `json:"games"`
+}
