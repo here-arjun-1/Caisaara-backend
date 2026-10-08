@@ -11,9 +11,14 @@ COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o caisaara-backend ./cmd/server
 
-FROM alpine:3.24
+FROM debian:trixie-slim
 
-RUN apk add --no-cache ca-certificates stockfish && adduser -D -H -u 10001 app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates stockfish wget \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --no-create-home --uid 10001 app
+
+ENV STOCKFISH_PATH=/usr/games/stockfish
 
 WORKDIR /app
 
