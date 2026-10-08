@@ -137,6 +137,7 @@ func run() error {
 	asynqServer := worker.StartEmailServer(asynqRedisOpt, email.NewSender(cfg.SMTP))
 	worker.StartSessionCleanup(authModule.SessionRepository)
 	matcher.Start()
+	tournament.StartTournamentCleanup(context.Background(), tournamentRepo, 24*time.Hour)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

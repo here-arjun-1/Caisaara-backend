@@ -42,7 +42,7 @@ func GenerateRoundRobinSchedule(playerIDs []int64) (map[int][]SwissPairingResult
 				})
 			} else {
 				var wID, bID int64
-				if (i + r) % 2 == 0 {
+				if (i+r)%2 == 0 {
 					wID = p1
 					bID = p2
 				} else {

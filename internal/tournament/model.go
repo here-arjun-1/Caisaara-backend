@@ -41,22 +41,22 @@ const (
 )
 
 type Tournament struct {
-	ID           int64      `json:"id" db:"id"`
-	Name         string     `json:"name" db:"name"`
-	Description  string     `json:"description,omitempty" db:"description"`
-	Format       string     `json:"format" db:"format"`
-	TimeControl  string     `json:"time_control" db:"time_control"`
-	MinPlayers   int        `json:"min_players" db:"min_players"`
-	MaxPlayers   int        `json:"max_players" db:"max_players"`
-	Visibility   string     `json:"visibility" db:"visibility"`
-	InviteCode   *string    `json:"invite_code,omitempty" db:"invite_code"`
-	Status       string     `json:"status" db:"status"`
-	TotalRounds  int        `json:"total_rounds" db:"total_rounds"`
-	CurrentRound int        `json:"current_round" db:"current_round"`
-	CreatedBy    int64      `json:"created_by" db:"created_by"`
-	StartAt      time.Time  `json:"start_at" db:"start_at"`
-	CreatedAt    time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at" db:"updated_at"`
+	ID           int64     `json:"id" db:"id"`
+	Name         string    `json:"name" db:"name"`
+	Description  string    `json:"description,omitempty" db:"description"`
+	Format       string    `json:"format" db:"format"`
+	TimeControl  string    `json:"time_control" db:"time_control"`
+	MinPlayers   int       `json:"min_players" db:"min_players"`
+	MaxPlayers   int       `json:"max_players" db:"max_players"`
+	Visibility   string    `json:"visibility" db:"visibility"`
+	InviteCode   *string   `json:"invite_code,omitempty" db:"invite_code"`
+	Status       string    `json:"status" db:"status"`
+	TotalRounds  int       `json:"total_rounds" db:"total_rounds"`
+	CurrentRound int       `json:"current_round" db:"current_round"`
+	CreatedBy    int64     `json:"created_by" db:"created_by"`
+	StartAt      time.Time `json:"start_at" db:"start_at"`
+	CreatedAt    time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
 }
 
 type TournamentPlayer struct {
