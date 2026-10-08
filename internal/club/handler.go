@@ -20,11 +20,13 @@ type SendMessageRequest struct {
 
 type Handler struct {
 	Service ClubService
+	Hub     *Hub
 }
 
 func NewHandler(service ClubService) *Handler {
 	return &Handler{
 		Service: service,
+		Hub:     NewHub(),
 	}
 }
 
@@ -162,11 +164,14 @@ func (h *Handler) SendMessage(c *gin.Context) {
 		return
 	}
 
-	msg, err := h.Service.SendMessage(c.Request.Context(), c.Param("clubID"), userID, req.Message)
+	clubID := c.Param("clubID")
+	msg, err := h.Service.SendMessage(c.Request.Context(), clubID, userID, req.Message)
 	if err != nil {
 		handleError(c, err)
 		return
 	}
+
+	h.Hub.Broadcast(clubID, gin.H{"type": "message", "message": msg})
 
 	c.JSON(http.StatusCreated, msg)
 }

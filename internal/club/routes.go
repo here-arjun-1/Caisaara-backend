@@ -7,7 +7,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
 )
 
-func RegisterRoutes(handler *Handler, protected *gin.RouterGroup) {
+func RegisterRoutes(handler *Handler, r *gin.Engine, protected *gin.RouterGroup) {
 	readLimiter := middleware.NewTokenBucketLimiter(60, time.Minute)
 	createLimiter := middleware.NewTokenBucketLimiter(5, time.Minute)
 	membershipLimiter := middleware.NewTokenBucketLimiter(20, time.Minute)
@@ -27,4 +27,6 @@ func RegisterRoutes(handler *Handler, protected *gin.RouterGroup) {
 
 	clubs.GET("/:clubID/messages", readLimiter.Limit, handler.GetMessages)
 	clubs.POST("/:clubID/messages", handler.SendMessage)
+
+	r.GET("/ws/clubs/:clubID", readLimiter.Limit, handler.Connect)
 }
