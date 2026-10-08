@@ -36,3 +36,13 @@ func (h *Hub) RemoveRoom(gameID string) {
 
 	delete(h.Rooms, gameID)
 }
+
+func (h *Hub) BroadcastToRoom(roomID string, message []byte) {
+	h.Mutex.RLock()
+	room, exists := h.Rooms[roomID]
+	h.Mutex.RUnlock()
+
+	if exists && room != nil {
+		room.Broadcast(message)
+	}
+}

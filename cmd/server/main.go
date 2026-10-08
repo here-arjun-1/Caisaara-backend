@@ -109,7 +109,7 @@ func run() error {
 	chatHandler := chat.NewHandler(chatService, wsHandler.BroadcastChatMessage)
 
 	tournamentRepo := tournament.NewRepository(conn)
-	tournamentService := tournament.NewService(tournamentRepo, gameRepository)
+	tournamentService := tournament.NewService(tournamentRepo, gameRepository, wsHandler)
 	tournamentHandler := tournament.NewHandler(tournamentService)
 
 	gameService.SetGameCompletionListener(func(ctx context.Context, gameID string, result string) {

@@ -5,11 +5,16 @@ import (
 	"crypto/rand"
 	"errors"
 	"math/big"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
 )
+
+type Broadcaster interface {
+	BroadcastTournamentEvent(tournamentID int64, event interface{})
+}
 
 type Service interface {
 	CreateTournament(ctx context.Context, userID int64, req CreateTournamentRequest) (*Tournament, error)
@@ -22,21 +27,31 @@ type Service interface {
 	StartTournament(ctx context.Context, tournamentID int64, userID int64) (*TournamentWithPlayerCount, error)
 	GenerateRoundPairings(ctx context.Context, tournamentID int64, userID int64) ([]*TournamentPairing, error)
 	OnGameCompleted(ctx context.Context, gameID string, result string) error
+	GetStandings(ctx context.Context, tournamentID int64) (*TournamentStandingsResponse, error)
+	GetRounds(ctx context.Context, tournamentID int64, roundNumber ...int) (*TournamentRoundsResponse, error)
+	GetGames(ctx context.Context, tournamentID int64, userID ...int64) (*TournamentGamesResponse, error)
+	SetBroadcaster(b Broadcaster)
 }
 
 type TournamentService struct {
-	Repo     TournamentRepository
-	GameRepo game.GameRepository
+	Repo        TournamentRepository
+	GameRepo    game.GameRepository
+	Broadcaster Broadcaster
 }
 
-func NewService(repo TournamentRepository, gameRepo ...game.GameRepository) Service {
+func NewService(repo TournamentRepository, gameRepo game.GameRepository, broadcaster ...Broadcaster) *TournamentService {
 	s := &TournamentService{
-		Repo: repo,
+		Repo:     repo,
+		GameRepo: gameRepo,
 	}
-	if len(gameRepo) > 0 {
-		s.GameRepo = gameRepo[0]
+	if len(broadcaster) > 0 {
+		s.Broadcaster = broadcaster[0]
 	}
 	return s
+}
+
+func (s *TournamentService) SetBroadcaster(b Broadcaster) {
+	s.Broadcaster = b
 }
 
 const inviteCodeChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -241,6 +256,13 @@ func (s *TournamentService) StartTournament(ctx context.Context, tournamentID in
 		}
 	}
 
+	if s.Broadcaster != nil {
+		s.Broadcaster.BroadcastTournamentEvent(tournamentID, map[string]interface{}{
+			"type":  "tournament_round_started",
+			"round": 1,
+		})
+	}
+
 	return s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
 }
 
@@ -282,13 +304,32 @@ func (s *TournamentService) OnGameCompleted(ctx context.Context, gameID string, 
 		return err
 	}
 
+	if s.Broadcaster != nil {
+		s.Broadcaster.BroadcastTournamentEvent(tournamentID, map[string]interface{}{
+			"type": "tournament_standings_updated",
+		})
+	}
+
 	if roundCompleted {
 		t, err := s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
 		if err != nil {
 			return err
 		}
 
-		if t.Status == StatusOngoing && t.CurrentRound <= t.TotalRounds {
+		if t.Status == StatusCompleted {
+			if s.Broadcaster != nil {
+				standings, _ := s.Repo.GetStandings(ctx, tournamentID)
+				var winnerID *int64
+				if len(standings) > 0 {
+					wID := standings[0].PlayerID
+					winnerID = &wID
+				}
+				s.Broadcaster.BroadcastTournamentEvent(tournamentID, map[string]interface{}{
+					"type":      "tournament_completed",
+					"winner_id": winnerID,
+				})
+			}
+		} else if t.Status == StatusOngoing && t.CurrentRound <= t.TotalRounds {
 			swissPlayers, err := s.Repo.GetSwissPlayers(ctx, tournamentID)
 			if err != nil {
 				return err
@@ -303,8 +344,66 @@ func (s *TournamentService) OnGameCompleted(ctx context.Context, gameID string, 
 			if err != nil {
 				return err
 			}
+
+			if s.Broadcaster != nil {
+				s.Broadcaster.BroadcastTournamentEvent(tournamentID, map[string]interface{}{
+					"type":  "tournament_round_started",
+					"round": t.CurrentRound,
+				})
+			}
 		}
 	}
 
 	return nil
+}
+
+func (s *TournamentService) GetStandings(ctx context.Context, tournamentID int64) (*TournamentStandingsResponse, error) {
+	_, err := s.Repo.FindByID(ctx, tournamentID)
+	if err != nil {
+		return nil, ErrTournamentNotFound
+	}
+
+	standings, err := s.Repo.GetStandings(ctx, tournamentID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &TournamentStandingsResponse{
+		TournamentID: strconv.FormatInt(tournamentID, 10),
+		Standings:    standings,
+	}, nil
+}
+
+func (s *TournamentService) GetRounds(ctx context.Context, tournamentID int64, roundNumber ...int) (*TournamentRoundsResponse, error) {
+	_, err := s.Repo.FindByID(ctx, tournamentID)
+	if err != nil {
+		return nil, ErrTournamentNotFound
+	}
+
+	rounds, err := s.Repo.GetRounds(ctx, tournamentID, roundNumber...)
+	if err != nil {
+		return nil, err
+	}
+
+	return &TournamentRoundsResponse{
+		TournamentID: strconv.FormatInt(tournamentID, 10),
+		Rounds:       rounds,
+	}, nil
+}
+
+func (s *TournamentService) GetGames(ctx context.Context, tournamentID int64, userID ...int64) (*TournamentGamesResponse, error) {
+	_, err := s.Repo.FindByID(ctx, tournamentID)
+	if err != nil {
+		return nil, ErrTournamentNotFound
+	}
+
+	games, err := s.Repo.GetGames(ctx, tournamentID, userID...)
+	if err != nil {
+		return nil, err
+	}
+
+	return &TournamentGamesResponse{
+		TournamentID: strconv.FormatInt(tournamentID, 10),
+		Games:        games,
+	}, nil
 }

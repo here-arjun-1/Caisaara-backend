@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -30,6 +31,9 @@ type TournamentRepository interface {
 	GetSwissPlayers(ctx context.Context, tournamentID int64) ([]*SwissPlayer, error)
 	SaveRoundPairings(ctx context.Context, tournamentID int64, roundNumber int, pairings []SwissPairingResult, gameRepo ...game.GameRepository) ([]*TournamentPairing, error)
 	UpdatePairingOnGameCompleted(ctx context.Context, gameID string, result string) (int64, bool, error)
+	GetStandings(ctx context.Context, tournamentID int64) ([]*StandingsPlayerResponse, error)
+	GetRounds(ctx context.Context, tournamentID int64, roundNumber ...int) ([]*RoundResponse, error)
+	GetGames(ctx context.Context, tournamentID int64, userID ...int64) ([]*TournamentGameItem, error)
 }
 
 type Repository struct {
@@ -711,4 +715,202 @@ func (r *Repository) UpdatePairingOnGameCompleted(ctx context.Context, gameID st
 	}
 
 	return tournamentID, roundCompleted, nil
+}
+
+func (r *Repository) GetStandings(ctx context.Context, tournamentID int64) ([]*StandingsPlayerResponse, error) {
+	rows, err := r.DB.Query(
+		ctx,
+		`SELECT tp.user_id, u.username, tp.score, tp.wins, tp.draws, tp.losses, tp.games_played
+		FROM tournament_players tp
+		JOIN users u ON u.id = tp.user_id
+		WHERE tp.tournament_id = $1`,
+		tournamentID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	playerMap := make(map[int64]*StandingsPlayerResponse)
+	var standings []*StandingsPlayerResponse
+
+	for rows.Next() {
+		var p StandingsPlayerResponse
+		if err := rows.Scan(&p.PlayerID, &p.Username, &p.Score, &p.Wins, &p.Draws, &p.Losses, &p.GamesPlayed); err != nil {
+			return nil, err
+		}
+		standings = append(standings, &p)
+		playerMap[p.PlayerID] = &p
+	}
+
+	pRows, err := r.DB.Query(
+		ctx,
+		`SELECT white_player_id, black_player_id
+		FROM tournament_pairings
+		WHERE tournament_id = $1 AND status = 'completed' AND is_bye = FALSE`,
+		tournamentID,
+	)
+	if err == nil {
+		defer pRows.Close()
+		for pRows.Next() {
+			var wID, bID *int64
+			if err := pRows.Scan(&wID, &bID); err == nil && wID != nil && bID != nil {
+				if wPlayer, ok := playerMap[*wID]; ok {
+					if bPlayer, ok2 := playerMap[*bID]; ok2 {
+						wPlayer.Buchholz += bPlayer.Score
+						bPlayer.Buchholz += wPlayer.Score
+					}
+				}
+			}
+		}
+	}
+
+	sort.Slice(standings, func(i, j int) bool {
+		if standings[i].Score != standings[j].Score {
+			return standings[i].Score > standings[j].Score
+		}
+		if standings[i].Buchholz != standings[j].Buchholz {
+			return standings[i].Buchholz > standings[j].Buchholz
+		}
+		if standings[i].Wins != standings[j].Wins {
+			return standings[i].Wins > standings[j].Wins
+		}
+		return standings[i].PlayerID < standings[j].PlayerID
+	})
+
+	for i := range standings {
+		standings[i].Rank = i + 1
+	}
+
+	return standings, nil
+}
+
+func (r *Repository) GetRounds(ctx context.Context, tournamentID int64, roundNumber ...int) ([]*RoundResponse, error) {
+	queryRounds := `SELECT id, round_number, status FROM tournament_rounds WHERE tournament_id = $1`
+	argsRounds := []interface{}{tournamentID}
+	if len(roundNumber) > 0 && roundNumber[0] > 0 {
+		queryRounds += ` AND round_number = $2`
+		argsRounds = append(argsRounds, roundNumber[0])
+	}
+	queryRounds += ` ORDER BY round_number ASC`
+
+	rRows, err := r.DB.Query(ctx, queryRounds, argsRounds...)
+	if err != nil {
+		return nil, err
+	}
+	defer rRows.Close()
+
+	roundMap := make(map[int64]*RoundResponse)
+	var roundList []*RoundResponse
+
+	for rRows.Next() {
+		var roundID int64
+		var res RoundResponse
+		if err := rRows.Scan(&roundID, &res.RoundNumber, &res.Status); err != nil {
+			return nil, err
+		}
+		res.ID = strconv.FormatInt(roundID, 10)
+		res.Pairings = make([]*PairingResponse, 0)
+		roundList = append(roundList, &res)
+		roundMap[roundID] = &res
+	}
+
+	queryPairings := `SELECT 
+		tp.id, tp.round_id, tr.round_number, 
+		tp.white_player_id, COALESCE(uw.username, ''), 
+		tp.black_player_id, COALESCE(ub.username, ''), 
+		tp.game_id, tp.result, tp.status, tp.is_bye
+	FROM tournament_pairings tp
+	JOIN tournament_rounds tr ON tr.id = tp.round_id
+	LEFT JOIN users uw ON uw.id = tp.white_player_id
+	LEFT JOIN users ub ON ub.id = tp.black_player_id
+	WHERE tp.tournament_id = $1`
+	argsPairings := []interface{}{tournamentID}
+	if len(roundNumber) > 0 && roundNumber[0] > 0 {
+		queryPairings += ` AND tr.round_number = $2`
+		argsPairings = append(argsPairings, roundNumber[0])
+	}
+	queryPairings += ` ORDER BY tr.round_number ASC, tp.id ASC`
+
+	pRows, err := r.DB.Query(ctx, queryPairings, argsPairings...)
+	if err != nil {
+		return nil, err
+	}
+	defer pRows.Close()
+
+	for pRows.Next() {
+		var pID, rID int64
+		var p PairingResponse
+		var wName, bName string
+		if err := pRows.Scan(
+			&pID, &rID, &p.RoundNumber,
+			&p.WhitePlayerID, &wName,
+			&p.BlackPlayerID, &bName,
+			&p.GameID, &p.Result, &p.Status, &p.IsBye,
+		); err != nil {
+			return nil, err
+		}
+		p.ID = strconv.FormatInt(pID, 10)
+		p.RoundID = strconv.FormatInt(rID, 10)
+		if p.WhitePlayerID != nil {
+			p.WhiteUsername = wName
+		}
+		if p.BlackPlayerID != nil {
+			p.BlackUsername = bName
+		}
+
+		if round, ok := roundMap[rID]; ok {
+			round.Pairings = append(round.Pairings, &p)
+		}
+	}
+
+	return roundList, nil
+}
+
+func (r *Repository) GetGames(ctx context.Context, tournamentID int64, userID ...int64) ([]*TournamentGameItem, error) {
+	query := `SELECT 
+		tp.game_id, tp.id, tr.round_number,
+		COALESCE(tp.white_player_id, 0), COALESCE(uw.username, ''),
+		COALESCE(tp.black_player_id, 0), COALESCE(ub.username, ''),
+		tp.result, tp.status
+	FROM tournament_pairings tp
+	JOIN tournament_rounds tr ON tr.id = tp.round_id
+	LEFT JOIN users uw ON uw.id = tp.white_player_id
+	LEFT JOIN users ub ON ub.id = tp.black_player_id
+	WHERE tp.tournament_id = $1 AND tp.game_id IS NOT NULL`
+	args := []interface{}{tournamentID}
+
+	if len(userID) > 0 && userID[0] > 0 {
+		query += ` AND (tp.white_player_id = $2 OR tp.black_player_id = $2)`
+		args = append(args, userID[0])
+	}
+	query += ` ORDER BY tr.round_number ASC, tp.id ASC`
+
+	rows, err := r.DB.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var games []*TournamentGameItem
+	for rows.Next() {
+		var item TournamentGameItem
+		var pairingID int64
+		var gameID *string
+		if err := rows.Scan(
+			&gameID, &pairingID, &item.RoundNumber,
+			&item.WhitePlayerID, &item.WhiteUsername,
+			&item.BlackPlayerID, &item.BlackUsername,
+			&item.Result, &item.Status,
+		); err != nil {
+			return nil, err
+		}
+		if gameID != nil {
+			item.GameID = *gameID
+		}
+		item.PairingID = strconv.FormatInt(pairingID, 10)
+		games = append(games, &item)
+	}
+
+	return games, nil
 }

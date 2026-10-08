@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -401,4 +402,73 @@ func sendError(ctx context.Context, client *Client, message string) {
 	default:
 		slog.WarnContext(ctx, "client send buffer full, dropped error message", "user_id", client.UserID)
 	}
+}
+
+func (h *Handler) ConnectTournament(c *gin.Context) {
+	ctx := c.Request.Context()
+	tournamentID := c.Param("tournamentID")
+	accessToken := c.Query("token")
+
+	if accessToken == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "token required"})
+		return
+	}
+
+	claims, err := token.ValidateToken(accessToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+		return
+	}
+
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		slog.ErrorContext(ctx, "tournament websocket upgrade failed", "tournament_id", tournamentID, "error", err)
+		return
+	}
+
+	roomKey := "tournament:" + tournamentID
+	room := h.Hub.GetOrCreateRoom(roomKey)
+
+	client := &Client{
+		Conn:   conn,
+		UserID: claims.UserID,
+		GameID: roomKey,
+		Send:   make(chan []byte, 256),
+	}
+
+	room.AddClient(client)
+
+	go func() {
+		defer func() {
+			room.RemoveClient(client.UserID)
+			if room.Count() == 0 {
+				h.Hub.RemoveRoom(roomKey)
+			}
+			client.Close()
+		}()
+
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				break
+			}
+		}
+	}()
+
+	go func() {
+		for msg := range client.Send {
+			if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+				break
+			}
+		}
+	}()
+}
+
+func (h *Handler) BroadcastTournamentEvent(tournamentID int64, event interface{}) {
+	data, err := json.Marshal(event)
+	if err != nil {
+		return
+	}
+	roomKey := "tournament:" + strconv.FormatInt(tournamentID, 10)
+	h.Hub.BroadcastToRoom(roomKey, data)
 }

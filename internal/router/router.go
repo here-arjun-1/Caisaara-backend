@@ -84,6 +84,7 @@ func New(
 
 	if wsHandler != nil {
 		r.GET("/ws/:gameID", wsHandler.Connect)
+		r.GET("/ws/tournament/:tournamentID", wsHandler.ConnectTournament)
 		protected.GET("/games/:gameID/ws", wsHandler.Connect)
 	}
 

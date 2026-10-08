@@ -355,3 +355,109 @@ func (h *Handler) StartTournament(c *gin.Context) {
 		CurrentRound: tw.CurrentRound,
 	})
 }
+
+func (h *Handler) GetStandings(c *gin.Context) {
+	idParam := c.Param("id")
+	id, err := strconv.ParseInt(idParam, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tournament id"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	res, err := h.Service.GetStandings(ctx, id)
+	if err != nil {
+		if errors.Is(err, ErrTournamentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "tournament not found"})
+			return
+		}
+		slog.ErrorContext(ctx, "get standings handler failed", "id", id, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, res)
+}
+
+func (h *Handler) GetRounds(c *gin.Context) {
+	idParam := c.Param("id")
+	id, err := strconv.ParseInt(idParam, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tournament id"})
+		return
+	}
+
+	var roundNumber []int
+	if roundParam := c.Param("roundNumber"); roundParam != "" {
+		rNum, err := strconv.Atoi(roundParam)
+		if err == nil && rNum > 0 {
+			roundNumber = append(roundNumber, rNum)
+		}
+	}
+
+	ctx := c.Request.Context()
+	res, err := h.Service.GetRounds(ctx, id, roundNumber...)
+	if err != nil {
+		if errors.Is(err, ErrTournamentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "tournament not found"})
+			return
+		}
+		slog.ErrorContext(ctx, "get rounds handler failed", "id", id, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, res)
+}
+
+func (h *Handler) GetGames(c *gin.Context) {
+	idParam := c.Param("id")
+	id, err := strconv.ParseInt(idParam, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tournament id"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	res, err := h.Service.GetGames(ctx, id)
+	if err != nil {
+		if errors.Is(err, ErrTournamentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "tournament not found"})
+			return
+		}
+		slog.ErrorContext(ctx, "get games handler failed", "id", id, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, res)
+}
+
+func (h *Handler) GetMyGames(c *gin.Context) {
+	userID, ok := getUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
+
+	idParam := c.Param("id")
+	id, err := strconv.ParseInt(idParam, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tournament id"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	res, err := h.Service.GetGames(ctx, id, userID)
+	if err != nil {
+		if errors.Is(err, ErrTournamentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "tournament not found"})
+			return
+		}
+		slog.ErrorContext(ctx, "get my games handler failed", "id", id, "user_id", userID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	c.JSON(http.StatusOK, res)
+}
