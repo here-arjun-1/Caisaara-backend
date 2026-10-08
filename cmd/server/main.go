@@ -18,6 +18,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/worker"
 	"github.com/here-arjun-1/Caisaara-backend/internal/bot"
 	"github.com/here-arjun-1/Caisaara-backend/internal/chat"
+	"github.com/here-arjun-1/Caisaara-backend/internal/club"
 	"github.com/here-arjun-1/Caisaara-backend/internal/community"
 	"github.com/here-arjun-1/Caisaara-backend/internal/config"
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
@@ -98,6 +99,10 @@ func run() error {
 	chatLimiter := chat.NewRedisRateLimiter(redisClient, 10, time.Minute)
 	chatService := chat.NewService(chatRepo, gameRepository, chatLimiter)
 
+	clubRepository := club.NewRepository(conn)
+	clubService := club.NewService(clubRepository, chatLimiter)
+	clubHandler := club.NewHandler(clubService)
+
 	wsHub := websocket.NewHub()
 	wsHandler := websocket.NewHandler(wsHub, gameService, chatService)
 	chatHandler := chat.NewHandler(chatService, wsHandler.BroadcastChatMessage)
@@ -112,6 +117,7 @@ func run() error {
 		matchmakingHandler,
 		wsHandler,
 		botHandler,
+		clubHandler,
 		chatHandler,
 	)
 	if err != nil {
