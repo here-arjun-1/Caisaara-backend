@@ -53,6 +53,7 @@ func (h *Handler) CreateTournament(c *gin.Context) {
 			errors.Is(err, ErrInvalidTimeControl) ||
 			errors.Is(err, ErrInvalidFormat) ||
 			errors.Is(err, ErrInvalidVisibility) ||
+			errors.Is(err, ErrInvalidMinPlayers) ||
 			errors.Is(err, ErrInvalidMaxPlayers) ||
 			errors.Is(err, ErrInvalidTotalRounds) {
 			c.JSON(http.StatusBadRequest, gin.H{

@@ -10,6 +10,7 @@ type CreateTournamentRequest struct {
 	Description string     `json:"description"`
 	Format      string     `json:"format" binding:"required"`
 	TimeControl string     `json:"time_control" binding:"required"`
+	MinPlayers  int        `json:"min_players"`
 	MaxPlayers  int        `json:"max_players" binding:"required"`
 	Visibility  string     `json:"visibility"`
 	TotalRounds int        `json:"total_rounds"`
@@ -22,9 +23,11 @@ type TournamentResponse struct {
 	Description  string    `json:"description,omitempty"`
 	Format       string    `json:"format"`
 	TimeControl  string    `json:"time_control"`
+	MinPlayers   int       `json:"min_players"`
 	MaxPlayers   int       `json:"max_players"`
 	Visibility   string    `json:"visibility"`
 	InviteCode   string    `json:"invite_code,omitempty"`
+	InviteLink   string    `json:"invite_link,omitempty"`
 	Status       string    `json:"status"`
 	TotalRounds  int       `json:"total_rounds"`
 	CurrentRound int       `json:"current_round"`
@@ -41,9 +44,11 @@ type TournamentDetailsResponse struct {
 	Format       string    `json:"format"`
 	TimeControl  string    `json:"time_control"`
 	Players      int       `json:"players"`
+	MinPlayers   int       `json:"min_players"`
 	MaxPlayers   int       `json:"max_players"`
 	Visibility   string    `json:"visibility"`
 	InviteCode   string    `json:"invite_code,omitempty"`
+	InviteLink   string    `json:"invite_link,omitempty"`
 	Status       string    `json:"status"`
 	CurrentRound int       `json:"current_round"`
 	TotalRounds  int       `json:"total_rounds"`
@@ -79,8 +84,10 @@ type StartTournamentResponse struct {
 
 func ToTournamentResponse(t *Tournament) *TournamentResponse {
 	inviteCode := ""
-	if t.InviteCode != nil {
+	inviteLink := ""
+	if t.InviteCode != nil && *t.InviteCode != "" {
 		inviteCode = *t.InviteCode
+		inviteLink = "/tournaments/invite/" + inviteCode
 	}
 	return &TournamentResponse{
 		ID:           strconv.FormatInt(t.ID, 10),
@@ -88,9 +95,11 @@ func ToTournamentResponse(t *Tournament) *TournamentResponse {
 		Description:  t.Description,
 		Format:       t.Format,
 		TimeControl:  t.TimeControl,
+		MinPlayers:   t.MinPlayers,
 		MaxPlayers:   t.MaxPlayers,
 		Visibility:   t.Visibility,
 		InviteCode:   inviteCode,
+		InviteLink:   inviteLink,
 		Status:       t.Status,
 		TotalRounds:  t.TotalRounds,
 		CurrentRound: t.CurrentRound,
@@ -103,8 +112,10 @@ func ToTournamentResponse(t *Tournament) *TournamentResponse {
 
 func ToTournamentDetailsResponse(tw *TournamentWithPlayerCount) *TournamentDetailsResponse {
 	inviteCode := ""
-	if tw.InviteCode != nil {
+	inviteLink := ""
+	if tw.InviteCode != nil && *tw.InviteCode != "" {
 		inviteCode = *tw.InviteCode
+		inviteLink = "/tournaments/invite/" + inviteCode
 	}
 	return &TournamentDetailsResponse{
 		ID:           strconv.FormatInt(tw.ID, 10),
@@ -113,9 +124,11 @@ func ToTournamentDetailsResponse(tw *TournamentWithPlayerCount) *TournamentDetai
 		Format:       tw.Format,
 		TimeControl:  tw.TimeControl,
 		Players:      tw.Players,
+		MinPlayers:   tw.MinPlayers,
 		MaxPlayers:   tw.MaxPlayers,
 		Visibility:   tw.Visibility,
 		InviteCode:   inviteCode,
+		InviteLink:   inviteLink,
 		Status:       tw.Status,
 		TotalRounds:  tw.TotalRounds,
 		CurrentRound: tw.CurrentRound,

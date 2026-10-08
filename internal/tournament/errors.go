@@ -5,8 +5,9 @@ import "errors"
 var (
 	ErrTournamentNotFound   = errors.New("tournament not found")
 	ErrInvalidName          = errors.New("name is required")
-	ErrInvalidFormat        = errors.New("only swiss format is supported")
+	ErrInvalidFormat        = errors.New("format must be swiss, round_robin, or knockout")
 	ErrInvalidVisibility    = errors.New("visibility must be public or private")
+	ErrInvalidMinPlayers    = errors.New("min_players must be at least 2 and cannot exceed max_players")
 	ErrInvalidMaxPlayers    = errors.New("max_players must be at least 2")
 	ErrInvalidTotalRounds   = errors.New("total_rounds must be at least 1")
 	ErrInvalidTimeControl   = errors.New("time_control is required")
