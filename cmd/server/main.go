@@ -26,6 +26,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/matchmaking"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
 	"github.com/here-arjun-1/Caisaara-backend/internal/router"
+	"github.com/here-arjun-1/Caisaara-backend/internal/tilt"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tournament"
 	"github.com/here-arjun-1/Caisaara-backend/internal/websocket"
 	"github.com/here-arjun-1/Caisaara-backend/migrations"
@@ -91,8 +92,11 @@ func run() error {
 	)
 	invitationHandler := invitation.NewHandler(invitationService)
 
+	tiltRepository := tilt.NewRepository(conn)
+	tiltService := tilt.NewService(tiltRepository)
+
 	queueRepo := matchmaking.NewRedisQueueRepository(redisClient)
-	matchmakingService := matchmaking.NewService(queueRepo, authModule.UserRepository)
+	matchmakingService := matchmaking.NewService(queueRepo, authModule.UserRepository, tiltService)
 	matchmakingHandler := matchmaking.NewHandler(matchmakingService)
 	matcher := matchmaking.NewMatcher(queueRepo, gameRepository)
 
