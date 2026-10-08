@@ -80,7 +80,7 @@ func (s *TournamentService) CreateTournament(ctx context.Context, userID int64, 
 		return nil, ErrInvalidTimeControl
 	}
 
-	if req.Format != FormatSwiss {
+	if req.Format != FormatSwiss && req.Format != FormatRoundRobin {
 		return nil, ErrInvalidFormat
 	}
 
@@ -244,15 +244,42 @@ func (s *TournamentService) StartTournament(ctx context.Context, tournamentID in
 		return nil, ErrNotEnoughPlayers
 	}
 
-	if err := s.Repo.StartTournament(ctx, tournamentID); err != nil {
-		return nil, err
-	}
+	if t.Format == FormatRoundRobin {
+		swissPlayers, err := s.Repo.GetSwissPlayers(ctx, tournamentID)
+		if err != nil || len(swissPlayers) < 2 {
+			return nil, ErrNotEnoughPlayers
+		}
 
-	swissPlayers, err := s.Repo.GetSwissPlayers(ctx, tournamentID)
-	if err == nil && len(swissPlayers) >= 2 {
-		pairingsResult, err := GenerateSwissPairings(swissPlayers)
-		if err == nil {
-			_, _ = s.Repo.SaveRoundPairings(ctx, tournamentID, 1, pairingsResult, s.GameRepo)
+		playerIDs := make([]int64, len(swissPlayers))
+		for i, p := range swissPlayers {
+			playerIDs[i] = p.UserID
+		}
+
+		schedule, totalRounds, err := GenerateRoundRobinSchedule(playerIDs)
+		if err != nil {
+			return nil, err
+		}
+
+		_ = s.Repo.UpdateTotalRounds(ctx, tournamentID, totalRounds)
+
+		if err := s.Repo.StartTournament(ctx, tournamentID); err != nil {
+			return nil, err
+		}
+
+		if r1Pairings, ok := schedule[1]; ok {
+			_, _ = s.Repo.SaveRoundPairings(ctx, tournamentID, 1, r1Pairings, s.GameRepo)
+		}
+	} else {
+		if err := s.Repo.StartTournament(ctx, tournamentID); err != nil {
+			return nil, err
+		}
+
+		swissPlayers, err := s.Repo.GetSwissPlayers(ctx, tournamentID)
+		if err == nil && len(swissPlayers) >= 2 {
+			pairingsResult, err := GenerateSwissPairings(swissPlayers)
+			if err == nil {
+				_, _ = s.Repo.SaveRoundPairings(ctx, tournamentID, 1, pairingsResult, s.GameRepo)
+			}
 		}
 	}
 
@@ -285,9 +312,23 @@ func (s *TournamentService) GenerateRoundPairings(ctx context.Context, tournamen
 		return nil, err
 	}
 
-	pairingsResult, err := GenerateSwissPairings(swissPlayers)
-	if err != nil {
-		return nil, err
+	var pairingsResult []SwissPairingResult
+	if t.Format == FormatRoundRobin {
+		playerIDs := make([]int64, len(swissPlayers))
+		for i, p := range swissPlayers {
+			playerIDs[i] = p.UserID
+		}
+		schedule, _, err := GenerateRoundRobinSchedule(playerIDs)
+		if err != nil {
+			return nil, err
+		}
+		pairingsResult = schedule[t.CurrentRound]
+	} else {
+		var err error
+		pairingsResult, err = GenerateSwissPairings(swissPlayers)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	roundNumber := t.CurrentRound
@@ -335,9 +376,23 @@ func (s *TournamentService) OnGameCompleted(ctx context.Context, gameID string, 
 				return err
 			}
 
-			pairingsResult, err := GenerateSwissPairings(swissPlayers)
-			if err != nil {
-				return err
+			var pairingsResult []SwissPairingResult
+			if t.Format == FormatRoundRobin {
+				playerIDs := make([]int64, len(swissPlayers))
+				for i, p := range swissPlayers {
+					playerIDs[i] = p.UserID
+				}
+				schedule, _, err := GenerateRoundRobinSchedule(playerIDs)
+				if err != nil {
+					return err
+				}
+				pairingsResult = schedule[t.CurrentRound]
+			} else {
+				var err error
+				pairingsResult, err = GenerateSwissPairings(swissPlayers)
+				if err != nil {
+					return err
+				}
 			}
 
 			_, err = s.Repo.SaveRoundPairings(ctx, tournamentID, t.CurrentRound, pairingsResult, s.GameRepo)
