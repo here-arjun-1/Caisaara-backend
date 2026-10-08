@@ -682,21 +682,22 @@ func (r *Repository) UpdatePairingOnGameCompleted(ctx context.Context, gameID st
 		return 0, false, err
 	}
 
-	if normResult == ResultWhiteWin {
+	switch normResult {
+	case ResultWhiteWin:
 		if whiteID != nil {
 			_, _ = tx.Exec(ctx, `UPDATE tournament_players SET score = score + 1.0, wins = wins + 1, games_played = games_played + 1 WHERE tournament_id = $1 AND user_id = $2`, tournamentID, *whiteID)
 		}
 		if blackID != nil {
 			_, _ = tx.Exec(ctx, `UPDATE tournament_players SET losses = losses + 1, games_played = games_played + 1 WHERE tournament_id = $1 AND user_id = $2`, tournamentID, *blackID)
 		}
-	} else if normResult == ResultBlackWin {
+	case ResultBlackWin:
 		if blackID != nil {
 			_, _ = tx.Exec(ctx, `UPDATE tournament_players SET score = score + 1.0, wins = wins + 1, games_played = games_played + 1 WHERE tournament_id = $1 AND user_id = $2`, tournamentID, *blackID)
 		}
 		if whiteID != nil {
 			_, _ = tx.Exec(ctx, `UPDATE tournament_players SET losses = losses + 1, games_played = games_played + 1 WHERE tournament_id = $1 AND user_id = $2`, tournamentID, *whiteID)
 		}
-	} else if normResult == ResultDraw {
+	case ResultDraw:
 		if whiteID != nil {
 			_, _ = tx.Exec(ctx, `UPDATE tournament_players SET score = score + 0.5, draws = draws + 1, games_played = games_played + 1 WHERE tournament_id = $1 AND user_id = $2`, tournamentID, *whiteID)
 		}
@@ -960,11 +961,16 @@ func (r *Repository) GetRoundWinners(ctx context.Context, tournamentID int64, ro
 		if isBye && wID != nil {
 			winners = append(winners, *wID)
 		} else if result != nil {
-			if *result == ResultWhiteWin && wID != nil {
-				winners = append(winners, *wID)
-			} else if *result == ResultBlackWin && bID != nil {
-				winners = append(winners, *bID)
-			} else if *result == ResultDraw {
+			switch *result {
+			case ResultWhiteWin:
+				if wID != nil {
+					winners = append(winners, *wID)
+				}
+			case ResultBlackWin:
+				if bID != nil {
+					winners = append(winners, *bID)
+				}
+			case ResultDraw:
 				if wID != nil {
 					winners = append(winners, *wID)
 				}
