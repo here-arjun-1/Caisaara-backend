@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS club_messages;
+DROP TABLE IF EXISTS club_members;
+DROP TABLE IF EXISTS clubs;
