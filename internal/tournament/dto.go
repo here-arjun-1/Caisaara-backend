@@ -152,7 +152,7 @@ type StandingsPlayerResponse struct {
 }
 
 type TournamentStandingsResponse struct {
-	TournamentID string                    `json:"tournament_id"`
+	TournamentID string                     `json:"tournament_id"`
 	Standings    []*StandingsPlayerResponse `json:"standings"`
 }
 

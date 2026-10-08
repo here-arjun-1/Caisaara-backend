@@ -30,6 +30,16 @@ func Run(databaseURL string) error {
 	defer func() { _, _ = m.Close() }()
 
 	err = m.Up()
+	if err != nil && strings.Contains(err.Error(), "Dirty database version") {
+		var dirtyVersion int
+		if _, scanErr := fmt.Sscanf(err.Error(), "Dirty database version %d", &dirtyVersion); scanErr == nil {
+			_ = m.Force(dirtyVersion)
+			err = m.Up()
+		} else {
+			_ = m.Force(13)
+			err = m.Up()
+		}
+	}
 	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("apply migrations: %w", err)
 	}

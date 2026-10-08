@@ -30,6 +30,7 @@ type Service interface {
 	GetStandings(ctx context.Context, tournamentID int64) (*TournamentStandingsResponse, error)
 	GetRounds(ctx context.Context, tournamentID int64, roundNumber ...int) (*TournamentRoundsResponse, error)
 	GetGames(ctx context.Context, tournamentID int64, userID ...int64) (*TournamentGamesResponse, error)
+	DeleteOldTournaments(ctx context.Context, olderThan time.Duration) (int64, error)
 	SetBroadcaster(b Broadcaster)
 }
 
@@ -496,4 +497,26 @@ func (s *TournamentService) GetGames(ctx context.Context, tournamentID int64, us
 		TournamentID: strconv.FormatInt(tournamentID, 10),
 		Games:        games,
 	}, nil
+}
+
+func (s *TournamentService) DeleteOldTournaments(ctx context.Context, olderThan time.Duration) (int64, error) {
+	return s.Repo.DeleteOldTournaments(ctx, olderThan)
+}
+
+func StartTournamentCleanup(ctx context.Context, repo TournamentRepository, interval time.Duration) {
+	if repo == nil {
+		return
+	}
+	ticker := time.NewTicker(interval)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				ticker.Stop()
+				return
+			case <-ticker.C:
+				_, _ = repo.DeleteOldTournaments(ctx, 30*24*time.Hour)
+			}
+		}
+	}()
 }

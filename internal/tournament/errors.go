@@ -11,7 +11,7 @@ var (
 	ErrInvalidMaxPlayers    = errors.New("max_players must be at least 2")
 	ErrInvalidTotalRounds   = errors.New("total_rounds must be at least 1")
 	ErrInvalidTimeControl   = errors.New("time_control is required")
-	ErrUserNotAuthenticated  = errors.New("user not authenticated")
+	ErrUserNotAuthenticated = errors.New("user not authenticated")
 	ErrNotRegistration      = errors.New("tournament is not accepting registrations")
 	ErrTournamentFull       = errors.New("tournament is full")
 	ErrAlreadyJoined        = errors.New("user has already joined this tournament")

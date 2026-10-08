@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
 	"github.com/jackc/pgx/v5"
@@ -36,6 +37,7 @@ type TournamentRepository interface {
 	GetGames(ctx context.Context, tournamentID int64, userID ...int64) ([]*TournamentGameItem, error)
 	UpdateTotalRounds(ctx context.Context, tournamentID int64, totalRounds int) error
 	GetRoundWinners(ctx context.Context, tournamentID int64, roundID int64) ([]int64, error)
+	DeleteOldTournaments(ctx context.Context, olderThan time.Duration) (int64, error)
 }
 
 type Repository struct {
@@ -971,4 +973,20 @@ func (r *Repository) GetRoundWinners(ctx context.Context, tournamentID int64, ro
 	}
 
 	return winners, nil
+}
+
+func (r *Repository) DeleteOldTournaments(ctx context.Context, olderThan time.Duration) (int64, error) {
+	cutoff := time.Now().Add(-olderThan)
+	tag, err := r.DB.Exec(
+		ctx,
+		`DELETE FROM tournaments
+		WHERE status IN ('completed', 'cancelled')
+		  AND updated_at < $1`,
+		cutoff,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete old tournaments repository failed", "error", err)
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
 }
