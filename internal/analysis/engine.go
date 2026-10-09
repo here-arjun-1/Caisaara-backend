@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -78,16 +79,17 @@ func (e *AnalysisEngine) Analyze(ctx context.Context, pos PositionOptions, opts 
 	defer e.mu.Unlock()
 
 	var cancel context.CancelFunc
-	if opts.Timeout > 0 {
+	switch {
+	case opts.Timeout > 0:
 		ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
-	} else if opts.MoveTimeMs > 0 {
+	case opts.MoveTimeMs > 0:
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(opts.MoveTimeMs+2000)*time.Millisecond)
-	} else {
+	default:
 		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
 	}
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, e.Path)
+	cmd := exec.CommandContext(ctx, filepath.Clean(e.Path))
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -100,7 +102,7 @@ func (e *AnalysisEngine) Analyze(ctx context.Context, pos PositionOptions, opts 
 	}
 
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrEngineNotFound, err)
+		return nil, fmt.Errorf("%w: %w", ErrEngineNotFound, err)
 	}
 
 	defer func() {
@@ -154,14 +156,15 @@ func (e *AnalysisEngine) Analyze(ctx context.Context, pos PositionOptions, opts 
 		return nil, fmt.Errorf("send position command: %w", err)
 	}
 
-	goCmd := "go"
-	if opts.Depth > 0 && opts.MoveTimeMs > 0 {
+	var goCmd string
+	switch {
+	case opts.Depth > 0 && opts.MoveTimeMs > 0:
 		goCmd = fmt.Sprintf("go depth %d movetime %d", opts.Depth, opts.MoveTimeMs)
-	} else if opts.Depth > 0 {
+	case opts.Depth > 0:
 		goCmd = fmt.Sprintf("go depth %d", opts.Depth)
-	} else if opts.MoveTimeMs > 0 {
+	case opts.MoveTimeMs > 0:
 		goCmd = fmt.Sprintf("go movetime %d", opts.MoveTimeMs)
-	} else {
+	default:
 		goCmd = "go depth 15"
 	}
 
