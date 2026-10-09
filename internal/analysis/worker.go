@@ -164,14 +164,15 @@ func (p *AnalysisProcessor) ProcessTaskGameAnalysis(ctx context.Context, t *asyn
 		}
 
 		posAfterFEN := chessBoard.FEN()
-		evalAfterWhite := evalBeforeWhite
+		var evalAfterWhite int
 
 		if chessBoard.IsFinished() {
-			if chessBoard.Outcome() == "1-0" {
+			switch chessBoard.Outcome() {
+			case "1-0":
 				evalAfterWhite = 10000
-			} else if chessBoard.Outcome() == "0-1" {
+			case "0-1":
 				evalAfterWhite = -10000
-			} else {
+			default:
 				evalAfterWhite = 0
 			}
 		} else {
