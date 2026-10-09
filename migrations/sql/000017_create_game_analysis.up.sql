@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS game_analyses (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE UNIQUE INDEX idx_game_analyses_game_id ON game_analyses(game_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_game_analyses_game_id ON game_analyses(game_id);
 
 CREATE TABLE IF NOT EXISTS game_move_analyses (
     id UUID PRIMARY KEY,
@@ -56,5 +56,5 @@ CREATE TABLE IF NOT EXISTS game_move_analyses (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_game_move_analyses_analysis_id ON game_move_analyses(analysis_id);
-CREATE INDEX idx_game_move_analyses_game_id ON game_move_analyses(game_id);
+CREATE INDEX IF NOT EXISTS idx_game_move_analyses_analysis_id ON game_move_analyses(analysis_id);
+CREATE INDEX IF NOT EXISTS idx_game_move_analyses_game_id ON game_move_analyses(game_id);
