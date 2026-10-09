@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/here-arjun-1/Caisaara-backend/internal/analysis"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/database"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/email"
@@ -79,6 +80,11 @@ func run() error {
 	gameService := game.NewService(gameRepository)
 	gameHandler := game.NewHandler(gameService)
 
+	analysisRepo := analysis.NewRepository(conn)
+	analysisEngine := analysis.NewAnalysisEngine(cfg.StockfishPath)
+	analysisService := analysis.NewService(analysisEngine, analysisRepo, gameRepository)
+	analysisHandler := analysis.NewHandler(analysisService)
+
 	botRepository := bot.NewRepository(conn)
 	botEngine := bot.NewEngine(cfg.StockfishPath)
 	botService := bot.NewService(botRepository, botEngine)
@@ -134,6 +140,7 @@ func run() error {
 		clubHandler,
 		chatHandler,
 		tiltHandler,
+		analysisHandler,
 		tournamentHandler,
 	)
 	if err != nil {

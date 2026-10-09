@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/here-arjun-1/Caisaara-backend/internal/analysis"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
 	"github.com/here-arjun-1/Caisaara-backend/internal/bot"
@@ -34,6 +35,7 @@ func New(
 	clubHandler *club.Handler,
 	chatHandler *chat.Handler,
 	tiltHandler *tilt.Handler,
+	analysisHandler *analysis.Handler,
 	tournamentHandler ...*tournament.Handler,
 ) (*gin.Engine, error) {
 	r := gin.Default()
@@ -82,6 +84,10 @@ func New(
 
 	if tiltHandler != nil {
 		tilt.RegisterRoutes(tiltHandler, protected)
+	}
+
+	if analysisHandler != nil {
+		analysis.RegisterRoutes(analysisHandler, protected)
 	}
 
 	if len(tournamentHandler) > 0 && tournamentHandler[0] != nil {
