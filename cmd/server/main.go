@@ -25,6 +25,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/invitation"
 	"github.com/here-arjun-1/Caisaara-backend/internal/matchmaking"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
+	"github.com/here-arjun-1/Caisaara-backend/internal/rating"
 	"github.com/here-arjun-1/Caisaara-backend/internal/router"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tilt"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tournament"
@@ -117,7 +118,13 @@ func run() error {
 	tournamentService := tournament.NewService(tournamentRepo, gameRepository, wsHandler)
 	tournamentHandler := tournament.NewHandler(tournamentService)
 
+	ratingRepository := rating.NewRepository(conn)
+	ratingService := rating.NewService(ratingRepository)
+
 	gameService.SetGameCompletionListener(func(ctx context.Context, gameID string, result string) {
+		if err := ratingService.UpdateRatingsAfterGame(ctx, gameID); err != nil {
+			slog.ErrorContext(ctx, "update ratings failed", "game_id", gameID, "error", err)
+		}
 		_ = tournamentService.OnGameCompleted(ctx, gameID, result)
 	})
 
