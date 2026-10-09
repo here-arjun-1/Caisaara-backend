@@ -19,8 +19,8 @@ type AnalysisService interface {
 }
 
 type GameAnalysisResponse struct {
-	Analysis     *GameAnalysis     `json:"analysis"`
-	SummaryStats SummaryStatistics `json:"summary_stats"`
+	Analysis     *GameAnalysis      `json:"analysis"`
+	SummaryStats SummaryStatistics  `json:"summary_stats"`
 	EvalHistory  []EvalHistoryPoint `json:"eval_history"`
 }
 
