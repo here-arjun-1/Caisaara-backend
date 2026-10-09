@@ -82,8 +82,9 @@ func run() error {
 
 	analysisRepo := analysis.NewRepository(conn)
 	analysisEngine := analysis.NewAnalysisEngine(cfg.StockfishPath)
-	analysisService := analysis.NewService(analysisEngine, analysisRepo, gameRepository)
+	analysisService := analysis.NewService(analysisRepo, gameRepository, taskDistributor)
 	analysisHandler := analysis.NewHandler(analysisService)
+	analysisProcessor := analysis.NewAnalysisProcessor(analysisEngine, analysisRepo, gameRepository)
 
 	botRepository := bot.NewRepository(conn)
 	botEngine := bot.NewEngine(cfg.StockfishPath)
@@ -125,6 +126,7 @@ func run() error {
 
 	gameService.SetGameCompletionListener(func(ctx context.Context, gameID string, result string) {
 		_ = tournamentService.OnGameCompleted(ctx, gameID, result)
+		_, _ = analysisService.TriggerAnalysis(ctx, gameID, 0)
 	})
 
 	r, err := router.New(
@@ -148,6 +150,7 @@ func run() error {
 	}
 
 	asynqServer := worker.StartEmailServer(asynqRedisOpt, email.NewSender(cfg.SMTP))
+	analysisServer := analysis.StartAnalysisServer(asynqRedisOpt, analysisProcessor, 2)
 	worker.StartSessionCleanup(authModule.SessionRepository)
 	matcher.Start()
 	tournament.StartTournamentCleanup(context.Background(), tournamentRepo, 24*time.Hour)
@@ -175,6 +178,9 @@ func run() error {
 
 	if asynqServer != nil {
 		asynqServer.Stop()
+	}
+	if analysisServer != nil {
+		analysisServer.Stop()
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

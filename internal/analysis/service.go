@@ -5,200 +5,117 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
+	"github.com/hibiken/asynq"
 )
 
 type AnalysisService interface {
-	AnalyzeGame(ctx context.Context, gameID string) (*GameAnalysisResponse, error)
-	GetAnalysis(ctx context.Context, gameID string) (*GameAnalysisResponse, error)
+	TriggerAnalysis(ctx context.Context, gameID string, userID int64) (*GameAnalysis, error)
+	GetAnalysis(ctx context.Context, gameID string, userID int64) (*GameAnalysisResponse, error)
+	GetMoveAnalyses(ctx context.Context, gameID string, userID int64) ([]GameMoveAnalysis, error)
+	GetMoveAnalysisByNumber(ctx context.Context, gameID string, moveNumber int, userID int64) (*GameMoveAnalysis, error)
+	RetryAnalysis(ctx context.Context, gameID string, userID int64) (*GameAnalysis, error)
 }
 
 type GameAnalysisResponse struct {
-	Analysis *GameAnalysis      `json:"analysis"`
-	Moves    []GameMoveAnalysis `json:"moves"`
+	Analysis     *GameAnalysis     `json:"analysis"`
+	SummaryStats SummaryStatistics `json:"summary_stats"`
+	EvalHistory  []EvalHistoryPoint `json:"eval_history"`
 }
 
 type Service struct {
-	Engine     *AnalysisEngine
-	Repo       AnalysisRepository
-	GameRepo   game.GameRepository
-	Thresholds ClassificationThresholds
+	Repo            AnalysisRepository
+	GameRepo        game.GameRepository
+	TaskDistributor *asynq.Client
+	StatsService    *StatisticsService
 }
 
 func NewService(
-	engine *AnalysisEngine,
 	repo AnalysisRepository,
 	gameRepo game.GameRepository,
+	taskDistributor *asynq.Client,
 ) AnalysisService {
 	return &Service{
-		Engine:     engine,
-		Repo:       repo,
-		GameRepo:   gameRepo,
-		Thresholds: DefaultThresholds(),
+		Repo:            repo,
+		GameRepo:        gameRepo,
+		TaskDistributor: taskDistributor,
+		StatsService:    NewStatisticsService(),
 	}
 }
 
-func (s *Service) AnalyzeGame(ctx context.Context, gameID string) (*GameAnalysisResponse, error) {
-	targetGame, err := s.GameRepo.FindGameByID(ctx, gameID)
+func (s *Service) checkUserGamePermission(ctx context.Context, g *game.Game, userID int64) error {
+	if userID <= 0 {
+		return nil
+	}
+	if userID == g.WhitePlayerID || userID == g.BlackPlayerID {
+		return nil
+	}
+	if g.Status == game.StatusFinished {
+		return nil
+	}
+	return errors.New("forbidden: not part of this game")
+}
+
+func (s *Service) TriggerAnalysis(ctx context.Context, gameID string, userID int64) (*GameAnalysis, error) {
+	g, err := s.GameRepo.FindGameByID(ctx, gameID)
 	if err != nil {
-		slog.WarnContext(ctx, "find game for analysis failed", "game_id", gameID, "error", err)
+		slog.WarnContext(ctx, "trigger analysis game check failed", "game_id", gameID, "error", err)
 		return nil, errors.New("game not found")
 	}
 
-	if targetGame.Status != game.StatusFinished {
-		slog.WarnContext(ctx, "cannot analyze unfinished game", "game_id", gameID, "status", targetGame.Status)
+	if err := s.checkUserGamePermission(ctx, g, userID); err != nil {
+		return nil, err
+	}
+
+	if g.Status != game.StatusFinished {
+		slog.WarnContext(ctx, "attempted to analyze unfinished game", "game_id", gameID, "status", g.Status)
 		return nil, errors.New("game is not finished")
 	}
 
-	moves, err := s.GameRepo.GetMoves(ctx, gameID)
-	if err != nil {
-		slog.ErrorContext(ctx, "fetch moves for analysis failed", "game_id", gameID, "error", err)
-		return nil, fmt.Errorf("get moves: %w", err)
+	existing, err := s.Repo.GetAnalysisByGameID(ctx, gameID)
+	if err == nil && existing != nil {
+		if existing.Status == StatusPending || existing.Status == StatusProcessing || existing.Status == StatusCompleted {
+			slog.InfoContext(ctx, "preventing duplicate analysis request", "game_id", gameID, "status", existing.Status)
+			return existing, nil
+		}
 	}
 
 	analysisRecord, err := s.Repo.CreateAnalysis(ctx, gameID, "Stockfish 16", 12)
 	if err != nil {
+		slog.ErrorContext(ctx, "create analysis DB record failed", "game_id", gameID, "error", err)
 		return nil, fmt.Errorf("create analysis record: %w", err)
 	}
 
-	chessBoard := game.NewChessGame()
-	opts := AnalysisOptions{
-		Depth:      12,
-		MoveTimeMs: 150,
-	}
-
-	var moveAnalyses []GameMoveAnalysis
-	whiteLosses := []float64{}
-	blackLosses := []float64{}
-
-	for idx, moveRecord := range moves {
-		playerColor := "white"
-		if idx%2 != 0 {
-			playerColor = "black"
-		}
-
-		posBeforeFEN := chessBoard.FEN()
-
-		evalBeforeRes, err := s.Engine.Analyze(ctx, PositionOptions{FEN: posBeforeFEN}, opts)
+	if s.TaskDistributor != nil {
+		task, err := NewGameAnalysisTask(gameID)
 		if err != nil {
-			slog.WarnContext(ctx, "engine eval before move warning", "game_id", gameID, "move_number", moveRecord.MoveNumber, "error", err)
+			slog.ErrorContext(ctx, "create analysis task failed", "game_id", gameID, "error", err)
+			return nil, fmt.Errorf("create analysis task: %w", err)
 		}
 
-		evalBeforeWhite := extractCentipawnScore(evalBeforeRes, playerColor == "white")
-
-		bestMove := ""
-		var pv []string
-		if evalBeforeRes != nil {
-			bestMove = evalBeforeRes.BestMove
-			pv = evalBeforeRes.PV
-		}
-
-		err = chessBoard.MakeMove(moveRecord.Move)
+		info, err := s.TaskDistributor.EnqueueContext(ctx, task)
 		if err != nil {
-			slog.ErrorContext(ctx, "reconstruct move failed", "game_id", gameID, "move", moveRecord.Move, "error", err)
+			slog.ErrorContext(ctx, "enqueue analysis task failed", "game_id", gameID, "error", err)
+			return nil, fmt.Errorf("enqueue analysis task: %w", err)
 		}
 
-		posAfterFEN := chessBoard.FEN()
-		evalAfterWhite := evalBeforeWhite
-
-		if chessBoard.IsFinished() {
-			if chessBoard.Outcome() == "1-0" {
-				evalAfterWhite = 10000
-			} else if chessBoard.Outcome() == "0-1" {
-				evalAfterWhite = -10000
-			} else {
-				evalAfterWhite = 0
-			}
-		} else {
-			evalAfterRes, err := s.Engine.Analyze(ctx, PositionOptions{FEN: posAfterFEN}, opts)
-			if err != nil {
-				slog.WarnContext(ctx, "engine eval after move warning", "game_id", gameID, "move_number", moveRecord.MoveNumber, "error", err)
-			}
-			evalAfterWhite = extractCentipawnScore(evalAfterRes, playerColor != "white")
-		}
-
-		var cpl int
-		if playerColor == "white" {
-			cpl = evalBeforeWhite - evalAfterWhite
-		} else {
-			cpl = evalAfterWhite - evalBeforeWhite
-		}
-
-		if cpl < 0 {
-			cpl = 0
-		}
-
-		classification := classifyMoveWithThresholds(cpl, moveRecord.Move, bestMove, s.Thresholds)
-
-		if playerColor == "white" {
-			whiteLosses = append(whiteLosses, float64(cpl))
-			switch classification {
-			case ClassificationInaccuracy:
-				analysisRecord.InaccuraciesWhite++
-			case ClassificationMistake:
-				analysisRecord.MistakesWhite++
-			case ClassificationBlunder:
-				analysisRecord.BlundersWhite++
-			}
-		} else {
-			blackLosses = append(blackLosses, float64(cpl))
-			switch classification {
-			case ClassificationInaccuracy:
-				analysisRecord.InaccuraciesBlack++
-			case ClassificationMistake:
-				analysisRecord.MistakesBlack++
-			case ClassificationBlunder:
-				analysisRecord.BlundersBlack++
-			}
-		}
-
-		eb := evalBeforeWhite
-		ea := evalAfterWhite
-
-		moveAnalysis := GameMoveAnalysis{
-			ID:             uuid.NewString(),
-			AnalysisID:     analysisRecord.ID,
-			GameID:         gameID,
-			MoveNumber:     moveRecord.MoveNumber,
-			PlayerColor:    playerColor,
-			PlayedMove:     moveRecord.Move,
-			PositionFEN:    posBeforeFEN,
-			EvalBefore:     &eb,
-			EvalAfter:      &ea,
-			BestMove:       bestMove,
-			PV:             pv,
-			CentipawnLoss:  cpl,
-			Classification: classification,
-			CreatedAt:      time.Now(),
-		}
-
-		moveAnalyses = append(moveAnalyses, moveAnalysis)
+		slog.InfoContext(ctx, "enqueued background game analysis task", "game_id", gameID, "task_id", info.ID)
 	}
 
-	accWhite := calculateAccuracy(whiteLosses)
-	accBlack := calculateAccuracy(blackLosses)
-
-	analysisRecord.AccuracyWhite = &accWhite
-	analysisRecord.AccuracyBlack = &accBlack
-	analysisRecord.Status = StatusCompleted
-
-	err = s.Repo.SaveAnalysisResult(ctx, analysisRecord, moveAnalyses)
-	if err != nil {
-		slog.ErrorContext(ctx, "save move-by-move analysis failed", "game_id", gameID, "error", err)
-		return nil, fmt.Errorf("save analysis result: %w", err)
-	}
-
-	return &GameAnalysisResponse{
-		Analysis: analysisRecord,
-		Moves:    moveAnalyses,
-	}, nil
+	return analysisRecord, nil
 }
 
-func (s *Service) GetAnalysis(ctx context.Context, gameID string) (*GameAnalysisResponse, error) {
+func (s *Service) GetAnalysis(ctx context.Context, gameID string, userID int64) (*GameAnalysisResponse, error) {
+	g, err := s.GameRepo.FindGameByID(ctx, gameID)
+	if err != nil {
+		return nil, errors.New("game not found")
+	}
+
+	if err := s.checkUserGamePermission(ctx, g, userID); err != nil {
+		return nil, err
+	}
+
 	analysisRecord, err := s.Repo.GetAnalysisByGameID(ctx, gameID)
 	if err != nil {
 		slog.WarnContext(ctx, "get analysis record failed", "game_id", gameID, "error", err)
@@ -215,66 +132,87 @@ func (s *Service) GetAnalysis(ctx context.Context, gameID string) (*GameAnalysis
 		moves = []GameMoveAnalysis{}
 	}
 
+	stats, evalHistory := s.StatsService.CalculateStatistics(moves)
+
 	return &GameAnalysisResponse{
-		Analysis: analysisRecord,
-		Moves:    moves,
+		Analysis:     analysisRecord,
+		SummaryStats: stats,
+		EvalHistory:  evalHistory,
 	}, nil
 }
 
-func extractCentipawnScore(res *AnalysisResult, isSideToMove bool) int {
-	if res == nil {
-		return 0
+func (s *Service) GetMoveAnalyses(ctx context.Context, gameID string, userID int64) ([]GameMoveAnalysis, error) {
+	g, err := s.GameRepo.FindGameByID(ctx, gameID)
+	if err != nil {
+		return nil, errors.New("game not found")
 	}
-	if res.MateIn != nil {
-		m := *res.MateIn
-		var val int
-		if m > 0 {
-			val = 10000 - (m * 10)
-		} else {
-			val = -10000 - (m * 10)
-		}
-		if !isSideToMove {
-			return -val
-		}
-		return val
+
+	if err := s.checkUserGamePermission(ctx, g, userID); err != nil {
+		return nil, err
 	}
-	if res.EvaluationCentipawns != nil {
-		val := *res.EvaluationCentipawns
-		if !isSideToMove {
-			return -val
-		}
-		return val
+
+	moves, err := s.Repo.GetMoveAnalyses(ctx, gameID)
+	if err != nil {
+		return nil, fmt.Errorf("get move analyses: %w", err)
 	}
-	return 0
+
+	if moves == nil {
+		moves = []GameMoveAnalysis{}
+	}
+
+	return moves, nil
 }
 
-func classifyMoveWithThresholds(cpl int, playedMove, bestMove string, thresholds ClassificationThresholds) string {
-	if playedMove != "" && bestMove != "" && playedMove == bestMove {
-		return ClassificationBest
+func (s *Service) GetMoveAnalysisByNumber(ctx context.Context, gameID string, moveNumber int, userID int64) (*GameMoveAnalysis, error) {
+	g, err := s.GameRepo.FindGameByID(ctx, gameID)
+	if err != nil {
+		return nil, errors.New("game not found")
 	}
-	switch {
-	case cpl <= thresholds.Best:
-		return ClassificationBest
-	case cpl <= thresholds.Good:
-		return ClassificationGood
-	case cpl <= thresholds.Inaccuracy:
-		return ClassificationInaccuracy
-	case cpl <= thresholds.Mistake:
-		return ClassificationMistake
-	default:
-		return ClassificationBlunder
+
+	if err := s.checkUserGamePermission(ctx, g, userID); err != nil {
+		return nil, err
 	}
+
+	moves, err := s.Repo.GetMoveAnalyses(ctx, gameID)
+	if err != nil {
+		return nil, fmt.Errorf("get move analyses: %w", err)
+	}
+
+	for _, m := range moves {
+		if m.MoveNumber == moveNumber {
+			return &m, nil
+		}
+	}
+
+	return nil, errors.New("move analysis not found")
 }
 
-func calculateAccuracy(losses []float64) float64 {
-	if len(losses) == 0 {
-		return 100.0
+func (s *Service) RetryAnalysis(ctx context.Context, gameID string, userID int64) (*GameAnalysis, error) {
+	g, err := s.GameRepo.FindGameByID(ctx, gameID)
+	if err != nil {
+		return nil, errors.New("game not found")
 	}
-	var total float64
-	for _, l := range losses {
-		total += l
+
+	if err := s.checkUserGamePermission(ctx, g, userID); err != nil {
+		return nil, err
 	}
-	avgLoss := total / float64(len(losses))
-	accuracy := math.Max(0.0, math.Min(100.0, 100.0-(avgLoss*0.4)))
-	return math.Round(accuracy*100) / 100
+
+	if g.Status != game.StatusFinished {
+		return nil, errors.New("game is not finished")
+	}
+
+	_ = s.Repo.UpdateStatus(ctx, gameID, StatusPending, "")
+
+	if s.TaskDistributor != nil {
+		task, err := NewGameAnalysisTask(gameID)
+		if err != nil {
+			return nil, fmt.Errorf("create retry analysis task: %w", err)
+		}
+		_, err = s.TaskDistributor.EnqueueContext(ctx, task)
+		if err != nil {
+			return nil, fmt.Errorf("enqueue retry task: %w", err)
+		}
+	}
+
+	return s.Repo.GetAnalysisByGameID(ctx, gameID)
 }
