@@ -129,6 +129,12 @@ func (p *AnalysisProcessor) ProcessTaskGameAnalysis(ctx context.Context, t *asyn
 	var moveAnalyses []GameMoveAnalysis
 	whiteLosses := []float64{}
 	blackLosses := []float64{}
+	whiteOpeningLosses := []float64{}
+	blackOpeningLosses := []float64{}
+	whiteMiddleLosses := []float64{}
+	blackMiddleLosses := []float64{}
+	whiteEndLosses := []float64{}
+	blackEndLosses := []float64{}
 
 	for idx, moveRecord := range moves {
 		playerColor := "white"
@@ -187,25 +193,67 @@ func (p *AnalysisProcessor) ProcessTaskGameAnalysis(ctx context.Context, t *asyn
 			cpl = 0
 		}
 
+		phase := DeterminePhase(posBeforeFEN, moveRecord.MoveNumber)
 		classification := classifyMoveWithThresholds(cpl, moveRecord.Move, bestMove, p.Thresholds)
+		explanation := GenerateMoveExplanation(classification, moveRecord.Move, bestMove, cpl, evalBeforeWhite, evalAfterWhite)
+
+		cplF := float64(cpl)
 
 		if playerColor == "white" {
-			whiteLosses = append(whiteLosses, float64(cpl))
+			whiteLosses = append(whiteLosses, cplF)
+			switch phase {
+			case PhaseOpening:
+				whiteOpeningLosses = append(whiteOpeningLosses, cplF)
+			case PhaseMiddlegame:
+				whiteMiddleLosses = append(whiteMiddleLosses, cplF)
+			case PhaseEndgame:
+				whiteEndLosses = append(whiteEndLosses, cplF)
+			}
+
 			switch classification {
+			case ClassificationBrilliant:
+				analysisRecord.BrilliantWhite++
+			case ClassificationGreat:
+				analysisRecord.GreatWhite++
+			case ClassificationBest:
+				analysisRecord.BestWhite++
+			case ClassificationGood:
+				analysisRecord.GoodWhite++
 			case ClassificationInaccuracy:
 				analysisRecord.InaccuraciesWhite++
 			case ClassificationMistake:
 				analysisRecord.MistakesWhite++
+			case ClassificationMiss:
+				analysisRecord.MissesWhite++
 			case ClassificationBlunder:
 				analysisRecord.BlundersWhite++
 			}
 		} else {
-			blackLosses = append(blackLosses, float64(cpl))
+			blackLosses = append(blackLosses, cplF)
+			switch phase {
+			case PhaseOpening:
+				blackOpeningLosses = append(blackOpeningLosses, cplF)
+			case PhaseMiddlegame:
+				blackMiddleLosses = append(blackMiddleLosses, cplF)
+			case PhaseEndgame:
+				blackEndLosses = append(blackEndLosses, cplF)
+			}
+
 			switch classification {
+			case ClassificationBrilliant:
+				analysisRecord.BrilliantBlack++
+			case ClassificationGreat:
+				analysisRecord.GreatBlack++
+			case ClassificationBest:
+				analysisRecord.BestBlack++
+			case ClassificationGood:
+				analysisRecord.GoodBlack++
 			case ClassificationInaccuracy:
 				analysisRecord.InaccuraciesBlack++
 			case ClassificationMistake:
 				analysisRecord.MistakesBlack++
+			case ClassificationMiss:
+				analysisRecord.MissesBlack++
 			case ClassificationBlunder:
 				analysisRecord.BlundersBlack++
 			}
@@ -228,6 +276,8 @@ func (p *AnalysisProcessor) ProcessTaskGameAnalysis(ctx context.Context, t *asyn
 			PV:             pv,
 			CentipawnLoss:  cpl,
 			Classification: classification,
+			Phase:          phase,
+			Explanation:    explanation,
 			CreatedAt:      time.Now(),
 		}
 
@@ -237,8 +287,23 @@ func (p *AnalysisProcessor) ProcessTaskGameAnalysis(ctx context.Context, t *asyn
 	accWhite := CalculateAccuracyFormula(whiteLosses)
 	accBlack := CalculateAccuracyFormula(blackLosses)
 
+	openWhite := CalculateAccuracyFormula(whiteOpeningLosses)
+	openBlack := CalculateAccuracyFormula(blackOpeningLosses)
+	midWhite := CalculateAccuracyFormula(whiteMiddleLosses)
+	midBlack := CalculateAccuracyFormula(blackMiddleLosses)
+	endWhite := CalculateAccuracyFormula(whiteEndLosses)
+	endBlack := CalculateAccuracyFormula(blackEndLosses)
+
 	analysisRecord.AccuracyWhite = &accWhite
 	analysisRecord.AccuracyBlack = &accBlack
+	analysisRecord.OpeningAccuracyWhite = &openWhite
+	analysisRecord.OpeningAccuracyBlack = &openBlack
+	analysisRecord.MiddlegameAccuracyWhite = &midWhite
+	analysisRecord.MiddlegameAccuracyBlack = &midBlack
+	analysisRecord.EndgameAccuracyWhite = &endWhite
+	analysisRecord.EndgameAccuracyBlack = &endBlack
+	analysisRecord.RatingWhite = CalculatePerformanceRating(accWhite)
+	analysisRecord.RatingBlack = CalculatePerformanceRating(accBlack)
 	analysisRecord.Status = StatusCompleted
 
 	err = p.AnalysisRepo.SaveAnalysisResult(ctx, analysisRecord, moveAnalyses)
@@ -285,6 +350,8 @@ func classifyMoveWithThresholds(cpl int, playedMove, bestMove string, thresholds
 		return ClassificationBest
 	}
 	switch {
+	case cpl <= thresholds.Great:
+		return ClassificationGreat
 	case cpl <= thresholds.Best:
 		return ClassificationBest
 	case cpl <= thresholds.Good:
@@ -293,6 +360,8 @@ func classifyMoveWithThresholds(cpl int, playedMove, bestMove string, thresholds
 		return ClassificationInaccuracy
 	case cpl <= thresholds.Mistake:
 		return ClassificationMistake
+	case cpl <= thresholds.Miss:
+		return ClassificationMiss
 	default:
 		return ClassificationBlunder
 	}
