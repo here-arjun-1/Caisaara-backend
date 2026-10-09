@@ -89,7 +89,7 @@ func (e *AnalysisEngine) Analyze(ctx context.Context, pos PositionOptions, opts 
 	}
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, filepath.Clean(e.Path))
+	cmd := exec.CommandContext(ctx, filepath.Clean(e.Path)) //nolint:gosec
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

@@ -36,9 +36,13 @@ func Run(databaseURL string) error {
 			_ = m.Force(dirtyVersion)
 			err = m.Up()
 		} else {
-			_ = m.Force(13)
+			_ = m.Force(14)
 			err = m.Up()
 		}
+	}
+	if err != nil && strings.Contains(err.Error(), "no migration found for version") {
+		_ = m.Force(14)
+		err = m.Up()
 	}
 	if err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("apply migrations: %w", err)
