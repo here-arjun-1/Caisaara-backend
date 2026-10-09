@@ -16,6 +16,7 @@ type ProfileService interface {
 	GetMyProfile(ctx context.Context, userID int64) (*dto.MyProfileResponse, error)
 	GetPublicProfile(ctx context.Context, username string) (*dto.PublicProfileResponse, error)
 	UpdateMyProfile(ctx context.Context, userID int64, req dto.UpdateProfileData) (*dto.MyProfileResponse, error)
+	GetModeStats(ctx context.Context, username string, mode string) (*dto.ModeStatsResponse, error)
 }
 
 type ProfileHandler struct {
@@ -107,4 +108,14 @@ func writeError(c *gin.Context, err error) {
 	}
 
 	response.Error(c, http.StatusBadRequest, err.Error())
+}
+
+func (h *ProfileHandler) GetModeStats(c *gin.Context) {
+	stats, err := h.ProfileService.GetModeStats(c.Request.Context(), c.Param("username"), c.Param("mode"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "mode stats fetched successfully", stats)
 }

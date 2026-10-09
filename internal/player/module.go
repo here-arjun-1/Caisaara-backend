@@ -30,6 +30,7 @@ func (m *Module) RegisterRoutes(r *gin.Engine, protected *gin.RouterGroup) {
 	profileUpdateLimiter := middleware.NewTokenBucketLimiter(10, time.Minute)
 
 	r.GET("/players/:username", publicProfileLimiter.Limit, m.profileHandler.GetPublicProfile)
+	r.GET("/players/:username/stats/:mode", publicProfileLimiter.Limit, m.profileHandler.GetModeStats)
 
 	protected.GET("/profile", getProfileLimiter.Limit, m.profileHandler.GetMyProfile)
 	protected.PATCH("/profile", profileUpdateLimiter.Limit, middleware.RequireRegisteredUser(), m.profileHandler.UpdateMyProfile)
