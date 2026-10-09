@@ -1,0 +1,7 @@
+ALTER TABLE player_ratings
+DROP COLUMN IF EXISTS draws,
+DROP COLUMN IF EXISTS losses,
+DROP COLUMN IF EXISTS wins;
+
+ALTER TABLE games
+DROP COLUMN IF EXISTS rating_applied;
