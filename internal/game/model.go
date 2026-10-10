@@ -28,6 +28,7 @@ type Game struct {
 	BlackTimeMs        int64      `json:"black_time_ms"`
 	CurrentTurn        string     `json:"current_turn"`
 	TurnStartedAt      *time.Time `json:"turn_started_at,omitempty"`
+	DrawOfferedBy      int64      `json:"draw_offered_by,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	StartedAt          *time.Time `json:"started_at,omitempty"`
 	EndedAt            *time.Time `json:"ended_at,omitempty"`
@@ -88,6 +89,7 @@ type GameStateMessage struct {
 	BlackTimeMs     int64      `json:"black_time_ms"`
 	CurrentTurn     string     `json:"current_turn"`
 	TurnStartedAt   *time.Time `json:"turn_started_at,omitempty"`
+	DrawOfferedBy   int64      `json:"draw_offered_by,omitempty"`
 	Moves           []GameMove `json:"moves,omitempty"`
 }
 

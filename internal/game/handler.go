@@ -146,6 +146,10 @@ func (h *Handler) Resign(c *gin.Context) {
 }
 
 func (h *Handler) Draw(c *gin.Context) {
+	h.OfferDraw(c)
+}
+
+func (h *Handler) OfferDraw(c *gin.Context) {
 	gameID := c.Param("gameID")
 	ctx := c.Request.Context()
 
@@ -169,9 +173,85 @@ func (h *Handler) Draw(c *gin.Context) {
 		return
 	}
 
-	currentGame, err := h.Service.DrawGame(ctx, gameID, playerID)
+	currentGame, accepted, _, err := h.Service.OfferDraw(ctx, gameID, playerID)
 	if err != nil {
-		slog.WarnContext(ctx, "draw game failed", "game_id", gameID, "player_id", playerID, "error", err)
+		slog.WarnContext(ctx, "offer draw failed", "game_id", gameID, "player_id", playerID, "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"game":            currentGame,
+		"accepted":        accepted,
+		"draw_offered_by": playerID,
+	})
+}
+
+func (h *Handler) AcceptDraw(c *gin.Context) {
+	gameID := c.Param("gameID")
+	ctx := c.Request.Context()
+
+	var playerID int64
+	if val, exists := c.Get("user_id"); exists {
+		if id, ok := val.(int64); ok {
+			playerID = id
+		}
+	}
+	if playerID == 0 {
+		if param := c.Query("player_id"); param != "" {
+			if parsed, err := strconv.ParseInt(param, 10, 64); err == nil {
+				playerID = parsed
+			}
+		}
+	}
+	if playerID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "player id required",
+		})
+		return
+	}
+
+	currentGame, err := h.Service.AcceptDraw(ctx, gameID, playerID)
+	if err != nil {
+		slog.WarnContext(ctx, "accept draw failed", "game_id", gameID, "player_id", playerID, "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, currentGame)
+}
+
+func (h *Handler) DeclineDraw(c *gin.Context) {
+	gameID := c.Param("gameID")
+	ctx := c.Request.Context()
+
+	var playerID int64
+	if val, exists := c.Get("user_id"); exists {
+		if id, ok := val.(int64); ok {
+			playerID = id
+		}
+	}
+	if playerID == 0 {
+		if param := c.Query("player_id"); param != "" {
+			if parsed, err := strconv.ParseInt(param, 10, 64); err == nil {
+				playerID = parsed
+			}
+		}
+	}
+	if playerID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "player id required",
+		})
+		return
+	}
+
+	currentGame, err := h.Service.DeclineDraw(ctx, gameID, playerID)
+	if err != nil {
+		slog.WarnContext(ctx, "decline draw failed", "game_id", gameID, "player_id", playerID, "error", err)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})

@@ -84,7 +84,42 @@ func (h *Handler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"invite_code":          invite.Code,
 		"game_id":              invite.GameID,
-		"link":                 "https://caisaara.app/play/" + invite.Code,
+		"link":                 "https://caisaara.duckdns.org/play/" + invite.Code,
+		"time_control_minutes": invite.TimeControlMinutes,
+		"increment_seconds":    invite.IncrementSeconds,
+		"color":                invite.Color,
+		"status":               "waiting",
+	})
+}
+
+func (h *Handler) Play(c *gin.Context) {
+	code := c.Param("code")
+	ctx := c.Request.Context()
+
+	invite, err := h.Service.GetInvite(ctx, code)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "invite not found or expired",
+		})
+		return
+	}
+
+	user, err := h.Service.FindInviteCreator(ctx, invite.CreatorID)
+	if err != nil {
+		slog.ErrorContext(ctx, "find invite creator failed", "error", err)
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "inviter not found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"invite_code": code,
+		"inviter": gin.H{
+			"id":       user.ID,
+			"username": user.Username,
+		},
+		"game_id":              invite.GameID,
 		"time_control_minutes": invite.TimeControlMinutes,
 		"increment_seconds":    invite.IncrementSeconds,
 		"color":                invite.Color,

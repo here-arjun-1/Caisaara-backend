@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
 )
 
@@ -11,6 +12,9 @@ type GameService interface {
 	MakeMove(ctx context.Context, gameID string, playerID int64, move string) (*Game, error)
 	ResignGame(ctx context.Context, gameID string, playerID int64) (*Game, error)
 	DrawGame(ctx context.Context, gameID string, playerID int64) (*Game, error)
+	OfferDraw(ctx context.Context, gameID string, playerID int64) (*Game, bool, int64, error)
+	AcceptDraw(ctx context.Context, gameID string, playerID int64) (*Game, error)
+	DeclineDraw(ctx context.Context, gameID string, playerID int64) (*Game, error)
 	GetGame(ctx context.Context, gameID string) (*Game, error)
 	GetMoves(ctx context.Context, gameID string) ([]GameMove, error)
 	GetPlayerGames(ctx context.Context, playerID int64) ([]Game, error)
@@ -20,6 +24,7 @@ type GameService interface {
 type Service struct {
 	Repository      GameRepository
 	OnGameCompleted func(ctx context.Context, gameID string, result string)
+	drawOffers      sync.Map
 }
 
 func NewService(repository GameRepository) GameService {
@@ -44,6 +49,8 @@ func (s *Service) MakeMove(
 	playerID int64,
 	move string,
 ) (*Game, error) {
+	s.drawOffers.Delete(gameID)
+
 	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
 	if err != nil {
 		slog.ErrorContext(ctx, "find game failed during make move", "game_id", gameID, "error", err)
@@ -251,6 +258,8 @@ func (s *Service) ResignGame(
 	gameID string,
 	playerID int64,
 ) (*Game, error) {
+	s.drawOffers.Delete(gameID)
+
 	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
 	if err != nil {
 		return nil, err
@@ -309,6 +318,8 @@ func (s *Service) DrawGame(
 	gameID string,
 	playerID int64,
 ) (*Game, error) {
+	s.drawOffers.Delete(gameID)
+
 	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
 	if err != nil {
 		return nil, err
@@ -356,11 +367,107 @@ func (s *Service) DrawGame(
 	return currentGame, nil
 }
 
+func (s *Service) OfferDraw(
+	ctx context.Context,
+	gameID string,
+	playerID int64,
+) (*Game, bool, int64, error) {
+	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
+	if err != nil {
+		return nil, false, 0, err
+	}
+
+	if currentGame.Status != StatusActive {
+		return nil, false, 0, errors.New("game is already finished")
+	}
+
+	if playerID != currentGame.WhitePlayerID && playerID != currentGame.BlackPlayerID {
+		return nil, false, 0, errors.New("player is not part of this game")
+	}
+
+	val, exists := s.drawOffers.Load(gameID)
+	if exists {
+		offererID := val.(int64)
+		if offererID != playerID {
+			s.drawOffers.Delete(gameID)
+			g, err := s.DrawGame(ctx, gameID, playerID)
+			if err != nil {
+				return nil, false, 0, err
+			}
+			return g, true, offererID, nil
+		}
+		currentGame.DrawOfferedBy = offererID
+		return currentGame, false, offererID, nil
+	}
+
+	s.drawOffers.Store(gameID, playerID)
+	currentGame.DrawOfferedBy = playerID
+	return currentGame, false, playerID, nil
+}
+
+func (s *Service) AcceptDraw(
+	ctx context.Context,
+	gameID string,
+	playerID int64,
+) (*Game, error) {
+	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+
+	if currentGame.Status != StatusActive {
+		return nil, errors.New("game is already finished")
+	}
+
+	if playerID != currentGame.WhitePlayerID && playerID != currentGame.BlackPlayerID {
+		return nil, errors.New("player is not part of this game")
+	}
+
+	val, exists := s.drawOffers.Load(gameID)
+	if !exists {
+		return nil, errors.New("no pending draw offer to accept")
+	}
+
+	offererID := val.(int64)
+	if offererID == playerID {
+		return nil, errors.New("cannot accept your own draw offer")
+	}
+
+	s.drawOffers.Delete(gameID)
+	return s.DrawGame(ctx, gameID, playerID)
+}
+
+func (s *Service) DeclineDraw(
+	ctx context.Context,
+	gameID string,
+	playerID int64,
+) (*Game, error) {
+	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+
+	if playerID != currentGame.WhitePlayerID && playerID != currentGame.BlackPlayerID {
+		return nil, errors.New("player is not part of this game")
+	}
+
+	s.drawOffers.Delete(gameID)
+	currentGame.DrawOfferedBy = 0
+	return currentGame, nil
+}
+
 func (s *Service) GetGame(
 	ctx context.Context,
 	gameID string,
 ) (*Game, error) {
-	return s.Repository.FindGameByID(ctx, gameID)
+	g, err := s.Repository.FindGameByID(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+	if val, ok := s.drawOffers.Load(gameID); ok {
+		g.DrawOfferedBy = val.(int64)
+	}
+	return g, nil
 }
 
 func (s *Service) GetMoves(

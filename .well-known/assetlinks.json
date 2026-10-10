@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.abhinav.caisarra",
+      "sha256_cert_fingerprints": [
+        "6D:5C:8C:3A:29:DC:0C:B1:5D:74:42:85:3D:20:E3:11:76:90:9C:FC:03:7F:E6:4D:2C:3A:85:DC:32:98:A8:E8"
+      ]
+    }
+  }
+]
