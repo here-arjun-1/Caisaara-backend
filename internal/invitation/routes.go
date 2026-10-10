@@ -6,4 +6,5 @@ func RegisterRoutes(handler *Handler, public *gin.Engine, protected *gin.RouterG
 	protected.POST("/invite", handler.Create)
 	protected.POST("/invite/:code/join", handler.Join)
 	public.GET("/api/invite/:code", handler.Preview)
+	public.GET("/play/:code", handler.Play)
 }

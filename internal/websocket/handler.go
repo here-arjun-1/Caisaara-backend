@@ -197,8 +197,25 @@ func (h *Handler) readPump(
 			}
 			h.broadcastGameState(ctx, room, currentGame)
 
-		case "draw", "offer_draw", "accept_draw":
-			currentGame, err := h.GameService.DrawGame(
+		case "offer_draw", "draw_offer":
+			currentGame, accepted, offererID, err := h.GameService.OfferDraw(
+				ctx,
+				client.GameID,
+				client.UserID,
+			)
+			if err != nil {
+				slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", incomingMsg.Type, "error", err)
+				sendError(ctx, client, err.Error())
+				continue
+			}
+			if accepted {
+				h.broadcastGameState(ctx, room, currentGame)
+			} else {
+				h.broadcastDrawOffer(ctx, room, client.GameID, offererID)
+			}
+
+		case "accept_draw", "draw_accept":
+			currentGame, err := h.GameService.AcceptDraw(
 				ctx,
 				client.GameID,
 				client.UserID,
@@ -209,6 +226,36 @@ func (h *Handler) readPump(
 				continue
 			}
 			h.broadcastGameState(ctx, room, currentGame)
+
+		case "decline_draw", "reject_draw", "draw_decline", "draw_reject":
+			_, err := h.GameService.DeclineDraw(
+				ctx,
+				client.GameID,
+				client.UserID,
+			)
+			if err != nil {
+				slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", incomingMsg.Type, "error", err)
+				sendError(ctx, client, err.Error())
+				continue
+			}
+			h.broadcastDrawDeclined(ctx, room, client.GameID, client.UserID)
+
+		case "draw":
+			currentGame, accepted, offererID, err := h.GameService.OfferDraw(
+				ctx,
+				client.GameID,
+				client.UserID,
+			)
+			if err != nil {
+				slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", incomingMsg.Type, "error", err)
+				sendError(ctx, client, err.Error())
+				continue
+			}
+			if accepted {
+				h.broadcastGameState(ctx, room, currentGame)
+			} else {
+				h.broadcastDrawOffer(ctx, room, client.GameID, offererID)
+			}
 
 		case "chat", "chat_message":
 			if h.ChatService == nil {
@@ -235,6 +282,34 @@ func (h *Handler) readPump(
 	}
 }
 
+func (h *Handler) broadcastDrawOffer(ctx context.Context, room *Room, gameID string, offeredBy int64) {
+	wsMsg := map[string]interface{}{
+		"type":       "draw_offer",
+		"game_id":    gameID,
+		"offered_by": offeredBy,
+	}
+	data, err := json.Marshal(wsMsg)
+	if err != nil {
+		slog.ErrorContext(ctx, "marshal draw offer failed", "game_id", gameID, "error", err)
+		return
+	}
+	room.Broadcast(data)
+}
+
+func (h *Handler) broadcastDrawDeclined(ctx context.Context, room *Room, gameID string, declinedBy int64) {
+	wsMsg := map[string]interface{}{
+		"type":        "draw_declined",
+		"game_id":     gameID,
+		"declined_by": declinedBy,
+	}
+	data, err := json.Marshal(wsMsg)
+	if err != nil {
+		slog.ErrorContext(ctx, "marshal draw declined failed", "game_id", gameID, "error", err)
+		return
+	}
+	room.Broadcast(data)
+}
+
 func (h *Handler) broadcastGameState(ctx context.Context, room *Room, currentGame *game.Game) {
 	moves, _ := h.GameService.GetMoves(ctx, currentGame.ID)
 
@@ -253,6 +328,7 @@ func (h *Handler) broadcastGameState(ctx context.Context, room *Room, currentGam
 		BlackTimeMs:     currentGame.BlackTimeMs,
 		CurrentTurn:     currentGame.CurrentTurn,
 		TurnStartedAt:   currentGame.TurnStartedAt,
+		DrawOfferedBy:   currentGame.DrawOfferedBy,
 		Moves:           moves,
 	}
 
@@ -322,6 +398,7 @@ func (h *Handler) sendClientGameState(
 		BlackTimeMs:     g.BlackTimeMs,
 		CurrentTurn:     g.CurrentTurn,
 		TurnStartedAt:   g.TurnStartedAt,
+		DrawOfferedBy:   g.DrawOfferedBy,
 		Moves:           moves,
 	}
 
@@ -368,6 +445,7 @@ func (h *Handler) sendGameStart(ctx context.Context, room *Room, g *game.Game, m
 		BlackTimeMs:     g.BlackTimeMs,
 		CurrentTurn:     g.CurrentTurn,
 		TurnStartedAt:   g.TurnStartedAt,
+		DrawOfferedBy:   g.DrawOfferedBy,
 		Moves:           moves,
 	}
 

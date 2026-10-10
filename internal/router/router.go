@@ -3,6 +3,7 @@ package router
 import (
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/analysis"
@@ -48,6 +49,25 @@ func New(
 
 	r.GET("/health", func(c *gin.Context) {
 		response.Success(c, http.StatusOK, "ok", nil)
+	})
+
+	r.GET("/.well-known/assetlinks.json", func(c *gin.Context) {
+		if _, err := os.Stat("./.well-known/assetlinks.json"); err == nil {
+			c.File("./.well-known/assetlinks.json")
+			return
+		}
+		c.JSON(http.StatusOK, []gin.H{
+			{
+				"relation": []string{"delegate_permission/common.handle_all_urls"},
+				"target": gin.H{
+					"namespace":    "android_app",
+					"package_name": "com.abhinav.caisarra",
+					"sha256_cert_fingerprints": []string{
+						"6D:5C:8C:3A:29:DC:0C:B1:5D:74:42:85:3D:20:E3:11:76:90:9C:FC:03:7F:E6:4D:2C:3A:85:DC:32:98:A8:E8",
+					},
+				},
+			},
+		})
 	})
 
 	protected := r.Group("/api")

@@ -13,5 +13,7 @@ func RegisterRoutes(
 	games.GET("/:gameID", handler.GetGame)
 	games.GET("/:gameID/moves", handler.GetMoves)
 	games.POST("/:gameID/resign", handler.Resign)
-	games.POST("/:gameID/draw", handler.Draw)
+	games.POST("/:gameID/draw/offer", handler.OfferDraw)
+	games.POST("/:gameID/draw/accept", handler.AcceptDraw)
+	games.POST("/:gameID/draw/decline", handler.DeclineDraw)
 }
