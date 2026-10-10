@@ -15,6 +15,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
 	"github.com/here-arjun-1/Caisaara-backend/internal/invitation"
 	"github.com/here-arjun-1/Caisaara-backend/internal/matchmaking"
+	"github.com/here-arjun-1/Caisaara-backend/internal/nearby"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
 	"github.com/here-arjun-1/Caisaara-backend/internal/response"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tilt"
@@ -36,6 +37,7 @@ func New(
 	chatHandler *chat.Handler,
 	tiltHandler *tilt.Handler,
 	analysisHandler *analysis.Handler,
+	nearbyHandler *nearby.Handler,
 	tournamentHandler ...*tournament.Handler,
 ) (*gin.Engine, error) {
 	r := gin.Default()
@@ -88,6 +90,10 @@ func New(
 
 	if analysisHandler != nil {
 		analysis.RegisterRoutes(analysisHandler, protected)
+	}
+
+	if nearbyHandler != nil {
+		nearby.RegisterRoutes(nearbyHandler, protected)
 	}
 
 	if len(tournamentHandler) > 0 && tournamentHandler[0] != nil {

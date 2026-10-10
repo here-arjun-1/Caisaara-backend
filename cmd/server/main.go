@@ -25,6 +25,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
 	"github.com/here-arjun-1/Caisaara-backend/internal/invitation"
 	"github.com/here-arjun-1/Caisaara-backend/internal/matchmaking"
+	"github.com/here-arjun-1/Caisaara-backend/internal/nearby"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
 	"github.com/here-arjun-1/Caisaara-backend/internal/rating"
 	"github.com/here-arjun-1/Caisaara-backend/internal/router"
@@ -125,6 +126,10 @@ func run() error {
 	tournamentService := tournament.NewService(tournamentRepo, gameRepository, wsHandler)
 	tournamentHandler := tournament.NewHandler(tournamentService)
 
+	nearbyRepository := nearby.NewRepository(conn)
+	nearbyService := nearby.NewService(nearbyRepository)
+	nearbyHandler := nearby.NewHandler(nearbyService)
+
 	ratingRepository := rating.NewRepository(conn)
 	ratingService := rating.NewService(ratingRepository)
 
@@ -150,6 +155,7 @@ func run() error {
 		chatHandler,
 		tiltHandler,
 		analysisHandler,
+		nearbyHandler,
 		tournamentHandler,
 	)
 	if err != nil {
