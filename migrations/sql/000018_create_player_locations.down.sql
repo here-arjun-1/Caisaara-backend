@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS player_locations;
+DROP EXTENSION IF EXISTS postgis;
