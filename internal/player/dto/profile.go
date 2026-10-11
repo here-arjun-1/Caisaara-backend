@@ -3,18 +3,19 @@ package dto
 import "time"
 
 type MyProfileResponse struct {
-	Username    string                        `json:"username"`
-	Email       string                        `json:"email"`
-	DisplayName *string                       `json:"display_name"`
-	Country     *string                       `json:"country"`
-	Bio         *string                       `json:"bio"`
-	AvatarURL   *string                       `json:"avatar_url"`
-	Rating      *int                          `json:"rating"`
-	Provisional bool                          `json:"provisional"`
-	Ratings     map[string]ModeRatingResponse `json:"ratings"`
-	SkillLevel  *string                       `json:"skill_level"`
-	NeedsRating bool                          `json:"needs_rating"`
-	JoinedAt    time.Time                     `json:"joined_at"`
+	Username     string                        `json:"username"`
+	Email        string                        `json:"email"`
+	DisplayName  *string                       `json:"display_name"`
+	Country      *string                       `json:"country"`
+	Bio          *string                       `json:"bio"`
+	AvatarURL    *string                       `json:"avatar_url"`
+	Rating       *int                          `json:"rating"`
+	Provisional  bool                          `json:"provisional"`
+	Ratings      map[string]ModeRatingResponse `json:"ratings"`
+	SkillLevel   *string                       `json:"skill_level"`
+	NeedsRating  bool                          `json:"needs_rating"`
+	JoinedAt     time.Time                     `json:"joined_at"`
+	FriendsCount int                           `json:"friends_count"`
 }
 
 type UpdateProfileData struct {
