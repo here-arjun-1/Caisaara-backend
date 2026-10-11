@@ -148,18 +148,19 @@ func (h *ProfileService) UpdateMyProfile(ctx context.Context, userID int64, req 
 
 func toMyProfileResponse(p *model.Profile) *dto.MyProfileResponse {
 	return &dto.MyProfileResponse{
-		Username:    p.Username,
-		Email:       p.Email,
-		DisplayName: p.DisplayName,
-		Country:     p.Country,
-		Bio:         p.Bio,
-		AvatarURL:   p.AvatarURL,
-		Rating:      p.Rating,
-		Provisional: glicko2.IsProvisional(p.RatingDeviation),
-		Ratings:     toModeRatings(p),
-		SkillLevel:  p.SkillLevel,
-		NeedsRating: p.SkillLevel == nil,
-		JoinedAt:    p.CreatedAt,
+		Username:     p.Username,
+		Email:        p.Email,
+		DisplayName:  p.DisplayName,
+		Country:      p.Country,
+		Bio:          p.Bio,
+		AvatarURL:    p.AvatarURL,
+		Rating:       p.Rating,
+		Provisional:  glicko2.IsProvisional(p.RatingDeviation),
+		Ratings:      toModeRatings(p),
+		SkillLevel:   p.SkillLevel,
+		NeedsRating:  p.SkillLevel == nil,
+		JoinedAt:     p.CreatedAt,
+		FriendsCount: p.FriendsCount,
 	}
 }
 
