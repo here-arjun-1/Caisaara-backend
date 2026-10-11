@@ -33,7 +33,10 @@ func (r *ProfileRepository) FindByUserID(ctx context.Context, userID int64) (*mo
 			p.display_name,
 			p.country,
 			p.bio,
-			p.avatar_url
+			p.avatar_url,
+			(SELECT COUNT(*) FROM friend_requests fr
+				WHERE (fr.sender_id = u.id OR fr.receiver_id = u.id)
+					AND fr.status = 'accepted')
 		FROM users u
 		LEFT JOIN player_profiles p ON p.user_id = u.id
 		WHERE u.id = $1`,
@@ -50,6 +53,7 @@ func (r *ProfileRepository) FindByUserID(ctx context.Context, userID int64) (*mo
 		&p.Country,
 		&p.Bio,
 		&p.AvatarURL,
+		&p.FriendsCount,
 	)
 
 	if err != nil {
