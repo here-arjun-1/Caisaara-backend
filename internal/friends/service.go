@@ -57,3 +57,25 @@ func (s *Service) RejectRequest(ctx context.Context, userID int64, requestID int
 func (s *Service) GetFriends(ctx context.Context, userID int64) ([]Friend, error) {
 	return s.Repository.FindFriends(ctx, userID)
 }
+
+func (s *Service) CancelRequest(ctx context.Context, userID int64, requestID int64) error {
+	found, err := s.Repository.DeleteSentRequest(ctx, requestID, userID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return ErrRequestNotFound
+	}
+	return nil
+}
+
+func (s *Service) RemoveFriend(ctx context.Context, userID int64, friendID int64) error {
+	found, err := s.Repository.DeleteFriend(ctx, userID, friendID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return ErrNotFriends
+	}
+	return nil
+}
