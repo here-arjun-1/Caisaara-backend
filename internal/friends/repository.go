@@ -135,3 +135,29 @@ func (r *Repository) FindFriends(ctx context.Context, userID int64) ([]Friend, e
 
 	return friends, nil
 }
+
+func (r *Repository) DeleteSentRequest(ctx context.Context, requestID int64, senderID int64) (bool, error) {
+	result, err := r.DB.Exec(ctx,
+		`DELETE FROM friend_requests WHERE id = $1 AND sender_id = $2 AND status = $3`,
+		requestID, senderID, StatusPending,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete sent friend request failed", "request_id", requestID, "error", err)
+		return false, err
+	}
+	return result.RowsAffected() > 0, nil
+}
+
+func (r *Repository) DeleteFriend(ctx context.Context, userID int64, friendID int64) (bool, error) {
+	result, err := r.DB.Exec(ctx,
+		`DELETE FROM friend_requests
+		WHERE status = $3
+			AND ((sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1))`,
+		userID, friendID, StatusAccepted,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete friend failed", "user_id", userID, "friend_id", friendID, "error", err)
+		return false, err
+	}
+	return result.RowsAffected() > 0, nil
+}
