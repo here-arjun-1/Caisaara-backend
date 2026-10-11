@@ -13,12 +13,18 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
 	"github.com/here-arjun-1/Caisaara-backend/internal/chat"
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
+	"github.com/here-arjun-1/Caisaara-backend/internal/invitation"
 )
 
+type InviteFinder interface {
+	GetInviteByGameID(ctx context.Context, gameID string) (*invitation.Invite, error)
+}
+
 type Handler struct {
-	Hub         *Hub
-	GameService game.GameService
-	ChatService chat.ChatService
+	Hub          *Hub
+	GameService  game.GameService
+	ChatService  chat.ChatService
+	InviteFinder InviteFinder
 }
 
 func NewHandler(hub *Hub, gameService game.GameService, chatService ...chat.ChatService) *Handler {
@@ -30,6 +36,10 @@ func NewHandler(hub *Hub, gameService game.GameService, chatService ...chat.Chat
 		h.ChatService = chatService[0]
 	}
 	return h
+}
+
+func (h *Handler) SetInviteFinder(finder InviteFinder) {
+	h.InviteFinder = finder
 }
 
 var upgrader = websocket.Upgrader{
@@ -67,6 +77,43 @@ func (h *Handler) Connect(c *gin.Context) {
 
 	currentGame, err := h.GameService.GetGame(ctx, gameID)
 	if err != nil {
+		if h.InviteFinder != nil {
+			if invite, inviteErr := h.InviteFinder.GetInviteByGameID(ctx, gameID); inviteErr == nil && invite != nil {
+				if claims.UserID == invite.CreatorID {
+					conn, upgradeErr := upgrader.Upgrade(c.Writer, c.Request, nil)
+					if upgradeErr != nil {
+						slog.ErrorContext(ctx, "websocket upgrade failed", "game_id", gameID, "error", upgradeErr)
+						return
+					}
+
+					client := &Client{
+						Conn:   conn,
+						UserID: claims.UserID,
+						GameID: gameID,
+						Send:   make(chan []byte, 256),
+					}
+
+					room := h.Hub.GetOrCreateRoom(gameID)
+					room.AddClient(client)
+
+					go h.writePump(ctx, client)
+					go h.readPump(ctx, client, room)
+
+					waitingMsg := map[string]interface{}{
+						"type":    "waiting",
+						"game_id": gameID,
+					}
+					if data, mErr := json.Marshal(waitingMsg); mErr == nil {
+						select {
+						case client.Send <- data:
+						default:
+						}
+					}
+					return
+				}
+			}
+		}
+
 		slog.ErrorContext(ctx, "get game failed for websocket connect", "game_id", gameID, "error", err)
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "game not found",
@@ -310,31 +357,33 @@ func (h *Handler) broadcastDrawDeclined(ctx context.Context, room *Room, gameID 
 	room.Broadcast(data)
 }
 
-func (h *Handler) broadcastGameState(ctx context.Context, room *Room, currentGame *game.Game) {
-	moves, _ := h.GameService.GetMoves(ctx, currentGame.ID)
+func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Game) {
+	moves, _ := h.GameService.GetMoves(ctx, g.ID)
 
 	response := game.GameStateMessage{
 		Type:            "game_state",
-		GameID:          currentGame.ID,
-		Position:        currentGame.Position,
-		Status:          currentGame.Status,
-		Result:          currentGame.Result,
-		EndReason:       currentGame.EndReason,
-		TimeControlMode: currentGame.TimeControlMode,
-		DailyMoveTimeMs: currentGame.DailyMoveTimeMs,
-		InitialTimeMs:   currentGame.InitialTimeMs,
-		IncrementMs:     currentGame.IncrementMs,
-		WhiteTimeMs:     currentGame.WhiteTimeMs,
-		BlackTimeMs:     currentGame.BlackTimeMs,
-		CurrentTurn:     currentGame.CurrentTurn,
-		TurnStartedAt:   currentGame.TurnStartedAt,
-		DrawOfferedBy:   currentGame.DrawOfferedBy,
+		GameID:          g.ID,
+		WhitePlayerID:   g.WhitePlayerID,
+		BlackPlayerID:   g.BlackPlayerID,
+		Position:        g.Position,
+		Status:          g.Status,
+		Result:          g.Result,
+		EndReason:       g.EndReason,
+		TimeControlMode: g.TimeControlMode,
+		DailyMoveTimeMs: g.DailyMoveTimeMs,
+		InitialTimeMs:   g.InitialTimeMs,
+		IncrementMs:     g.IncrementMs,
+		WhiteTimeMs:     g.WhiteTimeMs,
+		BlackTimeMs:     g.BlackTimeMs,
+		CurrentTurn:     g.CurrentTurn,
+		TurnStartedAt:   g.TurnStartedAt,
+		DrawOfferedBy:   g.DrawOfferedBy,
 		Moves:           moves,
 	}
 
 	data, err := json.Marshal(response)
 	if err != nil {
-		slog.ErrorContext(ctx, "marshal game state failed", "game_id", currentGame.ID, "error", err)
+		slog.ErrorContext(ctx, "marshal game state failed", "game_id", g.ID, "error", err)
 		return
 	}
 
@@ -386,6 +435,8 @@ func (h *Handler) sendClientGameState(
 	response := game.GameStateMessage{
 		Type:            messageType,
 		GameID:          g.ID,
+		WhitePlayerID:   g.WhitePlayerID,
+		BlackPlayerID:   g.BlackPlayerID,
 		Position:        g.Position,
 		Status:          g.Status,
 		Result:          g.Result,
@@ -433,6 +484,8 @@ func (h *Handler) sendGameStart(ctx context.Context, room *Room, g *game.Game, m
 	response := game.GameStateMessage{
 		Type:            "game_start",
 		GameID:          g.ID,
+		WhitePlayerID:   g.WhitePlayerID,
+		BlackPlayerID:   g.BlackPlayerID,
 		Position:        g.Position,
 		Status:          g.Status,
 		Result:          g.Result,

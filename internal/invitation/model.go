@@ -7,4 +7,5 @@ type Invite struct {
 	TimeControlMinutes int    `json:"time_control_minutes"`
 	IncrementSeconds   int    `json:"increment_seconds"`
 	Color              string `json:"color"`
+	Status             string `json:"status,omitempty"`
 }

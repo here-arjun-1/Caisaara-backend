@@ -22,6 +22,7 @@ type UserFinder interface {
 type InvitationService interface {
 	CreateInvite(ctx context.Context, userID int64, timeControlMinutes int, incrementSeconds int, color string) (*Invite, error)
 	GetInvite(ctx context.Context, code string) (*Invite, error)
+	GetInviteByGameID(ctx context.Context, gameID string) (*Invite, error)
 	JoinInvite(ctx context.Context, code string, player2ID int64) (string, error)
 	FindInviteCreator(ctx context.Context, creatorID int64) (*model.User, error)
 }
@@ -84,6 +85,7 @@ func (s *Service) CreateInvite(
 		TimeControlMinutes: timeControlMinutes,
 		IncrementSeconds:   incrementSeconds,
 		Color:              color,
+		Status:             "waiting",
 	}
 
 	err = s.InviteRepo.SaveInvite(ctx, invite, 10*time.Minute)
@@ -106,6 +108,23 @@ func (s *Service) GetInvite(
 			return nil, ErrInviteNotFound
 		}
 		slog.ErrorContext(ctx, "get invite failed", "error", err)
+		return nil, ErrInternal
+	}
+
+	return invite, nil
+}
+
+func (s *Service) GetInviteByGameID(
+	ctx context.Context,
+	gameID string,
+) (*Invite, error) {
+
+	invite, err := s.InviteRepo.GetInviteByGameID(ctx, gameID)
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return nil, ErrInviteNotFound
+		}
+		slog.ErrorContext(ctx, "get invite by game id failed", "error", err)
 		return nil, ErrInternal
 	}
 
@@ -165,6 +184,10 @@ func (s *Service) JoinInvite(
 		return "", ErrInternal
 	}
 
+	if invite.Status == "active" {
+		return "", ErrInviteUsed
+	}
+
 	var whitePlayerID int64
 	var blackPlayerID int64
 
@@ -206,11 +229,8 @@ func (s *Service) JoinInvite(
 		return "", fmt.Errorf("failed to create game: %w", err)
 	}
 
-	err = s.InviteRepo.DeleteInvite(ctx, code)
-	if err != nil {
-		slog.ErrorContext(ctx, "delete invite after join failed", "error", err)
-		return "", fmt.Errorf("game created but failed to remove invite: %w", err)
-	}
+	invite.Status = "active"
+	_ = s.InviteRepo.SaveInvite(ctx, invite, 2*time.Minute)
 
 	slog.InfoContext(ctx, "invite joined successfully",
 		"code", code,

@@ -113,6 +113,11 @@ func (h *Handler) Play(c *gin.Context) {
 		return
 	}
 
+	status := invite.Status
+	if status == "" {
+		status = "waiting"
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"invite_code": code,
 		"inviter": gin.H{
@@ -123,7 +128,7 @@ func (h *Handler) Play(c *gin.Context) {
 		"time_control_minutes": invite.TimeControlMinutes,
 		"increment_seconds":    invite.IncrementSeconds,
 		"color":                invite.Color,
-		"status":               "waiting",
+		"status":               status,
 	})
 }
 
@@ -148,7 +153,13 @@ func (h *Handler) Preview(c *gin.Context) {
 		return
 	}
 
+	status := invite.Status
+	if status == "" {
+		status = "waiting"
+	}
+
 	c.JSON(http.StatusOK, gin.H{
+		"invite_code": code,
 		"inviter": gin.H{
 			"id":       user.ID,
 			"username": user.Username,
@@ -157,7 +168,7 @@ func (h *Handler) Preview(c *gin.Context) {
 		"time_control_minutes": invite.TimeControlMinutes,
 		"increment_seconds":    invite.IncrementSeconds,
 		"color":                invite.Color,
-		"status":               "waiting",
+		"status":               status,
 	})
 }
 
