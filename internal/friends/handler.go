@@ -205,3 +205,19 @@ func (h *Handler) RemoveFriend(c *gin.Context) {
 
 	response.Success(c, http.StatusOK, "friend removed", nil)
 }
+
+func (h *Handler) GetSentRequests(c *gin.Context) {
+	userID, ok := getUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	requests, err := h.Service.GetSentRequests(c.Request.Context(), userID)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "sent friend requests fetched", gin.H{"requests": requests})
+}
