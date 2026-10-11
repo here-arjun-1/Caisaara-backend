@@ -20,4 +20,5 @@ func RegisterRoutes(handler *Handler, protected *gin.RouterGroup) {
 	friends.POST("/requests/:id/reject", limiter.Limit, handler.RejectRequest)
 	friends.DELETE("/requests/:id", limiter.Limit, handler.CancelRequest)
 	friends.DELETE("/:userID", limiter.Limit, handler.RemoveFriend)
+	friends.GET("/requests/sent", limiter.Limit, handler.GetSentRequests)
 }
