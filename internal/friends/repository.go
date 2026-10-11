@@ -161,3 +161,37 @@ func (r *Repository) DeleteFriend(ctx context.Context, userID int64, friendID in
 	}
 	return result.RowsAffected() > 0, nil
 }
+
+func (r *Repository) FindSentRequests(ctx context.Context, userID int64) ([]SentRequest, error) {
+	rows, err := r.DB.Query(ctx,
+		`SELECT fr.id, u.id, u.username, u.rating, fr.created_at
+		FROM friend_requests fr
+		JOIN users u ON u.id = fr.receiver_id
+		WHERE fr.sender_id = $1 AND fr.status = $2
+		ORDER BY fr.created_at DESC`,
+		userID, StatusPending,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "find sent friend requests failed", "user_id", userID, "error", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	requests := []SentRequest{}
+	for rows.Next() {
+		var request SentRequest
+		err := rows.Scan(&request.ID, &request.ReceiverID, &request.ReceiverUsername, &request.ReceiverRating, &request.CreatedAt)
+		if err != nil {
+			slog.ErrorContext(ctx, "scan sent friend request row failed", "user_id", userID, "error", err)
+			return nil, err
+		}
+		requests = append(requests, request)
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "sent friend requests rows iteration error", "user_id", userID, "error", err)
+		return nil, err
+	}
+
+	return requests, nil
+}
