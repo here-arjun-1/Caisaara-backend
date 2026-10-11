@@ -32,6 +32,10 @@ func (s *Service) GetPendingRequests(ctx context.Context, userID int64) ([]Frien
 	return s.Repository.FindPendingRequests(ctx, userID)
 }
 
+func (s *Service) GetSentRequests(ctx context.Context, userID int64) ([]SentRequest, error) {
+	return s.Repository.FindSentRequests(ctx, userID)
+}
+
 func (s *Service) AcceptRequest(ctx context.Context, userID int64, requestID int64) error {
 	found, err := s.Repository.UpdateRequestStatus(ctx, requestID, userID, StatusAccepted)
 	if err != nil {
