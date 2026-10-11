@@ -42,6 +42,14 @@ func getRequestID(c *gin.Context) (int64, bool) {
 	return requestID, true
 }
 
+func getFriendID(c *gin.Context) (int64, bool) {
+	friendID, err := strconv.ParseInt(c.Param("userID"), 10, 64)
+	if err != nil || friendID <= 0 {
+		return 0, false
+	}
+	return friendID, true
+}
+
 func (h *Handler) SendRequest(c *gin.Context) {
 	userID, ok := getUserID(c)
 	if !ok {
@@ -144,7 +152,7 @@ func handleError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrCannotAddYourself):
 		response.Error(c, http.StatusBadRequest, err.Error())
-	case errors.Is(err, ErrUserNotFound), errors.Is(err, ErrRequestNotFound):
+	case errors.Is(err, ErrUserNotFound), errors.Is(err, ErrRequestNotFound), errors.Is(err, ErrNotFriends):
 		response.Error(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrRequestExists):
 		response.Error(c, http.StatusConflict, err.Error())
@@ -152,4 +160,48 @@ func handleError(c *gin.Context, err error) {
 		slog.ErrorContext(c.Request.Context(), "friends request failed", "path", c.FullPath(), "error", err)
 		response.Error(c, http.StatusInternalServerError, "internal server error")
 	}
+}
+
+func (h *Handler) CancelRequest(c *gin.Context) {
+	userID, ok := getUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	requestID, ok := getRequestID(c)
+	if !ok {
+		response.Error(c, http.StatusBadRequest, "invalid request id")
+		return
+	}
+
+	err := h.Service.CancelRequest(c.Request.Context(), userID, requestID)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "friend request cancelled", nil)
+}
+
+func (h *Handler) RemoveFriend(c *gin.Context) {
+	userID, ok := getUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	friendID, ok := getFriendID(c)
+	if !ok {
+		response.Error(c, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	err := h.Service.RemoveFriend(c.Request.Context(), userID, friendID)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "friend removed", nil)
 }
