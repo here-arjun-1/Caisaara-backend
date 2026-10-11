@@ -15,6 +15,7 @@ type Profile struct {
 	Bio             *string
 	AvatarURL       *string
 	Ratings         []ModeRating
+	FriendsCount    int
 }
 
 type ModeRating struct {
