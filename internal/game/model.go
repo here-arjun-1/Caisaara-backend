@@ -77,6 +77,8 @@ type MoveMessage struct {
 type GameStateMessage struct {
 	Type            string     `json:"type"`
 	GameID          string     `json:"game_id"`
+	WhitePlayerID   int64      `json:"white_player_id"`
+	BlackPlayerID   int64      `json:"black_player_id"`
 	Position        string     `json:"position"`
 	Status          string     `json:"status"`
 	Result          string     `json:"result,omitempty"`

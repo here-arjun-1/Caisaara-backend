@@ -120,6 +120,7 @@ func run() error {
 
 	wsHub := websocket.NewHub()
 	wsHandler := websocket.NewHandler(wsHub, gameService, chatService)
+	wsHandler.SetInviteFinder(invitationService)
 	chatHandler := chat.NewHandler(chatService, wsHandler.BroadcastChatMessage)
 
 	tournamentRepo := tournament.NewRepository(conn)
