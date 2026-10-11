@@ -22,3 +22,11 @@ type Friend struct {
 	Rating       int       `json:"rating"`
 	FriendsSince time.Time `json:"friends_since"`
 }
+
+type SentRequest struct {
+	ID               int64     `json:"id"`
+	ReceiverID       int64     `json:"receiver_id"`
+	ReceiverUsername string    `json:"receiver_username"`
+	ReceiverRating   int       `json:"receiver_rating"`
+	CreatedAt        time.Time `json:"created_at"`
+}
