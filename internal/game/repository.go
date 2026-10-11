@@ -235,15 +235,15 @@ func (r *Repository) UpdateGameState(
 		ctx,
 		`UPDATE games
 		SET position = $1,
-			status = $2,
-			result = $3,
-			end_reason = $4,
+			status = $2::text,
+			result = NULLIF($3, ''),
+			end_reason = NULLIF($4, ''),
 			current_turn = $5,
 			white_time_ms = $6,
 			black_time_ms = $7,
 			turn_started_at = $8,
 			ended_at = CASE
-				WHEN $2 = 'finished' THEN NOW()
+				WHEN $2::text = 'finished' THEN NOW()
 				ELSE ended_at
 			END
 		WHERE id = $9`,
