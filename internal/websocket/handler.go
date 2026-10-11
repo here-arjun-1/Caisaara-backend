@@ -49,7 +49,7 @@ var upgrader = websocket.Upgrader{
 }
 
 func (h *Handler) Connect(c *gin.Context) {
-	ctx := c.Request.Context()
+	ctx := context.WithoutCancel(c.Request.Context())
 	gameID := c.Param("gameID")
 	accessToken := c.Query("token")
 
@@ -96,8 +96,9 @@ func (h *Handler) Connect(c *gin.Context) {
 					room := h.Hub.GetOrCreateRoom(gameID)
 					room.AddClient(client)
 
-					go h.writePump(ctx, client)
-					go h.readPump(ctx, client, room)
+					wsCtx := context.WithoutCancel(ctx)
+					go h.writePump(wsCtx, client)
+					go h.readPump(wsCtx, client, room)
 
 					waitingMsg := map[string]interface{}{
 						"type":    "waiting",
@@ -152,13 +153,14 @@ func (h *Handler) Connect(c *gin.Context) {
 
 	moves, _ := h.GameService.GetMoves(ctx, gameID)
 
-	go h.writePump(ctx, client)
-	go h.readPump(ctx, client, room)
+	wsCtx := context.WithoutCancel(ctx)
+	go h.writePump(wsCtx, client)
+	go h.readPump(wsCtx, client, room)
 
-	h.sendClientGameState(ctx, client, currentGame, moves, "game_state")
+	h.sendClientGameState(wsCtx, client, currentGame, moves, "game_state")
 
 	if room.Count() == 2 {
-		h.sendGameStart(ctx, room, currentGame, moves)
+		h.sendGameStart(wsCtx, room, currentGame, moves)
 	}
 }
 
