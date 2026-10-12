@@ -17,12 +17,14 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
 	"github.com/here-arjun-1/Caisaara-backend/internal/invitation"
 	"github.com/here-arjun-1/Caisaara-backend/internal/matchmaking"
+	"github.com/here-arjun-1/Caisaara-backend/internal/metrics"
 	"github.com/here-arjun-1/Caisaara-backend/internal/nearby"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
 	"github.com/here-arjun-1/Caisaara-backend/internal/response"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tilt"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tournament"
 	"github.com/here-arjun-1/Caisaara-backend/internal/websocket"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func New(
@@ -48,6 +50,10 @@ func New(
 	if err := r.SetTrustedProxies([]string{"127.0.0.1", "::1", "172.16.0.0/12"}); err != nil {
 		return nil, fmt.Errorf("set trusted proxies: %w", err)
 	}
+
+	r.Use(metrics.Middleware())
+
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	r.GET("/health", func(c *gin.Context) {
 		response.Success(c, http.StatusOK, "ok", nil)
