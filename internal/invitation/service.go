@@ -26,6 +26,7 @@ type InvitationService interface {
 	GetInviteByGameID(ctx context.Context, gameID string) (*Invite, error)
 	JoinInvite(ctx context.Context, code string, player2ID int64) (string, error)
 	FindInviteCreator(ctx context.Context, creatorID int64) (*model.User, error)
+	GetMyChallenges(ctx context.Context, userID int64) ([]Challenge, error)
 }
 
 type Service struct {
@@ -276,4 +277,47 @@ func (s *Service) JoinInvite(
 	)
 
 	return gameID, nil
+}
+
+func (s *Service) GetMyChallenges(ctx context.Context, userID int64) ([]Challenge, error) {
+	codes, err := s.InviteRepo.GetChallengeCodes(ctx, userID)
+	if err != nil {
+		slog.ErrorContext(ctx, "get challenge codes failed", "error", err, "user_id", userID)
+		return nil, ErrInternal
+	}
+
+	challenges := []Challenge{}
+	for _, code := range codes {
+		invite, err := s.InviteRepo.GetInvite(ctx, code)
+		if errors.Is(err, redis.Nil) {
+			_ = s.InviteRepo.RemoveChallenge(ctx, userID, code)
+			continue
+		}
+		if err != nil {
+			slog.ErrorContext(ctx, "get challenge invite failed", "error", err, "code", code)
+			return nil, ErrInternal
+		}
+
+		if invite.Status == "active" {
+			continue
+		}
+
+		challenger, err := s.UserFinder.FindUserByID(ctx, invite.CreatorID)
+		if err != nil {
+			slog.ErrorContext(ctx, "find challenger failed", "error", err, "creator_id", invite.CreatorID)
+			continue
+		}
+
+		challenges = append(challenges, Challenge{
+			Code:               invite.Code,
+			GameID:             invite.GameID,
+			ChallengerID:       challenger.ID,
+			ChallengerUsername: challenger.Username,
+			ChallengerColor:    invite.Color,
+			TimeControlMinutes: invite.TimeControlMinutes,
+			IncrementSeconds:   invite.IncrementSeconds,
+		})
+	}
+
+	return challenges, nil
 }
