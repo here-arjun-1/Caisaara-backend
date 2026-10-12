@@ -1,6 +1,10 @@
 package websocket
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/here-arjun-1/Caisaara-backend/internal/metrics"
+)
 
 type Room struct {
 	GameID string
@@ -23,12 +27,22 @@ func (r *Room) AddClient(client *Client) {
 	r.Mutex.Lock()
 	defer r.Mutex.Unlock()
 
+	_, alreadyThere := r.Clients[client.UserID]
+	if !alreadyThere {
+		metrics.WebsocketConnections.Inc()
+	}
+
 	r.Clients[client.UserID] = client
 }
 
 func (r *Room) RemoveClient(userID int64) {
 	r.Mutex.Lock()
 	defer r.Mutex.Unlock()
+
+	_, exists := r.Clients[userID]
+	if exists {
+		metrics.WebsocketConnections.Dec()
+	}
 
 	delete(r.Clients, userID)
 }
