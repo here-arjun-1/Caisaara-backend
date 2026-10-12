@@ -27,13 +27,13 @@ jobs:
           docker save -o caisaara-backend.tar caisaara-backend:latest
           chmod 644 caisaara-backend.tar
 
-      - name: Copy image and compose file to EC2
+      - name: Copy image, compose file and monitoring config to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "caisaara-backend.tar,compose.yml"
+          source: "caisaara-backend.tar,compose.yml,monitoring"
           target: "/home/${{ secrets.EC2_USERNAME }}/app"
 
       - name: Deploy on EC2
