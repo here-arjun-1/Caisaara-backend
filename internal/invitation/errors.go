@@ -10,4 +10,6 @@ var (
 	ErrAlreadyJoining     = errors.New("someone is already joining this game")
 	ErrInviteUsed         = errors.New("invite already used or expired")
 	ErrInternal           = errors.New("internal server error")
+	ErrChallengeYourself  = errors.New("you cannot challenge yourself")
+	ErrOpponentNotFound   = errors.New("opponent not found")
 )

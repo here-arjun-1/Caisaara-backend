@@ -13,6 +13,7 @@ type CreateInviteRequest struct {
 	TimeControlMinutes int    `json:"time_control_minutes"`
 	IncrementSeconds   int    `json:"increment_seconds"`
 	Color              string `json:"color" binding:"required"`
+	OpponentID         int64  `json:"opponent_id"`
 }
 
 type Handler struct {
@@ -58,6 +59,7 @@ func (h *Handler) Create(c *gin.Context) {
 		req.TimeControlMinutes,
 		req.IncrementSeconds,
 		strings.ToLower(req.Color),
+		req.OpponentID,
 	)
 
 	if errors.Is(err, ErrInternal) {
@@ -67,8 +69,15 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	if errors.Is(err, ErrInvalidTimeControl) || errors.Is(err, ErrInvalidColor) {
+	if errors.Is(err, ErrInvalidTimeControl) || errors.Is(err, ErrInvalidColor) || errors.Is(err, ErrChallengeYourself) {
 		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if errors.Is(err, ErrOpponentNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{
 			"error": err.Error(),
 		})
 		return
