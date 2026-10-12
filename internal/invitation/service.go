@@ -185,6 +185,10 @@ func (s *Service) JoinInvite(
 		return "", ErrSelfJoin
 	}
 
+	if invite.OpponentID != 0 && invite.OpponentID != player2ID {
+		return "", ErrNotYourChallenge
+	}
+
 	locked, err := s.InviteRepo.AcquireLock(ctx, code, player2ID, 10*time.Second)
 	if err != nil {
 		slog.ErrorContext(ctx, "acquire invite lock failed", "error", err)
@@ -257,6 +261,13 @@ func (s *Service) JoinInvite(
 
 	invite.Status = "active"
 	_ = s.InviteRepo.SaveInvite(ctx, invite, 2*time.Minute)
+
+	if invite.OpponentID != 0 {
+		err = s.InviteRepo.RemoveChallenge(ctx, invite.OpponentID, code)
+		if err != nil {
+			slog.ErrorContext(ctx, "remove challenge after join failed", "error", err, "code", code)
+		}
+	}
 
 	slog.InfoContext(ctx, "invite joined successfully",
 		"code", code,

@@ -12,4 +12,5 @@ var (
 	ErrInternal           = errors.New("internal server error")
 	ErrChallengeYourself  = errors.New("you cannot challenge yourself")
 	ErrOpponentNotFound   = errors.New("opponent not found")
+	ErrNotYourChallenge   = errors.New("this challenge is for another player")
 )
