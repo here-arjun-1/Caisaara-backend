@@ -3,6 +3,7 @@ package invitation
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -15,6 +16,9 @@ type InviteRepository interface {
 	DeleteInvite(ctx context.Context, code string) error
 	AcquireLock(ctx context.Context, code string, holder int64, ttl time.Duration) (bool, error)
 	ReleaseLock(ctx context.Context, code string) error
+	AddChallenge(ctx context.Context, opponentID int64, code string, ttl time.Duration) error
+	GetChallengeCodes(ctx context.Context, userID int64) ([]string, error)
+	RemoveChallenge(ctx context.Context, userID int64, code string) error
 }
 
 type RedisInviteRepository struct {
@@ -37,6 +41,10 @@ func inviteGameKey(gameID string) string {
 
 func lockKey(code string) string {
 	return "invite:lock:" + code
+}
+
+func challengesKey(userID int64) string {
+	return "invite:challenges:" + strconv.FormatInt(userID, 10)
 }
 
 func (r *RedisInviteRepository) SaveInvite(ctx context.Context, invite *Invite, ttl time.Duration) error {
@@ -96,4 +104,20 @@ func (r *RedisInviteRepository) AcquireLock(ctx context.Context, code string, ho
 
 func (r *RedisInviteRepository) ReleaseLock(ctx context.Context, code string) error {
 	return r.Client.Del(ctx, lockKey(code)).Err()
+}
+
+func (r *RedisInviteRepository) AddChallenge(ctx context.Context, opponentID int64, code string, ttl time.Duration) error {
+	pipe := r.Client.Pipeline()
+	pipe.SAdd(ctx, challengesKey(opponentID), code)
+	pipe.Expire(ctx, challengesKey(opponentID), ttl)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+func (r *RedisInviteRepository) GetChallengeCodes(ctx context.Context, userID int64) ([]string, error) {
+	return r.Client.SMembers(ctx, challengesKey(userID)).Result()
+}
+
+func (r *RedisInviteRepository) RemoveChallenge(ctx context.Context, userID int64, code string) error {
+	return r.Client.SRem(ctx, challengesKey(userID), code).Err()
 }
