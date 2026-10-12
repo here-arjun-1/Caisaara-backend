@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -159,7 +160,7 @@ func (h *Handler) Connect(c *gin.Context) {
 
 	h.sendClientGameState(wsCtx, client, currentGame, moves, "game_state")
 
-	if room.Count() == 2 {
+	if room.Count() == 2 && len(moves) == 0 && room.MarkGameStarted() {
 		h.sendGameStart(wsCtx, room, currentGame, moves)
 	}
 }
@@ -324,6 +325,18 @@ func (h *Handler) readPump(
 			}
 			h.broadcastChatMessage(ctx, room, chatMsg)
 
+		case "claim_timeout", "timeout":
+			currentGame, err := h.GameService.ClaimTimeout(
+				ctx,
+				client.GameID,
+			)
+			if err != nil {
+				slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", incomingMsg.Type, "error", err)
+				sendError(ctx, client, err.Error())
+				continue
+			}
+			h.broadcastGameState(ctx, room, currentGame)
+
 		default:
 			sendError(ctx, client, "unsupported message type")
 			continue
@@ -361,6 +374,7 @@ func (h *Handler) broadcastDrawDeclined(ctx context.Context, room *Room, gameID 
 
 func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Game) {
 	moves, _ := h.GameService.GetMoves(ctx, g.ID)
+	whiteTime, blackTime, turnStartedAt := calculateLiveClocks(g)
 
 	response := game.GameStateMessage{
 		Type:            "game_state",
@@ -375,10 +389,10 @@ func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Ga
 		DailyMoveTimeMs: g.DailyMoveTimeMs,
 		InitialTimeMs:   g.InitialTimeMs,
 		IncrementMs:     g.IncrementMs,
-		WhiteTimeMs:     g.WhiteTimeMs,
-		BlackTimeMs:     g.BlackTimeMs,
+		WhiteTimeMs:     whiteTime,
+		BlackTimeMs:     blackTime,
 		CurrentTurn:     g.CurrentTurn,
-		TurnStartedAt:   g.TurnStartedAt,
+		TurnStartedAt:   turnStartedAt,
 		DrawOfferedBy:   g.DrawOfferedBy,
 		Moves:           moves,
 	}
@@ -423,6 +437,61 @@ func (h *Handler) BroadcastChatMessage(gameID string, msg *chat.ChatMessage) {
 	}
 }
 
+func (h *Handler) BroadcastGameState(g *game.Game) {
+	if h.Hub == nil || g == nil {
+		return
+	}
+	h.Hub.Mutex.RLock()
+	room, exists := h.Hub.Rooms[g.ID]
+	h.Hub.Mutex.RUnlock()
+	if exists && room != nil {
+		h.broadcastGameState(context.Background(), room, g)
+	}
+}
+
+func calculateLiveClocks(g *game.Game) (int64, int64, *time.Time) {
+	if g == nil {
+		return 0, 0, nil
+	}
+	if g.Status != game.StatusActive || g.TimeControlMode == game.ModeDaily {
+		return g.WhiteTimeMs, g.BlackTimeMs, g.TurnStartedAt
+	}
+
+	now := time.Now()
+	var turnStartedAt time.Time
+	switch {
+	case g.TurnStartedAt != nil:
+		turnStartedAt = *g.TurnStartedAt
+	case g.StartedAt != nil:
+		turnStartedAt = *g.StartedAt
+	default:
+		turnStartedAt = now
+	}
+
+	elapsedMs := now.Sub(turnStartedAt).Milliseconds()
+	if elapsedMs < 0 {
+		elapsedMs = 0
+	}
+
+	whiteTimeMs := g.WhiteTimeMs
+	blackTimeMs := g.BlackTimeMs
+
+	isWhiteTurn := g.CurrentTurn == "w" || g.CurrentTurn == "White"
+	if isWhiteTurn {
+		whiteTimeMs -= elapsedMs
+		if whiteTimeMs < 0 {
+			whiteTimeMs = 0
+		}
+	} else {
+		blackTimeMs -= elapsedMs
+		if blackTimeMs < 0 {
+			blackTimeMs = 0
+		}
+	}
+
+	return whiteTimeMs, blackTimeMs, &now
+}
+
 func (h *Handler) sendClientGameState(
 	ctx context.Context,
 	client *Client,
@@ -433,6 +502,7 @@ func (h *Handler) sendClientGameState(
 	if moves == nil {
 		moves = []game.GameMove{}
 	}
+	whiteTime, blackTime, turnStartedAt := calculateLiveClocks(g)
 
 	response := game.GameStateMessage{
 		Type:            messageType,
@@ -447,10 +517,10 @@ func (h *Handler) sendClientGameState(
 		DailyMoveTimeMs: g.DailyMoveTimeMs,
 		InitialTimeMs:   g.InitialTimeMs,
 		IncrementMs:     g.IncrementMs,
-		WhiteTimeMs:     g.WhiteTimeMs,
-		BlackTimeMs:     g.BlackTimeMs,
+		WhiteTimeMs:     whiteTime,
+		BlackTimeMs:     blackTime,
 		CurrentTurn:     g.CurrentTurn,
-		TurnStartedAt:   g.TurnStartedAt,
+		TurnStartedAt:   turnStartedAt,
 		DrawOfferedBy:   g.DrawOfferedBy,
 		Moves:           moves,
 	}
@@ -482,6 +552,7 @@ func (h *Handler) sendGameStart(ctx context.Context, room *Room, g *game.Game, m
 	if moves == nil {
 		moves = []game.GameMove{}
 	}
+	whiteTime, blackTime, turnStartedAt := calculateLiveClocks(g)
 
 	response := game.GameStateMessage{
 		Type:            "game_start",
@@ -496,10 +567,10 @@ func (h *Handler) sendGameStart(ctx context.Context, room *Room, g *game.Game, m
 		DailyMoveTimeMs: g.DailyMoveTimeMs,
 		InitialTimeMs:   g.InitialTimeMs,
 		IncrementMs:     g.IncrementMs,
-		WhiteTimeMs:     g.WhiteTimeMs,
-		BlackTimeMs:     g.BlackTimeMs,
+		WhiteTimeMs:     whiteTime,
+		BlackTimeMs:     blackTime,
 		CurrentTurn:     g.CurrentTurn,
-		TurnStartedAt:   g.TurnStartedAt,
+		TurnStartedAt:   turnStartedAt,
 		DrawOfferedBy:   g.DrawOfferedBy,
 		Moves:           moves,
 	}

@@ -14,6 +14,7 @@ type GameRepository interface {
 	CreateGame(ctx context.Context, whitePlayerID int64, blackPlayerID int64, timeControlMinutes int, incrementSeconds int, rated bool) (string, error)
 	CreateGameWithID(ctx context.Context, gameID string, whitePlayerID int64, blackPlayerID int64, timeControlMinutes int, incrementSeconds int, rated bool) (string, error)
 	FindGameByID(ctx context.Context, gameID string) (*Game, error)
+	GetActiveGames(ctx context.Context) ([]Game, error)
 	UpdateGameState(ctx context.Context, gameID string, position string, status string, result string, endReason string, currentTurn string, whiteTimeMs int64, blackTimeMs int64, turnStartedAt *time.Time) error
 	AddMove(ctx context.Context, move *GameMove) error
 	GetMoves(ctx context.Context, gameID string) ([]GameMove, error)
@@ -217,6 +218,79 @@ func (r *Repository) FindGameByID(
 	}
 
 	return &g, nil
+}
+
+func (r *Repository) GetActiveGames(ctx context.Context) ([]Game, error) {
+	rows, err := r.DB.Query(
+		ctx,
+		`SELECT
+			id,
+			white_player_id,
+			black_player_id,
+			time_control_minutes,
+			rated,
+			COALESCE(time_control_mode, 'rapid'),
+			COALESCE(daily_move_time_ms, 86400000),
+			position,
+			status,
+			COALESCE(result, ''),
+			COALESCE(end_reason, ''),
+			COALESCE(initial_time_ms, 600000),
+			COALESCE(increment_ms, 0),
+			COALESCE(white_time_ms, 600000),
+			COALESCE(black_time_ms, 600000),
+			COALESCE(current_turn, 'w'),
+			turn_started_at,
+			created_at,
+			started_at,
+			ended_at
+		FROM games
+		WHERE status = 'active'`,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "get active games query failed", "error", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	var games []Game
+	for rows.Next() {
+		var g Game
+		err := rows.Scan(
+			&g.ID,
+			&g.WhitePlayerID,
+			&g.BlackPlayerID,
+			&g.TimeControlMinutes,
+			&g.Rated,
+			&g.TimeControlMode,
+			&g.DailyMoveTimeMs,
+			&g.Position,
+			&g.Status,
+			&g.Result,
+			&g.EndReason,
+			&g.InitialTimeMs,
+			&g.IncrementMs,
+			&g.WhiteTimeMs,
+			&g.BlackTimeMs,
+			&g.CurrentTurn,
+			&g.TurnStartedAt,
+			&g.CreatedAt,
+			&g.StartedAt,
+			&g.EndedAt,
+		)
+		if err != nil {
+			slog.ErrorContext(ctx, "scan active game row failed", "error", err)
+			return nil, err
+		}
+		games = append(games, g)
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "get active games rows iteration error", "error", err)
+		return nil, err
+	}
+
+	return games, nil
 }
 
 func (r *Repository) UpdateGameState(
