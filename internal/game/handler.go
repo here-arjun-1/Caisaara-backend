@@ -260,3 +260,19 @@ func (h *Handler) DeclineDraw(c *gin.Context) {
 
 	c.JSON(http.StatusOK, currentGame)
 }
+
+func (h *Handler) ClaimTimeout(c *gin.Context) {
+	gameID := c.Param("gameID")
+	ctx := c.Request.Context()
+
+	currentGame, err := h.Service.ClaimTimeout(ctx, gameID)
+	if err != nil {
+		slog.WarnContext(ctx, "claim timeout failed", "game_id", gameID, "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, currentGame)
+}

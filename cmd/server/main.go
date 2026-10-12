@@ -142,6 +142,10 @@ func run() error {
 		_, _ = analysisService.TriggerAnalysis(ctx, gameID, 0)
 	})
 
+	gameService.SetGameStateUpdatedListener(func(ctx context.Context, g *game.Game) {
+		wsHandler.BroadcastGameState(g)
+	})
+
 	r, err := router.New(
 		cfg.JWTSecret,
 		authModule,
@@ -168,6 +172,7 @@ func run() error {
 	worker.StartSessionCleanup(authModule.SessionRepository)
 	matcher.Start()
 	tournament.StartTournamentCleanup(context.Background(), tournamentRepo, 24*time.Hour)
+	gameService.StartTimeoutChecker(context.Background(), 1*time.Second)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

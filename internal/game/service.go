@@ -19,12 +19,18 @@ type GameService interface {
 	GetMoves(ctx context.Context, gameID string) ([]GameMove, error)
 	GetPlayerGames(ctx context.Context, playerID int64) ([]Game, error)
 	SetGameCompletionListener(listener func(ctx context.Context, gameID string, result string))
+	SetGameStateUpdatedListener(listener func(ctx context.Context, g *Game))
+	CheckGameTimeout(ctx context.Context, currentGame *Game) (bool, error)
+	CheckAllTimeouts(ctx context.Context) ([]*Game, error)
+	ClaimTimeout(ctx context.Context, gameID string) (*Game, error)
+	StartTimeoutChecker(ctx context.Context, interval time.Duration)
 }
 
 type Service struct {
-	Repository      GameRepository
-	OnGameCompleted func(ctx context.Context, gameID string, result string)
-	drawOffers      sync.Map
+	Repository         GameRepository
+	OnGameCompleted    func(ctx context.Context, gameID string, result string)
+	OnGameStateUpdated func(ctx context.Context, g *Game)
+	drawOffers         sync.Map
 }
 
 func NewService(repository GameRepository) GameService {
@@ -41,6 +47,171 @@ func (s *Service) notifyGameCompleted(ctx context.Context, gameID string, result
 	if s.OnGameCompleted != nil {
 		s.OnGameCompleted(ctx, gameID, result)
 	}
+}
+
+func (s *Service) SetGameStateUpdatedListener(listener func(ctx context.Context, g *Game)) {
+	s.OnGameStateUpdated = listener
+}
+
+func (s *Service) notifyGameStateUpdated(ctx context.Context, g *Game) {
+	if s.OnGameStateUpdated != nil {
+		s.OnGameStateUpdated(ctx, g)
+	}
+}
+
+func (s *Service) CheckGameTimeout(ctx context.Context, currentGame *Game) (bool, error) {
+	if currentGame == nil || currentGame.Status != StatusActive {
+		return false, nil
+	}
+
+	now := time.Now()
+	var turnStartedAt time.Time
+	switch {
+	case currentGame.TurnStartedAt != nil:
+		turnStartedAt = *currentGame.TurnStartedAt
+	case currentGame.StartedAt != nil:
+		turnStartedAt = *currentGame.StartedAt
+	default:
+		turnStartedAt = now
+	}
+
+	elapsedMs := now.Sub(turnStartedAt).Milliseconds()
+	if elapsedMs < 0 {
+		elapsedMs = 0
+	}
+
+	isWhiteTurn := currentGame.CurrentTurn == "w" || currentGame.CurrentTurn == "White"
+	var timedOut bool
+	var result, endReason string
+	newWhiteTimeMs := currentGame.WhiteTimeMs
+	newBlackTimeMs := currentGame.BlackTimeMs
+
+	if currentGame.TimeControlMode == ModeDaily {
+		dailyLimitMs := currentGame.DailyMoveTimeMs
+		if dailyLimitMs <= 0 {
+			dailyLimitMs = 86400000
+		}
+		if elapsedMs > dailyLimitMs {
+			timedOut = true
+			endReason = EndReasonDailyTimeout
+			if isWhiteTurn {
+				result = ResultBlackWin
+			} else {
+				result = ResultWhiteWin
+			}
+		}
+	} else {
+		if isWhiteTurn {
+			newWhiteTimeMs = currentGame.WhiteTimeMs - elapsedMs
+			if newWhiteTimeMs <= 0 {
+				newWhiteTimeMs = 0
+				timedOut = true
+				endReason = EndReasonTimeout
+				result = ResultBlackWin
+			}
+		} else {
+			newBlackTimeMs = currentGame.BlackTimeMs - elapsedMs
+			if newBlackTimeMs <= 0 {
+				newBlackTimeMs = 0
+				timedOut = true
+				endReason = EndReasonTimeout
+				result = ResultWhiteWin
+			}
+		}
+	}
+
+	if !timedOut {
+		return false, nil
+	}
+
+	err := s.Repository.UpdateGameState(
+		ctx,
+		currentGame.ID,
+		currentGame.Position,
+		StatusFinished,
+		result,
+		endReason,
+		currentGame.CurrentTurn,
+		newWhiteTimeMs,
+		newBlackTimeMs,
+		&now,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "update game state on timeout failed", "game_id", currentGame.ID, "error", err)
+		return false, err
+	}
+
+	_ = s.Repository.EnforceRetention(ctx, currentGame.WhitePlayerID)
+	_ = s.Repository.EnforceRetention(ctx, currentGame.BlackPlayerID)
+
+	currentGame.Status = StatusFinished
+	currentGame.Result = result
+	currentGame.EndReason = endReason
+	currentGame.WhiteTimeMs = newWhiteTimeMs
+	currentGame.BlackTimeMs = newBlackTimeMs
+	currentGame.TurnStartedAt = &now
+
+	s.notifyGameCompleted(ctx, currentGame.ID, currentGame.Result)
+	s.notifyGameStateUpdated(ctx, currentGame)
+
+	slog.InfoContext(ctx, "game ended by timeout", "game_id", currentGame.ID, "result", result, "end_reason", endReason)
+	return true, nil
+}
+
+func (s *Service) CheckAllTimeouts(ctx context.Context) ([]*Game, error) {
+	activeGames, err := s.Repository.GetActiveGames(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var timedOutGames []*Game
+	for i := range activeGames {
+		g := &activeGames[i]
+		timedOut, err := s.CheckGameTimeout(ctx, g)
+		if err != nil {
+			slog.ErrorContext(ctx, "check active game timeout failed", "game_id", g.ID, "error", err)
+			continue
+		}
+		if timedOut {
+			timedOutGames = append(timedOutGames, g)
+		}
+	}
+
+	return timedOutGames, nil
+}
+
+func (s *Service) ClaimTimeout(ctx context.Context, gameID string) (*Game, error) {
+	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+	if currentGame.Status != StatusActive {
+		return currentGame, nil
+	}
+	timedOut, err := s.CheckGameTimeout(ctx, currentGame)
+	if err != nil {
+		return nil, err
+	}
+	if !timedOut {
+		return currentGame, errors.New("time has not expired")
+	}
+	return currentGame, nil
+}
+
+func (s *Service) StartTimeoutChecker(ctx context.Context, interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				_, _ = s.CheckAllTimeouts(ctx)
+			}
+		}
+	}()
 }
 
 func (s *Service) MakeMove(
@@ -98,75 +269,21 @@ func (s *Service) MakeMove(
 	status := StatusActive
 	result := ""
 	endReason := ""
-
 	newWhiteTimeMs := currentGame.WhiteTimeMs
 	newBlackTimeMs := currentGame.BlackTimeMs
 
-	if currentGame.TimeControlMode == ModeDaily {
-		dailyLimitMs := currentGame.DailyMoveTimeMs
-		if dailyLimitMs <= 0 {
-			dailyLimitMs = 86400000
-		}
-		if elapsedMs > dailyLimitMs {
-			status = StatusFinished
-			endReason = EndReasonDailyTimeout
-			if isWhiteTurn {
-				result = ResultBlackWin
-			} else {
-				result = ResultWhiteWin
-			}
-		}
-	} else {
-		if isWhiteTurn {
-			newWhiteTimeMs = currentGame.WhiteTimeMs - elapsedMs
-			if newWhiteTimeMs <= 0 {
-				newWhiteTimeMs = 0
-				status = StatusFinished
-				endReason = EndReasonTimeout
-				result = ResultBlackWin
-			}
-		} else {
-			newBlackTimeMs = currentGame.BlackTimeMs - elapsedMs
-			if newBlackTimeMs <= 0 {
-				newBlackTimeMs = 0
-				status = StatusFinished
-				endReason = EndReasonTimeout
-				result = ResultWhiteWin
-			}
-		}
+	timedOut, err := s.CheckGameTimeout(ctx, currentGame)
+	if err != nil {
+		return nil, err
+	}
+	if timedOut {
+		return currentGame, errors.New("time has expired")
 	}
 
-	if status == StatusFinished {
-		err = s.Repository.UpdateGameState(
-			ctx,
-			gameID,
-			currentGame.Position,
-			status,
-			result,
-			endReason,
-			currentGame.CurrentTurn,
-			newWhiteTimeMs,
-			newBlackTimeMs,
-			&now,
-		)
-		if err != nil {
-			slog.ErrorContext(ctx, "update game state on time expiry failed", "game_id", gameID, "error", err)
-			return nil, err
-		}
-
-		_ = s.Repository.EnforceRetention(ctx, currentGame.WhitePlayerID)
-		_ = s.Repository.EnforceRetention(ctx, currentGame.BlackPlayerID)
-
-		currentGame.Status = status
-		currentGame.Result = result
-		currentGame.EndReason = endReason
-		currentGame.WhiteTimeMs = newWhiteTimeMs
-		currentGame.BlackTimeMs = newBlackTimeMs
-		currentGame.TurnStartedAt = &now
-
-		s.notifyGameCompleted(ctx, currentGame.ID, currentGame.Result)
-
-		return currentGame, nil
+	if isWhiteTurn {
+		newWhiteTimeMs = currentGame.WhiteTimeMs - elapsedMs
+	} else {
+		newBlackTimeMs = currentGame.BlackTimeMs - elapsedMs
 	}
 
 	if err := chessGame.MakeMove(move); err != nil {
@@ -463,6 +580,9 @@ func (s *Service) GetGame(
 	g, err := s.Repository.FindGameByID(ctx, gameID)
 	if err != nil {
 		return nil, err
+	}
+	if g.Status == StatusActive {
+		_, _ = s.CheckGameTimeout(ctx, g)
 	}
 	if val, ok := s.drawOffers.Load(gameID); ok {
 		g.DrawOfferedBy = val.(int64)
