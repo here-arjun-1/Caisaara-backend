@@ -80,6 +80,7 @@ func (h *ProfileService) GetPublicProfile(ctx context.Context, username string) 
 	}
 
 	return &dto.PublicProfileResponse{
+		UserID:      p.UserID,
 		Username:    p.Username,
 		DisplayName: p.DisplayName,
 		Country:     p.Country,
@@ -159,8 +160,8 @@ func toMyProfileResponse(p *model.Profile) *dto.MyProfileResponse {
 		Ratings:      toModeRatings(p),
 		SkillLevel:   p.SkillLevel,
 		NeedsRating:  p.SkillLevel == nil,
-		JoinedAt:     p.CreatedAt,
 		FriendsCount: p.FriendsCount,
+		JoinedAt:     p.CreatedAt,
 	}
 }
 
