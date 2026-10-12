@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
+	"github.com/jackc/pgx/v5"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -20,7 +21,7 @@ type UserFinder interface {
 }
 
 type InvitationService interface {
-	CreateInvite(ctx context.Context, userID int64, timeControlMinutes int, incrementSeconds int, color string) (*Invite, error)
+	CreateInvite(ctx context.Context, userID int64, timeControlMinutes int, incrementSeconds int, color string, opponentID int64) (*Invite, error)
 	GetInvite(ctx context.Context, code string) (*Invite, error)
 	GetInviteByGameID(ctx context.Context, gameID string) (*Invite, error)
 	JoinInvite(ctx context.Context, code string, player2ID int64) (string, error)
@@ -60,6 +61,7 @@ func (s *Service) CreateInvite(
 	timeControlMinutes int,
 	incrementSeconds int,
 	color string,
+	opponentID int64,
 ) (*Invite, error) {
 
 	if timeControlMinutes <= 0 && incrementSeconds <= 0 {
@@ -68,6 +70,21 @@ func (s *Service) CreateInvite(
 
 	if color != "white" && color != "black" && color != "random" {
 		return nil, ErrInvalidColor
+	}
+
+	if opponentID != 0 {
+		if opponentID == userID {
+			return nil, ErrChallengeYourself
+		}
+
+		_, err := s.UserFinder.FindUserByID(ctx, opponentID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrOpponentNotFound
+		}
+		if err != nil {
+			slog.ErrorContext(ctx, "find opponent failed", "error", err, "opponent_id", opponentID)
+			return nil, ErrInternal
+		}
 	}
 
 	code, err := generateInviteCode()
@@ -82,6 +99,7 @@ func (s *Service) CreateInvite(
 		Code:               code,
 		GameID:             gameID,
 		CreatorID:          userID,
+		OpponentID:         opponentID,
 		TimeControlMinutes: timeControlMinutes,
 		IncrementSeconds:   incrementSeconds,
 		Color:              color,
@@ -92,6 +110,14 @@ func (s *Service) CreateInvite(
 	if err != nil {
 		slog.ErrorContext(ctx, "save invite failed", "error", err)
 		return nil, fmt.Errorf("failed to store invite: %w", err)
+	}
+
+	if opponentID != 0 {
+		err = s.InviteRepo.AddChallenge(ctx, opponentID, code, 10*time.Minute)
+		if err != nil {
+			slog.ErrorContext(ctx, "save challenge failed", "error", err, "opponent_id", opponentID)
+			return nil, ErrInternal
+		}
 	}
 
 	return invite, nil
