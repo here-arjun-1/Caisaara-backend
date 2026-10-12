@@ -24,7 +24,6 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/tilt"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tournament"
 	"github.com/here-arjun-1/Caisaara-backend/internal/websocket"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func New(
@@ -52,8 +51,6 @@ func New(
 	}
 
 	r.Use(metrics.Middleware())
-
-	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	r.GET("/health", func(c *gin.Context) {
 		response.Success(c, http.StatusOK, "ok", nil)

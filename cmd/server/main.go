@@ -35,6 +35,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/websocket"
 	"github.com/here-arjun-1/Caisaara-backend/migrations"
 	"github.com/hibiken/asynq"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -193,6 +194,18 @@ func run() error {
 		}
 	}()
 
+	metricsSrv := &http.Server{
+		Addr:              ":9100",
+		Handler:           promhttp.Handler(),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	go func() {
+		if err := metricsSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("metrics server failed", "error", err)
+		}
+	}()
+
 	slog.Info("server started", "port", cfg.Port)
 
 	quit := make(chan os.Signal, 1)
@@ -210,6 +223,8 @@ func run() error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
+	_ = metricsSrv.Shutdown(ctx)
 
 	if err := srv.Shutdown(ctx); err != nil {
 		return fmt.Errorf("server forced to shutdown: %w", err)
