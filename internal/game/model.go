@@ -57,6 +57,7 @@ const (
 	EndReason75MoveRule           = "75_move_rule"
 	EndReasonInsufficientMaterial = "insufficient_material"
 	EndReasonDailyTimeout         = "daily_timeout"
+	EndReasonAbandonment          = "abandonment"
 )
 
 type GameMove struct {

@@ -35,9 +35,15 @@ func (r *Room) AddClient(client *Client) {
 	r.Clients[client.UserID] = client
 }
 
-func (r *Room) RemoveClient(userID int64) {
+func (r *Room) RemoveClient(userID int64, client ...*Client) {
 	r.Mutex.Lock()
 	defer r.Mutex.Unlock()
+
+	if len(client) > 0 && client[0] != nil {
+		if current, ok := r.Clients[userID]; ok && current != client[0] {
+			return
+		}
+	}
 
 	_, exists := r.Clients[userID]
 	if exists {
@@ -45,6 +51,14 @@ func (r *Room) RemoveClient(userID int64) {
 	}
 
 	delete(r.Clients, userID)
+}
+
+func (r *Room) HasClient(userID int64) bool {
+	r.Mutex.RLock()
+	defer r.Mutex.RUnlock()
+
+	_, exists := r.Clients[userID]
+	return exists
 }
 
 func (r *Room) Count() int {

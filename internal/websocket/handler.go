@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -21,11 +22,17 @@ type InviteFinder interface {
 	GetInviteByGameID(ctx context.Context, gameID string) (*invitation.Invite, error)
 }
 
+type disconnectTimerEntry struct {
+	timer          *time.Timer
+	disconnectedAt time.Time
+}
+
 type Handler struct {
-	Hub          *Hub
-	GameService  game.GameService
-	ChatService  chat.ChatService
-	InviteFinder InviteFinder
+	Hub              *Hub
+	GameService      game.GameService
+	ChatService      chat.ChatService
+	InviteFinder     InviteFinder
+	disconnectTimers sync.Map
 }
 
 func NewHandler(hub *Hub, gameService game.GameService, chatService ...chat.ChatService) *Handler {
@@ -149,8 +156,16 @@ func (h *Handler) Connect(c *gin.Context) {
 		Send:   make(chan []byte, 256),
 	}
 
+	timerKey := gameID + ":" + strconv.FormatInt(claims.UserID, 10)
+	if val, ok := h.disconnectTimers.LoadAndDelete(timerKey); ok {
+		if entry, ok := val.(*disconnectTimerEntry); ok && entry.timer != nil {
+			entry.timer.Stop()
+		}
+	}
+
 	room := h.Hub.GetOrCreateRoom(gameID)
 	room.AddClient(client)
+	h.broadcastPlayerPresence(room, gameID, claims.UserID, true)
 
 	moves, _ := h.GameService.GetMoves(ctx, gameID)
 
@@ -191,8 +206,10 @@ func (h *Handler) readPump(
 	room *Room,
 ) {
 	defer func() {
-		room.RemoveClient(client.UserID)
+		room.RemoveClient(client.UserID, client)
 		client.Close()
+
+		h.handlePlayerDisconnect(client.GameID, client.UserID, room)
 
 		if room.Count() == 0 {
 			h.Hub.RemoveRoom(room.GameID)
@@ -325,17 +342,50 @@ func (h *Handler) readPump(
 			}
 			h.broadcastChatMessage(ctx, room, chatMsg)
 
-		case "claim_timeout", "timeout":
-			currentGame, err := h.GameService.ClaimTimeout(
-				ctx,
-				client.GameID,
-			)
+		case "claim_timeout", "timeout", "claim_abandonment", "claim_disconnect", "claim_win":
+			g, err := h.GameService.GetGame(ctx, client.GameID)
 			if err != nil {
-				slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", incomingMsg.Type, "error", err)
 				sendError(ctx, client, err.Error())
 				continue
 			}
-			h.broadcastGameState(ctx, room, currentGame)
+
+			opponentID := g.WhitePlayerID
+			if client.UserID == g.WhitePlayerID {
+				opponentID = g.BlackPlayerID
+			}
+
+			timerKey := client.GameID + ":" + strconv.FormatInt(opponentID, 10)
+			var claimed bool
+			if val, ok := h.disconnectTimers.Load(timerKey); ok {
+				if entry, ok := val.(*disconnectTimerEntry); ok {
+					if time.Since(entry.disconnectedAt) >= 2*time.Minute {
+						if entry.timer != nil {
+							entry.timer.Stop()
+						}
+						h.disconnectTimers.Delete(timerKey)
+						currentGame, err := h.GameService.EndGameOnDisconnect(ctx, client.GameID, opponentID)
+						if err != nil {
+							sendError(ctx, client, err.Error())
+							continue
+						}
+						h.broadcastGameState(ctx, room, currentGame)
+						claimed = true
+					}
+				}
+			}
+
+			if !claimed {
+				currentGame, err := h.GameService.ClaimTimeout(
+					ctx,
+					client.GameID,
+				)
+				if err != nil {
+					slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", incomingMsg.Type, "error", err)
+					sendError(ctx, client, err.Error())
+					continue
+				}
+				h.broadcastGameState(ctx, room, currentGame)
+			}
 
 		default:
 			sendError(ctx, client, "unsupported message type")
@@ -675,4 +725,79 @@ func (h *Handler) BroadcastTournamentEvent(tournamentID int64, event interface{}
 	}
 	roomKey := "tournament:" + strconv.FormatInt(tournamentID, 10)
 	h.Hub.BroadcastToRoom(roomKey, data)
+}
+
+func (h *Handler) broadcastPlayerPresence(room *Room, gameID string, userID int64, connected bool) {
+	if room == nil {
+		return
+	}
+	msgType := "player_disconnected"
+	if connected {
+		msgType = "player_reconnected"
+	}
+	wsMsg := map[string]interface{}{
+		"type":    msgType,
+		"game_id": gameID,
+		"user_id": userID,
+	}
+	data, err := json.Marshal(wsMsg)
+	if err != nil {
+		return
+	}
+	room.Broadcast(data)
+}
+
+func (h *Handler) handlePlayerDisconnect(gameID string, userID int64, room *Room) {
+	if room != nil && room.HasClient(userID) {
+		return
+	}
+
+	ctx := context.Background()
+	g, err := h.GameService.GetGame(ctx, gameID)
+	if err != nil || g == nil || g.Status != game.StatusActive || g.TimeControlMode == game.ModeDaily {
+		return
+	}
+
+	if userID != g.WhitePlayerID && userID != g.BlackPlayerID {
+		return
+	}
+
+	if room != nil {
+		h.broadcastPlayerPresence(room, gameID, userID, false)
+	}
+
+	timerKey := gameID + ":" + strconv.FormatInt(userID, 10)
+	if val, ok := h.disconnectTimers.LoadAndDelete(timerKey); ok {
+		if entry, ok := val.(*disconnectTimerEntry); ok && entry.timer != nil {
+			entry.timer.Stop()
+		}
+	}
+
+	entry := &disconnectTimerEntry{
+		disconnectedAt: time.Now(),
+	}
+	entry.timer = time.AfterFunc(2*time.Minute, func() {
+		h.handleDisconnectTimeout(gameID, userID)
+	})
+	h.disconnectTimers.Store(timerKey, entry)
+}
+
+func (h *Handler) handleDisconnectTimeout(gameID string, userID int64) {
+	timerKey := gameID + ":" + strconv.FormatInt(userID, 10)
+	h.disconnectTimers.Delete(timerKey)
+
+	room := h.Hub.GetRoom(gameID)
+	if room != nil && room.HasClient(userID) {
+		return
+	}
+
+	ctx := context.Background()
+	g, err := h.GameService.EndGameOnDisconnect(ctx, gameID, userID)
+	if err != nil || g == nil {
+		return
+	}
+
+	if room != nil {
+		h.broadcastGameState(ctx, room, g)
+	}
 }

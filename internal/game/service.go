@@ -24,6 +24,7 @@ type GameService interface {
 	CheckAllTimeouts(ctx context.Context) ([]*Game, error)
 	ClaimTimeout(ctx context.Context, gameID string) (*Game, error)
 	StartTimeoutChecker(ctx context.Context, interval time.Duration)
+	EndGameOnDisconnect(ctx context.Context, gameID string, disconnectedPlayerID int64) (*Game, error)
 }
 
 type Service struct {
@@ -615,4 +616,100 @@ func (s *Service) isPlayerTurn(
 		return playerID == currentGame.WhitePlayerID
 	}
 	return playerID == currentGame.BlackPlayerID
+}
+
+func (s *Service) EndGameOnDisconnect(
+	ctx context.Context,
+	gameID string,
+	disconnectedPlayerID int64,
+) (*Game, error) {
+	s.drawOffers.Delete(gameID)
+
+	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+
+	if currentGame.Status != StatusActive {
+		return currentGame, nil
+	}
+
+	if disconnectedPlayerID != currentGame.WhitePlayerID && disconnectedPlayerID != currentGame.BlackPlayerID {
+		return nil, errors.New("player is not part of this game")
+	}
+
+	now := time.Now()
+	status := StatusFinished
+	endReason := EndReasonAbandonment
+
+	var result string
+	if disconnectedPlayerID == currentGame.WhitePlayerID {
+		result = ResultBlackWin
+	} else {
+		result = ResultWhiteWin
+	}
+
+	newWhiteTimeMs := currentGame.WhiteTimeMs
+	newBlackTimeMs := currentGame.BlackTimeMs
+
+	if currentGame.TimeControlMode != ModeDaily {
+		var turnStartedAt time.Time
+		switch {
+		case currentGame.TurnStartedAt != nil:
+			turnStartedAt = *currentGame.TurnStartedAt
+		case currentGame.StartedAt != nil:
+			turnStartedAt = *currentGame.StartedAt
+		default:
+			turnStartedAt = now
+		}
+
+		elapsedMs := now.Sub(turnStartedAt).Milliseconds()
+		if elapsedMs < 0 {
+			elapsedMs = 0
+		}
+
+		isWhiteTurn := currentGame.CurrentTurn == "w" || currentGame.CurrentTurn == "White"
+		if isWhiteTurn {
+			newWhiteTimeMs -= elapsedMs
+			if newWhiteTimeMs < 0 {
+				newWhiteTimeMs = 0
+			}
+		} else {
+			newBlackTimeMs -= elapsedMs
+			if newBlackTimeMs < 0 {
+				newBlackTimeMs = 0
+			}
+		}
+	}
+
+	err = s.Repository.UpdateGameState(
+		ctx,
+		gameID,
+		currentGame.Position,
+		status,
+		result,
+		endReason,
+		currentGame.CurrentTurn,
+		newWhiteTimeMs,
+		newBlackTimeMs,
+		&now,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	_ = s.Repository.EnforceRetention(ctx, currentGame.WhitePlayerID)
+	_ = s.Repository.EnforceRetention(ctx, currentGame.BlackPlayerID)
+
+	currentGame.Status = status
+	currentGame.Result = result
+	currentGame.EndReason = endReason
+	currentGame.WhiteTimeMs = newWhiteTimeMs
+	currentGame.BlackTimeMs = newBlackTimeMs
+	currentGame.TurnStartedAt = &now
+
+	s.notifyGameCompleted(ctx, currentGame.ID, currentGame.Result)
+	s.notifyGameStateUpdated(ctx, currentGame)
+
+	return currentGame, nil
 }

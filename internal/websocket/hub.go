@@ -37,6 +37,13 @@ func (h *Hub) RemoveRoom(gameID string) {
 	delete(h.Rooms, gameID)
 }
 
+func (h *Hub) GetRoom(gameID string) *Room {
+	h.Mutex.RLock()
+	defer h.Mutex.RUnlock()
+
+	return h.Rooms[gameID]
+}
+
 func (h *Hub) BroadcastToRoom(roomID string, message []byte) {
 	h.Mutex.RLock()
 	room, exists := h.Rooms[roomID]
