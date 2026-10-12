@@ -68,7 +68,8 @@ func (r *Repository) FindNearbyPlayers(ctx context.Context, userID int64) ([]Nea
 			u.id,
 			u.username,
 			u.rating,
-			GREATEST(1, ROUND(ST_Distance(other.location, me.location) / 1000))::int
+			GREATEST(1, ROUND(ST_Distance(other.location, me.location) / 1000))::int,
+			other.updated_at > NOW() - make_interval(mins => $4)
 		FROM player_locations me
 		JOIN player_locations other ON other.user_id <> me.user_id
 		JOIN users u ON u.id = other.user_id
@@ -78,7 +79,7 @@ func (r *Repository) FindNearbyPlayers(ctx context.Context, userID int64) ([]Nea
 			AND ST_DWithin(other.location, me.location, $2)
 		ORDER BY ST_Distance(other.location, me.location)
 		LIMIT $3`,
-		userID, searchRadiusMeters, maxNearbyPlayers,
+		userID, searchRadiusMeters, maxNearbyPlayers, activeWindowMinutes,
 	)
 	if err != nil {
 		slog.ErrorContext(ctx, "find nearby players query failed", "user_id", userID, "error", err)
@@ -89,7 +90,7 @@ func (r *Repository) FindNearbyPlayers(ctx context.Context, userID int64) ([]Nea
 	players := []NearbyPlayer{}
 	for rows.Next() {
 		var player NearbyPlayer
-		err := rows.Scan(&player.UserID, &player.Username, &player.Rating, &player.DistanceKm)
+		err := rows.Scan(&player.UserID, &player.Username, &player.Rating, &player.DistanceKm, &player.Active)
 		if err != nil {
 			slog.ErrorContext(ctx, "scan nearby player row failed", "user_id", userID, "error", err)
 			return nil, err
