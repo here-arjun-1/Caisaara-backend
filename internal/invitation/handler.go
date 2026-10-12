@@ -224,6 +224,13 @@ func (h *Handler) Join(c *gin.Context) {
 		return
 	}
 
+	if errors.Is(err, ErrNotYourChallenge) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -234,5 +241,82 @@ func (h *Handler) Join(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"game_id": gameID,
 		"status":  "active",
+	})
+}
+
+func (h *Handler) GetMyChallenges(c *gin.Context) {
+	userIDValue, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "user not authenticated",
+		})
+		return
+	}
+
+	userID, ok := userIDValue.(int64)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "invalid user id",
+		})
+		return
+	}
+
+	challenges, err := h.Service.GetMyChallenges(c.Request.Context(), userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"challenges": challenges,
+	})
+}
+
+func (h *Handler) DeclineChallenge(c *gin.Context) {
+	userIDValue, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "user not authenticated",
+		})
+		return
+	}
+
+	userID, ok := userIDValue.(int64)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "invalid user id",
+		})
+		return
+	}
+
+	code := c.Param("code")
+
+	err := h.Service.DeclineChallenge(c.Request.Context(), userID, code)
+
+	if errors.Is(err, ErrInternal) {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	if errors.Is(err, ErrInviteNotFound) || errors.Is(err, ErrInviteUsed) {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "challenge declined",
 	})
 }
