@@ -14,8 +14,8 @@ type MyProfileResponse struct {
 	Ratings      map[string]ModeRatingResponse `json:"ratings"`
 	SkillLevel   *string                       `json:"skill_level"`
 	NeedsRating  bool                          `json:"needs_rating"`
-	JoinedAt     time.Time                     `json:"joined_at"`
 	FriendsCount int                           `json:"friends_count"`
+	JoinedAt     time.Time                     `json:"joined_at"`
 }
 
 type UpdateProfileData struct {
@@ -26,6 +26,7 @@ type UpdateProfileData struct {
 }
 
 type PublicProfileResponse struct {
+	UserID      int64                         `json:"user_id"`
 	Username    string                        `json:"username"`
 	DisplayName *string                       `json:"display_name"`
 	Country     *string                       `json:"country"`
