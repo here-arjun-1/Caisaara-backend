@@ -27,6 +27,7 @@ type InvitationService interface {
 	JoinInvite(ctx context.Context, code string, player2ID int64) (string, error)
 	FindInviteCreator(ctx context.Context, creatorID int64) (*model.User, error)
 	GetMyChallenges(ctx context.Context, userID int64) ([]Challenge, error)
+	DeclineChallenge(ctx context.Context, userID int64, code string) error
 }
 
 type Service struct {
@@ -320,4 +321,38 @@ func (s *Service) GetMyChallenges(ctx context.Context, userID int64) ([]Challeng
 	}
 
 	return challenges, nil
+}
+
+func (s *Service) DeclineChallenge(ctx context.Context, userID int64, code string) error {
+	invite, err := s.InviteRepo.GetInvite(ctx, code)
+	if errors.Is(err, redis.Nil) {
+		_ = s.InviteRepo.RemoveChallenge(ctx, userID, code)
+		return ErrInviteNotFound
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "get invite for decline failed", "error", err, "code", code)
+		return ErrInternal
+	}
+
+	if invite.OpponentID != userID {
+		return ErrInviteNotFound
+	}
+
+	if invite.Status == "active" {
+		return ErrInviteUsed
+	}
+
+	err = s.InviteRepo.DeleteInvite(ctx, code)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete declined invite failed", "error", err, "code", code)
+		return ErrInternal
+	}
+
+	err = s.InviteRepo.RemoveChallenge(ctx, userID, code)
+	if err != nil {
+		slog.ErrorContext(ctx, "remove declined challenge failed", "error", err, "code", code)
+		return ErrInternal
+	}
+
+	return nil
 }
