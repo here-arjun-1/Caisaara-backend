@@ -22,6 +22,8 @@ type ClubRepository interface {
 	CreateMessage(ctx context.Context, msg *Message) error
 	GetRecentMessages(ctx context.Context, clubID string, limit int) ([]Message, error)
 	GetLeaderboard(ctx context.Context, clubID string) ([]LeaderboardEntry, error)
+	UpdateMemberRole(ctx context.Context, clubID string, userID int64, role string) error
+	TransferOwnership(ctx context.Context, clubID string, oldOwnerID int64, newOwnerID int64) error
 }
 
 type Repository struct {
@@ -347,4 +349,81 @@ func (r *Repository) GetLeaderboard(ctx context.Context, clubID string) ([]Leade
 	}
 
 	return entries, rows.Err()
+}
+
+func (r *Repository) UpdateMemberRole(ctx context.Context, clubID string, userID int64, role string) error {
+	tag, err := r.DB.Exec(
+		ctx,
+		`UPDATE club_members SET role = $3 WHERE club_id = $1 AND user_id = $2`,
+		clubID,
+		userID,
+		role,
+	)
+
+	if err != nil {
+		slog.ErrorContext(ctx, "update member role failed", "club_id", clubID, "user_id", userID, "error", err)
+		return err
+	}
+
+	if tag.RowsAffected() == 0 {
+		return ErrNotMember
+	}
+
+	return nil
+}
+
+func (r *Repository) TransferOwnership(ctx context.Context, clubID string, oldOwnerID int64, newOwnerID int64) error {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "begin transfer ownership tx failed", "error", err)
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	tag, err := tx.Exec(
+		ctx,
+		`UPDATE club_members SET role = $3 WHERE club_id = $1 AND user_id = $2 AND role = $4`,
+		clubID,
+		oldOwnerID,
+		RoleAdmin,
+		RoleOwner,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "demote old owner failed", "club_id", clubID, "user_id", oldOwnerID, "error", err)
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotAllowed
+	}
+
+	tag, err = tx.Exec(
+		ctx,
+		`UPDATE club_members SET role = $3 WHERE club_id = $1 AND user_id = $2 AND role = $4`,
+		clubID,
+		newOwnerID,
+		RoleOwner,
+		RoleAdmin,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "promote new owner failed", "club_id", clubID, "user_id", newOwnerID, "error", err)
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrTargetNotAdmin
+	}
+
+	_, err = tx.Exec(ctx, `UPDATE clubs SET owner_id = $2 WHERE id = $1`, clubID, newOwnerID)
+	if err != nil {
+		slog.ErrorContext(ctx, "update club owner_id failed", "club_id", clubID, "error", err)
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "commit transfer ownership tx failed", "club_id", clubID, "error", err)
+		return err
+	}
+
+	return nil
 }
