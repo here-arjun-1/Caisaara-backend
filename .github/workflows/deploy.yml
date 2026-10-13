@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 concurrency:
   group: deploy
@@ -27,6 +28,22 @@ jobs:
           docker save -o caisaara-backend.tar caisaara-backend:latest
           chmod 644 caisaara-backend.tar
 
+      - name: Prepare deploy directory on EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            APP_DIR="/home/${{ secrets.EC2_USERNAME }}/app"
+            mkdir -p "$APP_DIR"
+            sudo rm -rf "$APP_DIR/monitoring" 2>/dev/null || rm -rf "$APP_DIR/monitoring" 2>/dev/null || true
+            sudo chown -R ${{ secrets.EC2_USERNAME }}:${{ secrets.EC2_USERNAME }} "$APP_DIR" 2>/dev/null || true
+            rm -f "$APP_DIR/caisaara-backend.tar" 2>/dev/null || true
+            rm -f /tmp/*.tar.gz 2>/dev/null || true
+            docker system prune -f 2>/dev/null || true
+            df -h
+
       - name: Copy image, compose file and monitoring config to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -35,6 +52,8 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           source: "caisaara-backend.tar,compose.yml,monitoring"
           target: "/home/${{ secrets.EC2_USERNAME }}/app"
+          overwrite: true
+          debug: true
 
       - name: Deploy on EC2
         uses: appleboy/ssh-action@v1.0.3
@@ -59,12 +78,15 @@ jobs:
             docker load -i caisaara-backend.tar
             rm -f caisaara-backend.tar
 
+            docker compose pull postgres redis prometheus grafana || true
+
             if ! docker compose up -d --no-build --wait --wait-timeout 120; then
               echo "Deploy failed, rolling back"
-              docker compose logs backend --tail 50
+              docker compose ps
+              docker compose logs --tail 50
               if docker image inspect caisaara-backend:previous > /dev/null 2>&1; then
                 docker tag caisaara-backend:previous caisaara-backend:latest
-                docker compose up -d --no-build --wait --wait-timeout 60 backend || echo "Rollback also failed"
+                docker compose up -d --no-build --force-recreate --wait --wait-timeout 60 backend || echo "Rollback also failed"
               fi
               exit 1
             fi

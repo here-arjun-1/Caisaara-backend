@@ -26,6 +26,6 @@ COPY --from=builder /app/caisaara-backend .
 
 USER app
 
-EXPOSE 8050
+EXPOSE 8050 9100
 
 CMD ["./caisaara-backend"]
