@@ -361,6 +361,7 @@ func (s *Service) MakeMove(
 	currentGame.WhiteTimeMs = newWhiteTimeMs
 	currentGame.BlackTimeMs = newBlackTimeMs
 	currentGame.TurnStartedAt = &now
+	currentGame.LastMove = move
 
 	if status == StatusFinished {
 		s.notifyGameCompleted(ctx, currentGame.ID, currentGame.Result)
@@ -587,6 +588,10 @@ func (s *Service) GetGame(
 	}
 	if val, ok := s.drawOffers.Load(gameID); ok {
 		g.DrawOfferedBy = val.(int64)
+	}
+	moves, err := s.Repository.GetMoves(ctx, gameID)
+	if err == nil && len(moves) > 0 {
+		g.LastMove = moves[len(moves)-1].Move
 	}
 	return g, nil
 }

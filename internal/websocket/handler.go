@@ -426,11 +426,25 @@ func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Ga
 	moves, _ := h.GameService.GetMoves(ctx, g.ID)
 	whiteTime, blackTime, turnStartedAt := calculateLiveClocks(g)
 
+	if (g.WhiteUsername == "" || g.BlackUsername == "") && h.GameService != nil {
+		if fullGame, err := h.GameService.GetGame(ctx, g.ID); err == nil && fullGame != nil {
+			g.WhiteUsername = fullGame.WhiteUsername
+			g.BlackUsername = fullGame.BlackUsername
+		}
+	}
+
+	var lastMove string
+	if len(moves) > 0 {
+		lastMove = moves[len(moves)-1].Move
+	}
+
 	response := game.GameStateMessage{
 		Type:            "game_state",
 		GameID:          g.ID,
 		WhitePlayerID:   g.WhitePlayerID,
 		BlackPlayerID:   g.BlackPlayerID,
+		WhiteUsername:   g.WhiteUsername,
+		BlackUsername:   g.BlackUsername,
 		Position:        g.Position,
 		Status:          g.Status,
 		Result:          g.Result,
@@ -444,6 +458,7 @@ func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Ga
 		CurrentTurn:     g.CurrentTurn,
 		TurnStartedAt:   turnStartedAt,
 		DrawOfferedBy:   g.DrawOfferedBy,
+		LastMove:        lastMove,
 		Moves:           moves,
 	}
 
@@ -457,11 +472,24 @@ func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Ga
 }
 
 func (h *Handler) broadcastChatMessage(ctx context.Context, room *Room, msg *chat.ChatMessage) {
+	username := msg.Username
+	if username == "" && h.GameService != nil {
+		if g, err := h.GameService.GetGame(ctx, msg.GameID); err == nil && g != nil {
+			switch msg.UserID {
+			case g.WhitePlayerID:
+				username = g.WhiteUsername
+			case g.BlackPlayerID:
+				username = g.BlackUsername
+			}
+		}
+	}
+
 	wsMsg := chat.ChatWSMessage{
 		Type:      "chat",
 		ID:        msg.ID,
 		GameID:    msg.GameID,
 		UserID:    msg.UserID,
+		Username:  username,
 		Message:   msg.Message,
 		CreatedAt: msg.CreatedAt,
 	}
@@ -554,11 +582,25 @@ func (h *Handler) sendClientGameState(
 	}
 	whiteTime, blackTime, turnStartedAt := calculateLiveClocks(g)
 
+	if (g.WhiteUsername == "" || g.BlackUsername == "") && h.GameService != nil {
+		if fullGame, err := h.GameService.GetGame(ctx, g.ID); err == nil && fullGame != nil {
+			g.WhiteUsername = fullGame.WhiteUsername
+			g.BlackUsername = fullGame.BlackUsername
+		}
+	}
+
+	var lastMove string
+	if len(moves) > 0 {
+		lastMove = moves[len(moves)-1].Move
+	}
+
 	response := game.GameStateMessage{
 		Type:            messageType,
 		GameID:          g.ID,
 		WhitePlayerID:   g.WhitePlayerID,
 		BlackPlayerID:   g.BlackPlayerID,
+		WhiteUsername:   g.WhiteUsername,
+		BlackUsername:   g.BlackUsername,
 		Position:        g.Position,
 		Status:          g.Status,
 		Result:          g.Result,
@@ -572,6 +614,7 @@ func (h *Handler) sendClientGameState(
 		CurrentTurn:     g.CurrentTurn,
 		TurnStartedAt:   turnStartedAt,
 		DrawOfferedBy:   g.DrawOfferedBy,
+		LastMove:        lastMove,
 		Moves:           moves,
 	}
 
@@ -604,11 +647,25 @@ func (h *Handler) sendGameStart(ctx context.Context, room *Room, g *game.Game, m
 	}
 	whiteTime, blackTime, turnStartedAt := calculateLiveClocks(g)
 
+	if (g.WhiteUsername == "" || g.BlackUsername == "") && h.GameService != nil {
+		if fullGame, err := h.GameService.GetGame(ctx, g.ID); err == nil && fullGame != nil {
+			g.WhiteUsername = fullGame.WhiteUsername
+			g.BlackUsername = fullGame.BlackUsername
+		}
+	}
+
+	var lastMove string
+	if len(moves) > 0 {
+		lastMove = moves[len(moves)-1].Move
+	}
+
 	response := game.GameStateMessage{
 		Type:            "game_start",
 		GameID:          g.ID,
 		WhitePlayerID:   g.WhitePlayerID,
 		BlackPlayerID:   g.BlackPlayerID,
+		WhiteUsername:   g.WhiteUsername,
+		BlackUsername:   g.BlackUsername,
 		Position:        g.Position,
 		Status:          g.Status,
 		Result:          g.Result,
@@ -622,6 +679,7 @@ func (h *Handler) sendGameStart(ctx context.Context, room *Room, g *game.Game, m
 		CurrentTurn:     g.CurrentTurn,
 		TurnStartedAt:   turnStartedAt,
 		DrawOfferedBy:   g.DrawOfferedBy,
+		LastMove:        lastMove,
 		Moves:           moves,
 	}
 
