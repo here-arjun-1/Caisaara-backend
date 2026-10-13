@@ -190,10 +190,92 @@ func handleError(c *gin.Context, err error) {
 		errors.Is(err, ErrDescriptionTooLong),
 		errors.Is(err, ErrOwnerCannotLeave),
 		errors.Is(err, ErrEmptyMessage),
-		errors.Is(err, ErrMessageTooLong):
+		errors.Is(err, ErrMessageTooLong),
+		errors.Is(err, ErrTargetNotAdmin):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:
 		slog.ErrorContext(c.Request.Context(), "club request failed", "path", c.FullPath(), "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 	}
+}
+
+func getTargetID(c *gin.Context) (int64, bool) {
+	targetID, err := strconv.ParseInt(c.Param("userID"), 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return targetID, true
+}
+
+func (h *Handler) PromoteToAdmin(c *gin.Context) {
+	userID, ok := getUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
+
+	targetID, ok := getTargetID(c)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+		return
+	}
+	if err := h.Service.PromoteToAdmin(c.Request.Context(), c.Param("clubID"), userID, targetID); err != nil {
+		handleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "member is now an admin"})
+}
+
+func (h *Handler) RemoveAdmin(c *gin.Context) {
+	userID, ok := getUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
+	targetID, ok := getTargetID(c)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+		return
+	}
+	if err := h.Service.RemoveAdmin(c.Request.Context(), c.Param("clubID"), userID, targetID); err != nil {
+		handleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "admin removed"})
+}
+
+func (h *Handler) KickMember(c *gin.Context) {
+	userID, ok := getUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
+	targetID, ok := getTargetID(c)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+		return
+	}
+	if err := h.Service.KickMember(c.Request.Context(), c.Param("clubID"), userID, targetID); err != nil {
+		handleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "member removed from club"})
+}
+
+func (h *Handler) TransferLeadership(c *gin.Context) {
+	userID, ok := getUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
+	targetID, ok := getTargetID(c)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+		return
+	}
+	if err := h.Service.TransferLeadership(c.Request.Context(), c.Param("clubID"), userID, targetID); err != nil {
+		handleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "leadership transferred"})
 }
