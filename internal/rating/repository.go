@@ -164,3 +164,22 @@ func (r *Repository) SaveRating(ctx context.Context, tx pgx.Tx, pr *PlayerRating
 	)
 	return err
 }
+
+func (r *Repository) GetRatingForMode(ctx context.Context, userID int64, mode string) (int, error) {
+	var rating int
+
+	err := r.DB.QueryRow(
+		ctx,
+		`SELECT COALESCE(pr.rating, u.rating)
+		FROM users u
+		LEFT JOIN player_ratings pr ON pr.user_id = u.id AND pr.mode = $2
+		WHERE u.id = $1`,
+		userID,
+		mode,
+	).Scan(&rating)
+	if err != nil {
+		return 0, err
+	}
+
+	return rating, nil
+}
