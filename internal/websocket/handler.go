@@ -433,6 +433,17 @@ func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Ga
 		}
 	}
 
+	if g.Status == game.StatusFinished && g.Rated && g.WhiteRatingBefore == nil && h.GameService != nil {
+		if fullGame, err := h.GameService.GetGame(ctx, g.ID); err == nil && fullGame != nil {
+			g.WhiteRatingBefore = fullGame.WhiteRatingBefore
+			g.WhiteRatingAfter = fullGame.WhiteRatingAfter
+			g.BlackRatingBefore = fullGame.BlackRatingBefore
+			g.BlackRatingAfter = fullGame.BlackRatingAfter
+			g.WhiteProvisional = fullGame.WhiteProvisional
+			g.BlackProvisional = fullGame.BlackProvisional
+		}
+	}
+
 	var lastMove string
 	if len(moves) > 0 {
 		lastMove = moves[len(moves)-1].Move
@@ -449,6 +460,7 @@ func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Ga
 		Status:          g.Status,
 		Result:          g.Result,
 		EndReason:       g.EndReason,
+		Rated:           g.Rated,
 		TimeControlMode: g.TimeControlMode,
 		DailyMoveTimeMs: g.DailyMoveTimeMs,
 		InitialTimeMs:   g.InitialTimeMs,
@@ -462,13 +474,41 @@ func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Ga
 		Moves:           moves,
 	}
 
-	data, err := json.Marshal(response)
-	if err != nil {
-		slog.ErrorContext(ctx, "marshal game state failed", "game_id", g.ID, "error", err)
-		return
-	}
+	room.Mutex.RLock()
+	defer room.Mutex.RUnlock()
 
-	room.Broadcast(data)
+	for _, client := range room.Clients {
+		msg := response
+		if g.Status == game.StatusFinished && g.Rated && g.WhiteRatingBefore != nil && g.WhiteRatingAfter != nil && g.BlackRatingBefore != nil && g.BlackRatingAfter != nil {
+			if client.UserID == g.WhitePlayerID {
+				msg.RatingUpdate = &game.RatingUpdate{
+					Mode:        g.TimeControlMode,
+					Before:      *g.WhiteRatingBefore,
+					After:       *g.WhiteRatingAfter,
+					Change:      *g.WhiteRatingAfter - *g.WhiteRatingBefore,
+					Provisional: g.WhiteProvisional != nil && *g.WhiteProvisional,
+				}
+			} else if client.UserID == g.BlackPlayerID {
+				msg.RatingUpdate = &game.RatingUpdate{
+					Mode:        g.TimeControlMode,
+					Before:      *g.BlackRatingBefore,
+					After:       *g.BlackRatingAfter,
+					Change:      *g.BlackRatingAfter - *g.BlackRatingBefore,
+					Provisional: g.BlackProvisional != nil && *g.BlackProvisional,
+				}
+			}
+		}
+
+		data, err := json.Marshal(msg)
+		if err != nil {
+			continue
+		}
+
+		select {
+		case client.Send <- data:
+		default:
+		}
+	}
 }
 
 func (h *Handler) broadcastChatMessage(ctx context.Context, room *Room, msg *chat.ChatMessage) {
@@ -605,6 +645,7 @@ func (h *Handler) sendClientGameState(
 		Status:          g.Status,
 		Result:          g.Result,
 		EndReason:       g.EndReason,
+		Rated:           g.Rated,
 		TimeControlMode: g.TimeControlMode,
 		DailyMoveTimeMs: g.DailyMoveTimeMs,
 		InitialTimeMs:   g.InitialTimeMs,
@@ -616,6 +657,26 @@ func (h *Handler) sendClientGameState(
 		DrawOfferedBy:   g.DrawOfferedBy,
 		LastMove:        lastMove,
 		Moves:           moves,
+	}
+
+	if g.Status == game.StatusFinished && g.Rated && g.WhiteRatingBefore != nil && g.WhiteRatingAfter != nil && g.BlackRatingBefore != nil && g.BlackRatingAfter != nil {
+		if client.UserID == g.WhitePlayerID {
+			response.RatingUpdate = &game.RatingUpdate{
+				Mode:        g.TimeControlMode,
+				Before:      *g.WhiteRatingBefore,
+				After:       *g.WhiteRatingAfter,
+				Change:      *g.WhiteRatingAfter - *g.WhiteRatingBefore,
+				Provisional: g.WhiteProvisional != nil && *g.WhiteProvisional,
+			}
+		} else if client.UserID == g.BlackPlayerID {
+			response.RatingUpdate = &game.RatingUpdate{
+				Mode:        g.TimeControlMode,
+				Before:      *g.BlackRatingBefore,
+				After:       *g.BlackRatingAfter,
+				Change:      *g.BlackRatingAfter - *g.BlackRatingBefore,
+				Provisional: g.BlackProvisional != nil && *g.BlackProvisional,
+			}
+		}
 	}
 
 	data, err := json.Marshal(response)

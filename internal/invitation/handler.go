@@ -14,6 +14,7 @@ type CreateInviteRequest struct {
 	IncrementSeconds   int    `json:"increment_seconds"`
 	Color              string `json:"color" binding:"required"`
 	OpponentID         int64  `json:"opponent_id"`
+	Rated              *bool  `json:"rated"`
 }
 
 type Handler struct {
@@ -53,6 +54,11 @@ func (h *Handler) Create(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
+	isRated := true
+	if req.Rated != nil {
+		isRated = *req.Rated
+	}
+
 	invite, err := h.Service.CreateInvite(
 		ctx,
 		userID,
@@ -60,6 +66,7 @@ func (h *Handler) Create(c *gin.Context) {
 		req.IncrementSeconds,
 		strings.ToLower(req.Color),
 		req.OpponentID,
+		isRated,
 	)
 
 	if errors.Is(err, ErrInternal) {
@@ -98,6 +105,7 @@ func (h *Handler) Create(c *gin.Context) {
 		"increment_seconds":    invite.IncrementSeconds,
 		"color":                invite.Color,
 		"status":               "waiting",
+		"rated":                invite.Rated,
 	})
 }
 

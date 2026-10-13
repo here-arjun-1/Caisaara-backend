@@ -55,6 +55,19 @@ func (s *Service) UpdateRatingsAfterGame(ctx context.Context, gameID string) err
 		return err
 	}
 
+	if err := s.Repository.SaveOverallRating(ctx, tx, whiteRating.UserID, whiteRating.Rating, whiteRating.RatingDeviation); err != nil {
+		return err
+	}
+	if err := s.Repository.SaveOverallRating(ctx, tx, blackRating.UserID, blackRating.Rating, blackRating.RatingDeviation); err != nil {
+		return err
+	}
+
+	whiteProv := glicko2.IsProvisional(whiteRating.RatingDeviation)
+	blackProv := glicko2.IsProvisional(blackRating.RatingDeviation)
+	if err := s.Repository.SaveGameRatings(ctx, tx, gameID, oldWhiteRating.Rating, whiteRating.Rating, whiteProv, oldBlackRating.Rating, blackRating.Rating, blackProv); err != nil {
+		return err
+	}
+
 	return tx.Commit(ctx)
 }
 
