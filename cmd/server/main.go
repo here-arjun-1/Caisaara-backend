@@ -107,8 +107,11 @@ func run() error {
 	tiltService := tilt.NewService(tiltRepository)
 	tiltHandler := tilt.NewHandler(tiltService)
 
+	ratingRepository := rating.NewRepository(conn)
+	ratingService := rating.NewService(ratingRepository)
+
 	queueRepo := matchmaking.NewRedisQueueRepository(redisClient)
-	matchmakingService := matchmaking.NewService(queueRepo, authModule.UserRepository, tiltService)
+	matchmakingService := matchmaking.NewService(queueRepo, ratingRepository, tiltService)
 	matchmakingHandler := matchmaking.NewHandler(matchmakingService)
 	matcher := matchmaking.NewMatcher(queueRepo, gameRepository)
 
@@ -136,9 +139,6 @@ func run() error {
 	friendsRepository := friends.NewRepository(conn)
 	friendsService := friends.NewService(friendsRepository)
 	friendsHandler := friends.NewHandler(friendsService)
-
-	ratingRepository := rating.NewRepository(conn)
-	ratingService := rating.NewService(ratingRepository)
 
 	gameService.SetGameCompletionListener(func(ctx context.Context, gameID string, result string) {
 		if err := ratingService.UpdateRatingsAfterGame(ctx, gameID); err != nil {

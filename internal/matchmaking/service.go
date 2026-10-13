@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
+	"github.com/here-arjun-1/Caisaara-backend/internal/game"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tilt"
 )
 
@@ -40,8 +40,8 @@ var AllowedTimeControls = []TimeControl{
 
 const queueTTL = 10 * time.Minute
 
-type UserFinder interface {
-	FindUserByID(ctx context.Context, id int64) (*model.User, error)
+type RatingFinder interface {
+	GetRatingForMode(ctx context.Context, userID int64, mode string) (int, error)
 }
 
 type TiltChecker interface {
@@ -55,16 +55,16 @@ type MatchmakingService interface {
 }
 
 type Service struct {
-	QueueRepo   QueueRepository
-	UserFinder  UserFinder
-	TiltChecker TiltChecker
+	QueueRepo    QueueRepository
+	RatingFinder RatingFinder
+	TiltChecker  TiltChecker
 }
 
-func NewService(queueRepo QueueRepository, userFinder UserFinder, tiltChecker TiltChecker) *Service {
+func NewService(queueRepo QueueRepository, ratingFinder RatingFinder, tiltChecker TiltChecker) *Service {
 	return &Service{
-		QueueRepo:   queueRepo,
-		UserFinder:  userFinder,
-		TiltChecker: tiltChecker,
+		QueueRepo:    queueRepo,
+		RatingFinder: ratingFinder,
+		TiltChecker:  tiltChecker,
 	}
 }
 
@@ -104,15 +104,17 @@ func (s *Service) Join(
 		}
 	}
 
-	user, err := s.UserFinder.FindUserByID(ctx, userID)
+	mode, _, _, _ := game.ResolveTimeControlMode(timeControlMinutes, incrementSeconds)
+
+	rating, err := s.RatingFinder.GetRatingForMode(ctx, userID, mode)
 	if err != nil {
-		slog.ErrorContext(ctx, "find user for matchmaking failed", "error", err, "user_id", userID)
+		slog.ErrorContext(ctx, "find rating for matchmaking failed", "error", err, "user_id", userID, "mode", mode)
 		return nil, ErrInternal
 	}
 
 	entry := &QueueEntry{
 		UserID:             userID,
-		Rating:             user.Rating,
+		Rating:             rating,
 		TimeControlMinutes: timeControlMinutes,
 		IncrementSeconds:   incrementSeconds,
 		Rated:              rated,
