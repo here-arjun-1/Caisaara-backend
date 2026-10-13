@@ -24,6 +24,10 @@ type ClubService interface {
 	GetLeaderboard(ctx context.Context, clubID string) ([]LeaderboardEntry, error)
 	SendMessage(ctx context.Context, clubID string, userID int64, text string) (*Message, error)
 	GetMessages(ctx context.Context, clubID string, userID int64) ([]Message, error)
+	PromoteToAdmin(ctx context.Context, clubID string, leaderID int64, targetID int64) error
+	RemoveAdmin(ctx context.Context, clubID string, leaderID int64, targetID int64) error
+	KickMember(ctx context.Context, clubID string, userID int64, targetID int64) error
+	TransferLeadership(ctx context.Context, clubID string, leaderID int64, targetID int64) error
 }
 
 type Service struct {
@@ -171,4 +175,92 @@ func (s *Service) checkMember(ctx context.Context, clubID string, userID int64) 
 
 	_, err := s.Repository.GetMemberRole(ctx, clubID, userID)
 	return err
+}
+
+func (s *Service) getRole(ctx context.Context, clubID string, userID int64) (string, error) {
+	_, err := s.Repository.FindClubByID(ctx, clubID)
+	if err != nil {
+		return "", err
+	}
+
+	return s.Repository.GetMemberRole(ctx, clubID, userID)
+}
+
+func (s *Service) PromoteToAdmin(ctx context.Context, clubID string, leaderID int64, targetID int64) error {
+	myRole, err := s.getRole(ctx, clubID, leaderID)
+	if err != nil {
+		return err
+	}
+	if myRole != RoleOwner {
+		return ErrNotAllowed
+	}
+
+	targetRole, err := s.Repository.GetMemberRole(ctx, clubID, targetID)
+	if err != nil {
+		return err
+	}
+
+	if targetRole != RoleMember {
+		return ErrNotAllowed
+	}
+
+	return s.Repository.UpdateMemberRole(ctx, clubID, targetID, RoleAdmin)
+}
+
+func (s *Service) RemoveAdmin(ctx context.Context, clubID string, leaderID int64, targetID int64) error {
+	myRole, err := s.getRole(ctx, clubID, leaderID)
+	if err != nil {
+		return err
+	}
+	if myRole != RoleOwner {
+		return ErrNotAllowed
+	}
+	targetRole, err := s.Repository.GetMemberRole(ctx, clubID, targetID)
+	if err != nil {
+		return err
+	}
+	if targetRole != RoleAdmin {
+		return ErrNotAllowed
+	}
+	return s.Repository.UpdateMemberRole(ctx, clubID, targetID, RoleMember)
+}
+
+func (s *Service) KickMember(ctx context.Context, clubID string, userID int64, targetID int64) error {
+	if userID == targetID {
+		return ErrNotAllowed
+	}
+	myRole, err := s.getRole(ctx, clubID, userID)
+	if err != nil {
+		return err
+	}
+	targetRole, err := s.Repository.GetMemberRole(ctx, clubID, targetID)
+	if err != nil {
+		return err
+	}
+	canKick := myRole == RoleOwner || (myRole == RoleAdmin && targetRole == RoleMember)
+	if !canKick {
+		return ErrNotAllowed
+	}
+	return s.Repository.RemoveMember(ctx, clubID, targetID)
+}
+
+func (s *Service) TransferLeadership(ctx context.Context, clubID string, leaderID int64, targetID int64) error {
+	if leaderID == targetID {
+		return ErrNotAllowed
+	}
+	myRole, err := s.getRole(ctx, clubID, leaderID)
+	if err != nil {
+		return err
+	}
+	if myRole != RoleOwner {
+		return ErrNotAllowed
+	}
+	targetRole, err := s.Repository.GetMemberRole(ctx, clubID, targetID)
+	if err != nil {
+		return err
+	}
+	if targetRole != RoleAdmin {
+		return ErrTargetNotAdmin
+	}
+	return s.Repository.TransferOwnership(ctx, clubID, leaderID, targetID)
 }
