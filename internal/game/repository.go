@@ -46,18 +46,22 @@ func ResolveTimeControlMode(timeControlMinutes int, incrementSeconds int) (mode 
 		initialTimeMs = 0
 	}
 
-	estTotalSeconds := (timeControlMinutes * 60) + (incrementSeconds * 40)
-
 	switch {
-	case estTotalSeconds < 180:
-		return ModeBullet, initialTimeMs, incrementMs, 0
-	case estTotalSeconds < 600:
-		return ModeBlitz, initialTimeMs, incrementMs, 0
-	case estTotalSeconds <= 10800:
-		return ModeRapid, initialTimeMs, incrementMs, 0
+	case timeControlMinutes >= 1 && timeControlMinutes <= 2:
+		mode = ModeBullet
+	case timeControlMinutes >= 3 && timeControlMinutes <= 9:
+		mode = ModeBlitz
+	case timeControlMinutes >= 10 && timeControlMinutes <= 60:
+		mode = ModeRapid
 	default:
-		return ModeCustom, initialTimeMs, incrementMs, 0
+		if timeControlMinutes < 1 {
+			mode = ModeBullet
+		} else {
+			mode = ModeRapid
+		}
 	}
+
+	return mode, initialTimeMs, incrementMs, 0
 }
 
 func (r *Repository) CreateGame(
@@ -187,7 +191,13 @@ func (r *Repository) FindGameByID(
 			g.turn_started_at,
 			g.created_at,
 			g.started_at,
-			g.ended_at
+			g.ended_at,
+			g.white_rating_before,
+			g.white_rating_after,
+			g.black_rating_before,
+			g.black_rating_after,
+			g.white_provisional,
+			g.black_provisional
 		FROM games g
 		LEFT JOIN users uw ON uw.id = g.white_player_id
 		LEFT JOIN users ub ON ub.id = g.black_player_id
@@ -216,6 +226,12 @@ func (r *Repository) FindGameByID(
 		&g.CreatedAt,
 		&g.StartedAt,
 		&g.EndedAt,
+		&g.WhiteRatingBefore,
+		&g.WhiteRatingAfter,
+		&g.BlackRatingBefore,
+		&g.BlackRatingAfter,
+		&g.WhiteProvisional,
+		&g.BlackProvisional,
 	)
 
 	if err != nil {
@@ -492,7 +508,13 @@ func (r *Repository) GetPlayerGames(
 			g.turn_started_at,
 			g.created_at,
 			g.started_at,
-			g.ended_at
+			g.ended_at,
+			g.white_rating_before,
+			g.white_rating_after,
+			g.black_rating_before,
+			g.black_rating_after,
+			g.white_provisional,
+			g.black_provisional
 		FROM games g
 		LEFT JOIN users uw ON uw.id = g.white_player_id
 		LEFT JOIN users ub ON ub.id = g.black_player_id
@@ -532,6 +554,12 @@ func (r *Repository) GetPlayerGames(
 			&g.CreatedAt,
 			&g.StartedAt,
 			&g.EndedAt,
+			&g.WhiteRatingBefore,
+			&g.WhiteRatingAfter,
+			&g.BlackRatingBefore,
+			&g.BlackRatingAfter,
+			&g.WhiteProvisional,
+			&g.BlackProvisional,
 		)
 		if err != nil {
 			slog.ErrorContext(ctx, "scan player game row failed", "player_id", playerID, "error", err)

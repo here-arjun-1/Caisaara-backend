@@ -183,3 +183,49 @@ func (r *Repository) GetRatingForMode(ctx context.Context, userID int64, mode st
 
 	return rating, nil
 }
+
+func (r *Repository) SaveOverallRating(ctx context.Context, tx pgx.Tx, userID int64, rating int, rd float64) error {
+	_, err := tx.Exec(
+		ctx,
+		`UPDATE users
+		SET rating = $2,
+		    rating_deviation = $3
+		WHERE id = $1`,
+		userID,
+		rating,
+		rd,
+	)
+	return err
+}
+
+func (r *Repository) SaveGameRatings(
+	ctx context.Context,
+	tx pgx.Tx,
+	gameID string,
+	whiteBefore int,
+	whiteAfter int,
+	whiteProv bool,
+	blackBefore int,
+	blackAfter int,
+	blackProv bool,
+) error {
+	_, err := tx.Exec(
+		ctx,
+		`UPDATE games
+		SET white_rating_before = $2,
+		    white_rating_after = $3,
+		    white_provisional = $4,
+		    black_rating_before = $5,
+		    black_rating_after = $6,
+		    black_provisional = $7
+		WHERE id = $1`,
+		gameID,
+		whiteBefore,
+		whiteAfter,
+		whiteProv,
+		blackBefore,
+		blackAfter,
+		blackProv,
+	)
+	return err
+}

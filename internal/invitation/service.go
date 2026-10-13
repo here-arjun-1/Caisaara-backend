@@ -21,7 +21,7 @@ type UserFinder interface {
 }
 
 type InvitationService interface {
-	CreateInvite(ctx context.Context, userID int64, timeControlMinutes int, incrementSeconds int, color string, opponentID int64) (*Invite, error)
+	CreateInvite(ctx context.Context, userID int64, timeControlMinutes int, incrementSeconds int, color string, opponentID int64, rated ...bool) (*Invite, error)
 	GetInvite(ctx context.Context, code string) (*Invite, error)
 	GetInviteByGameID(ctx context.Context, gameID string) (*Invite, error)
 	JoinInvite(ctx context.Context, code string, player2ID int64) (string, error)
@@ -64,6 +64,7 @@ func (s *Service) CreateInvite(
 	incrementSeconds int,
 	color string,
 	opponentID int64,
+	rated ...bool,
 ) (*Invite, error) {
 
 	if timeControlMinutes <= 0 && incrementSeconds <= 0 {
@@ -97,6 +98,11 @@ func (s *Service) CreateInvite(
 
 	gameID := uuid.New().String()
 
+	isRated := true
+	if len(rated) > 0 {
+		isRated = rated[0]
+	}
+
 	invite := &Invite{
 		Code:               code,
 		GameID:             gameID,
@@ -106,6 +112,7 @@ func (s *Service) CreateInvite(
 		IncrementSeconds:   incrementSeconds,
 		Color:              color,
 		Status:             "waiting",
+		Rated:              isRated,
 	}
 
 	err = s.InviteRepo.SaveInvite(ctx, invite, 10*time.Minute)
@@ -253,7 +260,7 @@ func (s *Service) JoinInvite(
 		blackPlayerID,
 		invite.TimeControlMinutes,
 		invite.IncrementSeconds,
-		false,
+		invite.Rated,
 	)
 
 	if err != nil {

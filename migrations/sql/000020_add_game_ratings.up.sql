@@ -1,0 +1,7 @@
+ALTER TABLE games
+ADD COLUMN IF NOT EXISTS white_rating_before INTEGER,
+ADD COLUMN IF NOT EXISTS white_rating_after INTEGER,
+ADD COLUMN IF NOT EXISTS white_provisional BOOLEAN DEFAULT false,
+ADD COLUMN IF NOT EXISTS black_rating_before INTEGER,
+ADD COLUMN IF NOT EXISTS black_rating_after INTEGER,
+ADD COLUMN IF NOT EXISTS black_provisional BOOLEAN DEFAULT false;

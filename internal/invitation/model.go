@@ -9,6 +9,7 @@ type Invite struct {
 	Color              string `json:"color"`
 	Status             string `json:"status,omitempty"`
 	OpponentID         int64  `json:"opponent_id,omitempty"`
+	Rated              bool   `json:"rated"`
 }
 
 type Challenge struct {

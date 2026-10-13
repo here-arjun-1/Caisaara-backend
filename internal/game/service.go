@@ -44,9 +44,17 @@ func (s *Service) SetGameCompletionListener(listener func(ctx context.Context, g
 	s.OnGameCompleted = listener
 }
 
-func (s *Service) notifyGameCompleted(ctx context.Context, gameID string, result string) {
+func (s *Service) notifyGameCompleted(ctx context.Context, g *Game) {
 	if s.OnGameCompleted != nil {
-		s.OnGameCompleted(ctx, gameID, result)
+		s.OnGameCompleted(ctx, g.ID, g.Result)
+	}
+	if updated, err := s.Repository.FindGameByID(ctx, g.ID); err == nil && updated != nil {
+		g.WhiteRatingBefore = updated.WhiteRatingBefore
+		g.WhiteRatingAfter = updated.WhiteRatingAfter
+		g.BlackRatingBefore = updated.BlackRatingBefore
+		g.BlackRatingAfter = updated.BlackRatingAfter
+		g.WhiteProvisional = updated.WhiteProvisional
+		g.BlackProvisional = updated.BlackProvisional
 	}
 }
 
@@ -152,7 +160,7 @@ func (s *Service) CheckGameTimeout(ctx context.Context, currentGame *Game) (bool
 	currentGame.BlackTimeMs = newBlackTimeMs
 	currentGame.TurnStartedAt = &now
 
-	s.notifyGameCompleted(ctx, currentGame.ID, currentGame.Result)
+	s.notifyGameCompleted(ctx, currentGame)
 	s.notifyGameStateUpdated(ctx, currentGame)
 
 	slog.InfoContext(ctx, "game ended by timeout", "game_id", currentGame.ID, "result", result, "end_reason", endReason)
@@ -364,7 +372,7 @@ func (s *Service) MakeMove(
 	currentGame.LastMove = move
 
 	if status == StatusFinished {
-		s.notifyGameCompleted(ctx, currentGame.ID, currentGame.Result)
+		s.notifyGameCompleted(ctx, currentGame)
 	}
 
 	slog.InfoContext(ctx, "move completed successfully", "game_id", gameID, "player_id", playerID, "move", move, "status", status)
@@ -427,7 +435,7 @@ func (s *Service) ResignGame(
 	currentGame.EndReason = endReason
 	currentGame.TurnStartedAt = &now
 
-	s.notifyGameCompleted(ctx, currentGame.ID, currentGame.Result)
+	s.notifyGameCompleted(ctx, currentGame)
 
 	return currentGame, nil
 }
@@ -481,7 +489,7 @@ func (s *Service) DrawGame(
 	currentGame.EndReason = endReason
 	currentGame.TurnStartedAt = &now
 
-	s.notifyGameCompleted(ctx, currentGame.ID, currentGame.Result)
+	s.notifyGameCompleted(ctx, currentGame)
 
 	return currentGame, nil
 }
@@ -713,7 +721,7 @@ func (s *Service) EndGameOnDisconnect(
 	currentGame.BlackTimeMs = newBlackTimeMs
 	currentGame.TurnStartedAt = &now
 
-	s.notifyGameCompleted(ctx, currentGame.ID, currentGame.Result)
+	s.notifyGameCompleted(ctx, currentGame)
 	s.notifyGameStateUpdated(ctx, currentGame)
 
 	return currentGame, nil

@@ -35,6 +35,12 @@ type Game struct {
 	CreatedAt          time.Time  `json:"created_at"`
 	StartedAt          *time.Time `json:"started_at,omitempty"`
 	EndedAt            *time.Time `json:"ended_at,omitempty"`
+	WhiteRatingBefore  *int       `json:"white_rating_before,omitempty"`
+	WhiteRatingAfter   *int       `json:"white_rating_after,omitempty"`
+	BlackRatingBefore  *int       `json:"black_rating_before,omitempty"`
+	BlackRatingAfter   *int       `json:"black_rating_after,omitempty"`
+	WhiteProvisional   *bool      `json:"white_provisional,omitempty"`
+	BlackProvisional   *bool      `json:"black_provisional,omitempty"`
 }
 
 const (
@@ -97,9 +103,19 @@ type GameStateMessage struct {
 	BlackTimeMs     int64      `json:"black_time_ms"`
 	CurrentTurn     string     `json:"current_turn"`
 	TurnStartedAt   *time.Time `json:"turn_started_at,omitempty"`
-	DrawOfferedBy   int64      `json:"draw_offered_by,omitempty"`
-	LastMove        string     `json:"last_move,omitempty"`
-	Moves           []GameMove `json:"moves,omitempty"`
+	DrawOfferedBy   int64         `json:"draw_offered_by,omitempty"`
+	LastMove        string        `json:"last_move,omitempty"`
+	Moves           []GameMove    `json:"moves,omitempty"`
+	Rated           bool          `json:"rated"`
+	RatingUpdate    *RatingUpdate `json:"rating_update,omitempty"`
+}
+
+type RatingUpdate struct {
+	Mode        string `json:"mode"`
+	Before      int    `json:"before"`
+	After       int    `json:"after"`
+	Change      int    `json:"change"`
+	Provisional bool   `json:"provisional"`
 }
 
 type ErrorMessage struct {

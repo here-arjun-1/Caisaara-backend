@@ -24,7 +24,6 @@ var ratedModes = []string{
 	game.ModeBullet,
 	game.ModeBlitz,
 	game.ModeRapid,
-	game.ModeDaily,
 }
 
 type ProfileRepository interface {
@@ -276,9 +275,13 @@ func toModeRatings(p *model.Profile) map[string]dto.ModeRatingResponse {
 
 	for _, mode := range ratedModes {
 		r := findModeRating(p, mode)
+		provisional := false
+		if r.GamesPlayed > 0 {
+			provisional = glicko2.IsProvisional(r.RatingDeviation)
+		}
 		ratings[mode] = dto.ModeRatingResponse{
 			Rating:      r.Rating,
-			Provisional: glicko2.IsProvisional(r.RatingDeviation),
+			Provisional: provisional,
 		}
 	}
 
@@ -292,14 +295,9 @@ func findModeRating(p *model.Profile, mode string) model.ModeRating {
 		}
 	}
 
-	rating := defaultRating
-	if p.Rating != nil {
-		rating = *p.Rating
-	}
-
 	return model.ModeRating{
 		Mode:            mode,
-		Rating:          rating,
+		Rating:          defaultRating,
 		RatingDeviation: glicko2.DefaultRD,
 	}
 }
