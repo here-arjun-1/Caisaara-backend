@@ -14,6 +14,8 @@ type Game struct {
 	ID                 string     `json:"id"`
 	WhitePlayerID      int64      `json:"white_player_id"`
 	BlackPlayerID      int64      `json:"black_player_id"`
+	WhiteUsername      string     `json:"white_username,omitempty"`
+	BlackUsername      string     `json:"black_username,omitempty"`
 	TimeControlMinutes int        `json:"time_control_minutes"`
 	Rated              bool       `json:"rated"`
 	TimeControlMode    string     `json:"time_control_mode"`
@@ -29,6 +31,7 @@ type Game struct {
 	CurrentTurn        string     `json:"current_turn"`
 	TurnStartedAt      *time.Time `json:"turn_started_at,omitempty"`
 	DrawOfferedBy      int64      `json:"draw_offered_by,omitempty"`
+	LastMove           string     `json:"last_move,omitempty"`
 	CreatedAt          time.Time  `json:"created_at"`
 	StartedAt          *time.Time `json:"started_at,omitempty"`
 	EndedAt            *time.Time `json:"ended_at,omitempty"`
@@ -80,6 +83,8 @@ type GameStateMessage struct {
 	GameID          string     `json:"game_id"`
 	WhitePlayerID   int64      `json:"white_player_id"`
 	BlackPlayerID   int64      `json:"black_player_id"`
+	WhiteUsername   string     `json:"white_username,omitempty"`
+	BlackUsername   string     `json:"black_username,omitempty"`
 	Position        string     `json:"position"`
 	Status          string     `json:"status"`
 	Result          string     `json:"result,omitempty"`
@@ -93,6 +98,7 @@ type GameStateMessage struct {
 	CurrentTurn     string     `json:"current_turn"`
 	TurnStartedAt   *time.Time `json:"turn_started_at,omitempty"`
 	DrawOfferedBy   int64      `json:"draw_offered_by,omitempty"`
+	LastMove        string     `json:"last_move,omitempty"`
 	Moves           []GameMove `json:"moves,omitempty"`
 }
 

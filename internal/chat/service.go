@@ -73,10 +73,19 @@ func (s *Service) SendMessage(
 		}
 	}
 
+	var username string
+	switch userID {
+	case g.WhitePlayerID:
+		username = g.WhiteUsername
+	case g.BlackPlayerID:
+		username = g.BlackUsername
+	}
+
 	msg := &ChatMessage{
 		ID:        uuid.NewString(),
 		GameID:    gameID,
 		UserID:    userID,
+		Username:  username,
 		Message:   trimmed,
 		CreatedAt: time.Now(),
 	}

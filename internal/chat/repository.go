@@ -64,14 +64,16 @@ func (r *Repository) GetMessagesByGameID(
 	rows, err := r.DB.Query(
 		ctx,
 		`SELECT
-			id,
-			game_id,
-			user_id,
-			message,
-			created_at
-		FROM game_chat_messages
-		WHERE game_id = $1
-		ORDER BY created_at ASC`,
+			m.id,
+			m.game_id,
+			m.user_id,
+			COALESCE(u.username, ''),
+			m.message,
+			m.created_at
+		FROM game_chat_messages m
+		LEFT JOIN users u ON u.id = m.user_id
+		WHERE m.game_id = $1
+		ORDER BY m.created_at ASC`,
 		gameID,
 	)
 
@@ -88,6 +90,7 @@ func (r *Repository) GetMessagesByGameID(
 			&msg.ID,
 			&msg.GameID,
 			&msg.UserID,
+			&msg.Username,
 			&msg.Message,
 			&msg.CreatedAt,
 		)
