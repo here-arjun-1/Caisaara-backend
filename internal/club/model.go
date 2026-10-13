@@ -4,6 +4,7 @@ import "time"
 
 const (
 	RoleOwner  = "owner"
+	RoleAdmin  = "admin"
 	RoleMember = "member"
 )
 
