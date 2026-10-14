@@ -479,13 +479,24 @@ func (r *Repository) StartTournament(ctx context.Context, tournamentID int64) er
 }
 
 func (r *Repository) GetSwissPlayers(ctx context.Context, tournamentID int64) ([]*SwissPlayer, error) {
+	var timeControlStr string
+	err := r.DB.QueryRow(ctx, `SELECT time_control FROM tournaments WHERE id = $1`, tournamentID).Scan(&timeControlStr)
+	if err != nil {
+		slog.ErrorContext(ctx, "get tournament time control failed", "tournament_id", tournamentID, "error", err)
+		return nil, err
+	}
+	tcMinutes, tcIncrement := parseTimeControl(timeControlStr)
+	mode, _, _, _ := game.ResolveTimeControlMode(tcMinutes, tcIncrement)
+
 	rows, err := r.DB.Query(
 		ctx,
-		`SELECT tp.user_id, COALESCE(u.rating, 1200) AS rating, tp.score, tp.wins, tp.draws, tp.losses, tp.games_played
+		`SELECT tp.user_id, COALESCE(pr.rating, u.rating, 1200) AS rating, tp.score, tp.wins, tp.draws, tp.losses, tp.games_played
 		FROM tournament_players tp
 		LEFT JOIN users u ON tp.user_id = u.id
+		LEFT JOIN player_ratings pr ON pr.user_id = tp.user_id AND pr.mode = $2
 		WHERE tp.tournament_id = $1`,
 		tournamentID,
+		mode,
 	)
 	if err != nil {
 		slog.ErrorContext(ctx, "get swiss players query failed", "tournament_id", tournamentID, "error", err)
