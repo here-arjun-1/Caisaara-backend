@@ -26,7 +26,7 @@ func NewGameAnalysisTask(gameID string) (*asynq.Task, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal analysis payload: %w", err)
 	}
-	return asynq.NewTask(TypeGameAnalysis, payload), nil
+	return asynq.NewTask(TypeGameAnalysis, payload, asynq.Queue("analysis")), nil
 }
 
 type AnalysisProcessor struct {
@@ -64,6 +64,9 @@ func StartAnalysisServer(
 		redisOpt,
 		asynq.Config{
 			Concurrency: concurrency,
+			Queues: map[string]int{
+				"analysis": 1,
+			},
 			RetryDelayFunc: func(n int, e error, t *asynq.Task) time.Duration {
 				return 1 * time.Minute
 			},
