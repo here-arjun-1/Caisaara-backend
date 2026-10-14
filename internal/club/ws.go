@@ -7,11 +7,19 @@ import (
 	"log/slog"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
+)
+
+const (
+	writeWait      = 10 * time.Second
+	pongWait       = 60 * time.Second
+	pingPeriod     = (pongWait * 9) / 10
+	maxMessageSize = 4096
 )
 
 var upgrader = websocket.Upgrader{
@@ -30,6 +38,15 @@ type client struct {
 	send            chan []byte
 	userID          int64
 	passwordVersion int
+	done            chan struct{}
+	once            sync.Once
+}
+
+func (c *client) close() {
+	c.once.Do(func() {
+		close(c.done)
+		_ = c.conn.Close()
+	})
 }
 
 type Hub struct {
@@ -72,16 +89,23 @@ func (h *Handler) Connect(c *gin.Context) {
 	if err != nil {
 		return
 	}
-	defer func() { _ = conn.Close() }()
-
-	conn.SetReadLimit(4096)
 
 	cl := &client{
 		conn:            conn,
 		send:            make(chan []byte, 64),
 		userID:          claims.UserID,
 		passwordVersion: claims.PasswordVersion,
+		done:            make(chan struct{}),
 	}
+	defer cl.close()
+
+	conn.SetReadLimit(maxMessageSize)
+	_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
+
 	h.Hub.join(clubID, cl)
 	defer h.Hub.leave(clubID, cl)
 
@@ -94,6 +118,7 @@ func (h *Handler) Connect(c *gin.Context) {
 		if err := conn.ReadJSON(&msg); err != nil {
 			return
 		}
+		_ = conn.SetReadDeadline(time.Now().Add(pongWait))
 
 		if h.UserRepo != nil && cl.userID > 0 {
 			currentVersion, err := h.UserRepo.GetPasswordVersion(ctx, cl.userID)
@@ -150,17 +175,44 @@ func (h *Hub) Broadcast(clubID string, payload any) {
 	defer h.mu.RUnlock()
 
 	for c := range h.rooms[clubID] {
-		select {
-		case c.send <- data:
-		default:
-		}
+		func(cl *client) {
+			defer func() {
+				_ = recover()
+			}()
+			select {
+			case <-cl.done:
+			case cl.send <- data:
+			default:
+			}
+		}(c)
 	}
 }
 
 func (c *client) writePump() {
-	for data := range c.send {
-		if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		c.close()
+	}()
+
+	for {
+		select {
+		case <-c.done:
 			return
+		case data, ok := <-c.send:
+			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if !ok {
+				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+			if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
+				return
+			}
+		case <-ticker.C:
+			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
 	}
 }
@@ -171,7 +223,12 @@ func (c *client) sendJSON(payload any) {
 		return
 	}
 
+	defer func() {
+		_ = recover()
+	}()
+
 	select {
+	case <-c.done:
 	case c.send <- data:
 	default:
 	}

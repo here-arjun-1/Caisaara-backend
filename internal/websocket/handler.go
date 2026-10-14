@@ -85,6 +85,13 @@ func (h *Handler) validateActiveClient(ctx context.Context, client *Client) bool
 	return client.PasswordVersion == currentVersion
 }
 
+const (
+	writeWait      = 10 * time.Second
+	pongWait       = 60 * time.Second
+	pingPeriod     = (pongWait * 9) / 10
+	maxMessageSize = 4096
+)
+
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true
@@ -150,6 +157,7 @@ func (h *Handler) Connect(c *gin.Context) {
 						PasswordVersion: claims.PasswordVersion,
 						IsGuest:         claims.IsGuest,
 						Send:            make(chan []byte, 256),
+						done:            make(chan struct{}),
 					}
 
 					room := h.Hub.GetOrCreateRoom(gameID)
@@ -204,6 +212,7 @@ func (h *Handler) Connect(c *gin.Context) {
 		PasswordVersion: claims.PasswordVersion,
 		IsGuest:         claims.IsGuest,
 		Send:            make(chan []byte, 256),
+		done:            make(chan struct{}),
 	}
 
 	timerKey := gameID + ":" + strconv.FormatInt(claims.UserID, 10)
@@ -231,21 +240,41 @@ func (h *Handler) Connect(c *gin.Context) {
 }
 
 func (h *Handler) writePump(ctx context.Context, client *Client) {
-	defer client.Close()
+	ticker := time.NewTicker(pingPeriod)
+	defer func() {
+		ticker.Stop()
+		client.Close()
+	}()
 
-	for message := range client.Send {
-		if err := client.Conn.WriteMessage(
-			websocket.TextMessage,
-			message,
-		); err != nil {
-			slog.ErrorContext(
-				ctx,
-				"websocket write failed",
-				"user_id", client.UserID,
-				"game_id", client.GameID,
-				"error", err,
-			)
+	for {
+		select {
+		case <-client.done:
 			return
+		case message, ok := <-client.Send:
+			_ = client.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if !ok {
+				_ = client.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+
+			if err := client.Conn.WriteMessage(
+				websocket.TextMessage,
+				message,
+			); err != nil {
+				slog.ErrorContext(
+					ctx,
+					"websocket write failed",
+					"user_id", client.UserID,
+					"game_id", client.GameID,
+					"error", err,
+				)
+				return
+			}
+		case <-ticker.C:
+			_ = client.Conn.SetWriteDeadline(time.Now().Add(writeWait))
+			if err := client.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
 		}
 	}
 }
@@ -266,6 +295,13 @@ func (h *Handler) readPump(
 		}
 	}()
 
+	client.Conn.SetReadLimit(maxMessageSize)
+	_ = client.Conn.SetReadDeadline(time.Now().Add(pongWait))
+	client.Conn.SetPongHandler(func(string) error {
+		_ = client.Conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
+
 	for {
 		_, message, err := client.Conn.ReadMessage()
 		if err != nil {
@@ -274,6 +310,7 @@ func (h *Handler) readPump(
 			}
 			return
 		}
+		_ = client.Conn.SetReadDeadline(time.Now().Add(pongWait))
 
 		if !h.validateActiveClient(ctx, client) {
 			slog.WarnContext(ctx, "active websocket password version revoked", "user_id", client.UserID, "game_id", client.GameID)
@@ -870,24 +907,33 @@ func (h *Handler) ConnectTournament(c *gin.Context) {
 		PasswordVersion: claims.PasswordVersion,
 		IsGuest:         claims.IsGuest,
 		Send:            make(chan []byte, 256),
+		done:            make(chan struct{}),
 	}
 
 	room.AddClient(client)
 
 	go func() {
 		defer func() {
-			room.RemoveClient(client.UserID)
+			room.RemoveClient(client.UserID, client)
 			if room.Count() == 0 {
 				h.Hub.RemoveRoom(roomKey)
 			}
 			client.Close()
 		}()
 
+		conn.SetReadLimit(maxMessageSize)
+		_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+		conn.SetPongHandler(func(string) error {
+			_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+			return nil
+		})
+
 		for {
 			_, _, err := conn.ReadMessage()
 			if err != nil {
 				break
 			}
+			_ = conn.SetReadDeadline(time.Now().Add(pongWait))
 			if !h.validateActiveClient(ctx, client) {
 				break
 			}
@@ -895,9 +941,30 @@ func (h *Handler) ConnectTournament(c *gin.Context) {
 	}()
 
 	go func() {
-		for msg := range client.Send {
-			if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-				break
+		ticker := time.NewTicker(pingPeriod)
+		defer func() {
+			ticker.Stop()
+			client.Close()
+		}()
+
+		for {
+			select {
+			case <-client.done:
+				return
+			case msg, ok := <-client.Send:
+				_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
+				if !ok {
+					_ = conn.WriteMessage(websocket.CloseMessage, []byte{})
+					return
+				}
+				if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+					return
+				}
+			case <-ticker.C:
+				_ = conn.SetWriteDeadline(time.Now().Add(writeWait))
+				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+					return
+				}
 			}
 		}
 	}()
