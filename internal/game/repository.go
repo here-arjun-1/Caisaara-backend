@@ -2,11 +2,13 @@ package game
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strconv"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -17,10 +19,12 @@ type GameRepository interface {
 	GetActiveGames(ctx context.Context) ([]Game, error)
 	UpdateGameState(ctx context.Context, gameID string, position string, status string, result string, endReason string, currentTurn string, whiteTimeMs int64, blackTimeMs int64, turnStartedAt *time.Time) error
 	AddMove(ctx context.Context, move *GameMove) error
+	SaveMoveTx(ctx context.Context, gameID string, position string, status string, result string, endReason string, currentTurn string, whiteTimeMs int64, blackTimeMs int64, turnStartedAt *time.Time, move *GameMove) error
 	GetMoves(ctx context.Context, gameID string) ([]GameMove, error)
 	GetPlayerGames(ctx context.Context, playerID int64) ([]Game, error)
 	EnforceRetention(ctx context.Context, playerID int64) error
 	DeleteGameWithMoves(ctx context.Context, gameID string) error
+	Begin(ctx context.Context) (pgx.Tx, error)
 }
 
 type Repository struct {
@@ -395,6 +399,113 @@ func (r *Repository) AddMove(
 
 	if err != nil {
 		slog.ErrorContext(ctx, "add move failed", "game_id", move.GameID, "move_number", move.MoveNumber, "error", err)
+		return err
+	}
+
+	return nil
+}
+
+func (r *Repository) Begin(ctx context.Context) (pgx.Tx, error) {
+	return r.DB.Begin(ctx)
+}
+
+func (r *Repository) SaveMoveTx(
+	ctx context.Context,
+	gameID string,
+	position string,
+	status string,
+	result string,
+	endReason string,
+	currentTurn string,
+	whiteTimeMs int64,
+	blackTimeMs int64,
+	turnStartedAt *time.Time,
+	move *GameMove,
+) error {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "begin transaction failed for save move", "game_id", gameID, "error", err)
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(
+		ctx,
+		`UPDATE games
+		SET position = $1,
+			status = $2::text,
+			result = NULLIF($3, ''),
+			end_reason = NULLIF($4, ''),
+			current_turn = $5,
+			white_time_ms = $6,
+			black_time_ms = $7,
+			turn_started_at = $8,
+			ended_at = CASE
+				WHEN $2::text = 'finished' THEN NOW()
+				ELSE ended_at
+			END
+		WHERE id = $9`,
+		position,
+		status,
+		result,
+		endReason,
+		currentTurn,
+		whiteTimeMs,
+		blackTimeMs,
+		turnStartedAt,
+		gameID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "update game state in transaction failed", "game_id", gameID, "error", err)
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return errors.New("game not found")
+	}
+
+	if move != nil {
+		if move.MoveNumber <= 0 {
+			var moveNum int
+			err = tx.QueryRow(
+				ctx,
+				`SELECT COALESCE(MAX(move_number), 0) + 1 FROM game_moves WHERE game_id = $1`,
+				gameID,
+			).Scan(&moveNum)
+			if err != nil {
+				slog.ErrorContext(ctx, "query move number in transaction failed", "game_id", gameID, "error", err)
+				return err
+			}
+			move.MoveNumber = moveNum
+		}
+
+		_, err = tx.Exec(
+			ctx,
+			`INSERT INTO game_moves (
+				id,
+				game_id,
+				move_number,
+				player_id,
+				move,
+				position_after,
+				created_at
+			)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			move.ID,
+			move.GameID,
+			move.MoveNumber,
+			move.PlayerID,
+			move.Move,
+			move.PositionAfter,
+			move.CreatedAt,
+		)
+		if err != nil {
+			slog.ErrorContext(ctx, "add move in transaction failed", "game_id", move.GameID, "move_number", move.MoveNumber, "error", err)
+			return err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "commit transaction failed for save move", "game_id", gameID, "error", err)
 		return err
 	}
 
