@@ -20,4 +20,5 @@ type Challenge struct {
 	ChallengerColor    string `json:"challenger_color"`
 	TimeControlMinutes int    `json:"time_control_minutes"`
 	IncrementSeconds   int    `json:"increment_seconds"`
+	Rated              bool   `json:"rated"`
 }

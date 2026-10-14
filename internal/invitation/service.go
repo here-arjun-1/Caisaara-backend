@@ -324,6 +324,7 @@ func (s *Service) GetMyChallenges(ctx context.Context, userID int64) ([]Challeng
 			ChallengerColor:    invite.Color,
 			TimeControlMinutes: invite.TimeControlMinutes,
 			IncrementSeconds:   invite.IncrementSeconds,
+			Rated:              invite.Rated,
 		})
 	}
 
