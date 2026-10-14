@@ -26,8 +26,10 @@ type wsMessage struct {
 }
 
 type client struct {
-	conn *websocket.Conn
-	send chan []byte
+	conn            *websocket.Conn
+	send            chan []byte
+	userID          int64
+	passwordVersion int
 }
 
 type Hub struct {
@@ -45,10 +47,19 @@ func (h *Handler) Connect(c *gin.Context) {
 	ctx := c.Request.Context()
 	clubID := c.Param("clubID")
 
-	userID, ok := userIDFromToken(c.Query("token"))
+	claims, ok := claimsFromToken(c.Query("token"))
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or missing token"})
 		return
+	}
+	userID := claims.UserID
+
+	if h.UserRepo != nil && !claims.IsGuest && claims.UserID > 0 {
+		currentVersion, err := h.UserRepo.GetPasswordVersion(ctx, claims.UserID)
+		if err != nil || claims.PasswordVersion != currentVersion {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or revoked token"})
+			return
+		}
 	}
 
 	history, err := h.Service.GetMessages(ctx, clubID, userID)
@@ -66,8 +77,10 @@ func (h *Handler) Connect(c *gin.Context) {
 	conn.SetReadLimit(4096)
 
 	cl := &client{
-		conn: conn,
-		send: make(chan []byte, 64),
+		conn:            conn,
+		send:            make(chan []byte, 64),
+		userID:          claims.UserID,
+		passwordVersion: claims.PasswordVersion,
 	}
 	h.Hub.join(clubID, cl)
 	defer h.Hub.leave(clubID, cl)
@@ -80,6 +93,14 @@ func (h *Handler) Connect(c *gin.Context) {
 		var msg wsMessage
 		if err := conn.ReadJSON(&msg); err != nil {
 			return
+		}
+
+		if h.UserRepo != nil && cl.userID > 0 {
+			currentVersion, err := h.UserRepo.GetPasswordVersion(ctx, cl.userID)
+			if err != nil || cl.passwordVersion != currentVersion {
+				cl.sendJSON(gin.H{"type": "error", "message": "invalid or revoked token"})
+				return
+			}
 		}
 
 		if msg.Type != "message" {
@@ -156,17 +177,17 @@ func (c *client) sendJSON(payload any) {
 	}
 }
 
-func userIDFromToken(tokenString string) (int64, bool) {
+func claimsFromToken(tokenString string) (*token.AccessTokenClaims, bool) {
 	if tokenString == "" {
-		return 0, false
+		return nil, false
 	}
 
 	claims, err := token.ValidateToken(tokenString)
 	if err != nil || claims.IsGuest || claims.UserID == 0 {
-		return 0, false
+		return nil, false
 	}
 
-	return claims.UserID, true
+	return claims, true
 }
 
 func wsErrorMessage(ctx context.Context, err error) string {

@@ -126,6 +126,10 @@ func run() error {
 	wsHub := websocket.NewHub()
 	wsHandler := websocket.NewHandler(wsHub, gameService, chatService)
 	wsHandler.SetInviteFinder(invitationService)
+	wsHandler.SetUserRepo(authModule.UserRepository)
+	authModule.SetDisconnector(wsHub)
+	clubHandler.SetUserRepo(authModule.UserRepository)
+	botHandler.SetUserRepo(authModule.UserRepository)
 	chatHandler := chat.NewHandler(chatService, wsHandler.BroadcastChatMessage)
 
 	tournamentRepo := tournament.NewRepository(conn)
@@ -180,6 +184,7 @@ func run() error {
 	matcher.Start()
 	tournament.StartTournamentCleanup(context.Background(), tournamentRepo, 24*time.Hour)
 	gameService.StartTimeoutChecker(context.Background(), 1*time.Second)
+	wsHandler.StartActiveAuthChecker(context.Background(), 5*time.Second)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,

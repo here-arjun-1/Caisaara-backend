@@ -27,12 +27,23 @@ func (h *Handler) Connect(c *gin.Context) {
 	ctx := c.Request.Context()
 	gameID := c.Param("gameID")
 
-	userID, ok := userIDFromToken(c.Query("token"))
+	claims, ok := claimsFromToken(c.Query("token"))
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "invalid or missing token",
 		})
 		return
+	}
+	userID := claims.UserID
+
+	if h.UserRepo != nil && !claims.IsGuest && claims.UserID > 0 {
+		currentVersion, err := h.UserRepo.GetPasswordVersion(ctx, claims.UserID)
+		if err != nil || claims.PasswordVersion != currentVersion {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "invalid or revoked token",
+			})
+			return
+		}
 	}
 
 	game, err := h.Service.GetGame(ctx, gameID, userID)
@@ -65,6 +76,14 @@ func (h *Handler) Connect(c *gin.Context) {
 		var msg wsMessage
 		if err := conn.ReadJSON(&msg); err != nil {
 			return
+		}
+
+		if h.UserRepo != nil && userID > 0 {
+			currentVersion, err := h.UserRepo.GetPasswordVersion(ctx, userID)
+			if err != nil || claims.PasswordVersion != currentVersion {
+				sendError(conn, "invalid or revoked token")
+				return
+			}
 		}
 
 		switch msg.Type {
@@ -104,17 +123,17 @@ func (h *Handler) playBotTurn(ctx context.Context, conn *websocket.Conn, game *G
 	sendGame(conn, updatedGame)
 }
 
-func userIDFromToken(tokenString string) (int64, bool) {
+func claimsFromToken(tokenString string) (*token.AccessTokenClaims, bool) {
 	if tokenString == "" {
-		return 0, false
+		return nil, false
 	}
 
 	claims, err := token.ValidateToken(tokenString)
 	if err != nil || claims.IsGuest || claims.UserID == 0 {
-		return 0, false
+		return nil, false
 	}
 
-	return claims.UserID, true
+	return claims, true
 }
 
 func isBotTurn(game *Game) bool {

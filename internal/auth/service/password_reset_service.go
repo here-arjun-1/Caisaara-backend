@@ -29,12 +29,17 @@ type OTPData struct {
 	ExpiresAt time.Time
 }
 
+type SessionDisconnector interface {
+	DisconnectUser(userID int64)
+}
+
 type PasswordResetService struct {
 	UserRepository          UserRepository
 	PasswordResetRepository PasswordResetRepository
 	SessionRepository       SessionRepository
 	RedisClient             *redis.Client
 	TaskDistributor         *asynq.Client
+	Disconnector            SessionDisconnector
 }
 
 func NewPasswordResetService(
@@ -51,6 +56,10 @@ func NewPasswordResetService(
 		RedisClient:             redisClient,
 		TaskDistributor:         taskDistributor,
 	}
+}
+
+func (s *PasswordResetService) SetDisconnector(disconnector SessionDisconnector) {
+	s.Disconnector = disconnector
 }
 
 func (s *PasswordResetService) ForgotPassword(ctx context.Context, req dto.ForgotPasswordRequest) error {
@@ -204,6 +213,12 @@ func (s *PasswordResetService) ResetPassword(ctx context.Context, req dto.ResetP
 	if err != nil {
 		slog.Error("reset password failed", "error", err)
 		return ErrInternal
+	}
+
+	if s.Disconnector != nil {
+		if user, userErr := s.UserRepository.FindUserByEmail(ctx, email); userErr == nil && user != nil {
+			s.Disconnector.DisconnectUser(user.ID)
+		}
 	}
 
 	return nil

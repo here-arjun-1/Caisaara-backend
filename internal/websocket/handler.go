@@ -22,6 +22,10 @@ type InviteFinder interface {
 	GetInviteByGameID(ctx context.Context, gameID string) (*invitation.Invite, error)
 }
 
+type PasswordVersionGetter interface {
+	GetPasswordVersion(ctx context.Context, userID int64) (int, error)
+}
+
 type disconnectTimerEntry struct {
 	timer          *time.Timer
 	disconnectedAt time.Time
@@ -32,6 +36,7 @@ type Handler struct {
 	GameService      game.GameService
 	ChatService      chat.ChatService
 	InviteFinder     InviteFinder
+	UserRepo         PasswordVersionGetter
 	disconnectTimers sync.Map
 }
 
@@ -48,6 +53,36 @@ func NewHandler(hub *Hub, gameService game.GameService, chatService ...chat.Chat
 
 func (h *Handler) SetInviteFinder(finder InviteFinder) {
 	h.InviteFinder = finder
+}
+
+func (h *Handler) SetUserRepo(repo PasswordVersionGetter) {
+	h.UserRepo = repo
+}
+
+func (h *Handler) SetPasswordVersionGetter(getter PasswordVersionGetter) {
+	h.UserRepo = getter
+}
+
+func (h *Handler) validatePasswordVersion(ctx context.Context, claims *token.AccessTokenClaims) bool {
+	if h.UserRepo == nil || claims == nil || claims.IsGuest || claims.UserID <= 0 {
+		return true
+	}
+	currentVersion, err := h.UserRepo.GetPasswordVersion(ctx, claims.UserID)
+	if err != nil {
+		return false
+	}
+	return claims.PasswordVersion == currentVersion
+}
+
+func (h *Handler) validateActiveClient(ctx context.Context, client *Client) bool {
+	if h.UserRepo == nil || client == nil || client.IsGuest || client.UserID <= 0 {
+		return true
+	}
+	currentVersion, err := h.UserRepo.GetPasswordVersion(ctx, client.UserID)
+	if err != nil {
+		return false
+	}
+	return client.PasswordVersion == currentVersion
 }
 
 var upgrader = websocket.Upgrader{
@@ -83,6 +118,20 @@ func (h *Handler) Connect(c *gin.Context) {
 		return
 	}
 
+	if !h.validatePasswordVersion(ctx, claims) {
+		slog.WarnContext(
+			ctx,
+			"websocket password version mismatch",
+			"game_id", gameID,
+			"user_id", claims.UserID,
+		)
+
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "invalid or revoked token",
+		})
+		return
+	}
+
 	currentGame, err := h.GameService.GetGame(ctx, gameID)
 	if err != nil {
 		if h.InviteFinder != nil {
@@ -95,10 +144,12 @@ func (h *Handler) Connect(c *gin.Context) {
 					}
 
 					client := &Client{
-						Conn:   conn,
-						UserID: claims.UserID,
-						GameID: gameID,
-						Send:   make(chan []byte, 256),
+						Conn:            conn,
+						UserID:          claims.UserID,
+						GameID:          gameID,
+						PasswordVersion: claims.PasswordVersion,
+						IsGuest:         claims.IsGuest,
+						Send:            make(chan []byte, 256),
 					}
 
 					room := h.Hub.GetOrCreateRoom(gameID)
@@ -113,10 +164,7 @@ func (h *Handler) Connect(c *gin.Context) {
 						"game_id": gameID,
 					}
 					if data, mErr := json.Marshal(waitingMsg); mErr == nil {
-						select {
-						case client.Send <- data:
-						default:
-						}
+						client.SafeSend(data)
 					}
 					return
 				}
@@ -150,10 +198,12 @@ func (h *Handler) Connect(c *gin.Context) {
 	}
 
 	client := &Client{
-		Conn:   conn,
-		UserID: claims.UserID,
-		GameID: gameID,
-		Send:   make(chan []byte, 256),
+		Conn:            conn,
+		UserID:          claims.UserID,
+		GameID:          gameID,
+		PasswordVersion: claims.PasswordVersion,
+		IsGuest:         claims.IsGuest,
+		Send:            make(chan []byte, 256),
 	}
 
 	timerKey := gameID + ":" + strconv.FormatInt(claims.UserID, 10)
@@ -222,6 +272,13 @@ func (h *Handler) readPump(
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
 				slog.WarnContext(ctx, "websocket read error", "user_id", client.UserID, "game_id", client.GameID, "error", err)
 			}
+			return
+		}
+
+		if !h.validateActiveClient(ctx, client) {
+			slog.WarnContext(ctx, "active websocket password version revoked", "user_id", client.UserID, "game_id", client.GameID)
+			sendError(ctx, client, "invalid or revoked token")
+			time.Sleep(10 * time.Millisecond)
 			return
 		}
 
@@ -687,9 +744,8 @@ func (h *Handler) sendClientGameState(
 		return
 	}
 
-	select {
-	case client.Send <- data:
-	default:
+	if client != nil {
+		client.SafeSend(data)
 	}
 }
 
@@ -772,9 +828,7 @@ func sendError(ctx context.Context, client *Client, message string) {
 		return
 	}
 
-	select {
-	case client.Send <- data:
-	default:
+	if client != nil && !client.SafeSend(data) {
 		slog.WarnContext(ctx, "client send buffer full, dropped error message", "user_id", client.UserID)
 	}
 }
@@ -795,6 +849,11 @@ func (h *Handler) ConnectTournament(c *gin.Context) {
 		return
 	}
 
+	if !h.validatePasswordVersion(ctx, claims) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or revoked token"})
+		return
+	}
+
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		slog.ErrorContext(ctx, "tournament websocket upgrade failed", "tournament_id", tournamentID, "error", err)
@@ -805,10 +864,12 @@ func (h *Handler) ConnectTournament(c *gin.Context) {
 	room := h.Hub.GetOrCreateRoom(roomKey)
 
 	client := &Client{
-		Conn:   conn,
-		UserID: claims.UserID,
-		GameID: roomKey,
-		Send:   make(chan []byte, 256),
+		Conn:            conn,
+		UserID:          claims.UserID,
+		GameID:          roomKey,
+		PasswordVersion: claims.PasswordVersion,
+		IsGuest:         claims.IsGuest,
+		Send:            make(chan []byte, 256),
 	}
 
 	room.AddClient(client)
@@ -825,6 +886,9 @@ func (h *Handler) ConnectTournament(c *gin.Context) {
 		for {
 			_, _, err := conn.ReadMessage()
 			if err != nil {
+				break
+			}
+			if !h.validateActiveClient(ctx, client) {
 				break
 			}
 		}
@@ -921,4 +985,48 @@ func (h *Handler) handleDisconnectTimeout(gameID string, userID int64) {
 	if room != nil {
 		h.broadcastGameState(ctx, room, g)
 	}
+}
+
+func (h *Handler) CheckActiveClients(ctx context.Context) {
+	if h.UserRepo == nil || h.Hub == nil {
+		return
+	}
+
+	h.Hub.Mutex.RLock()
+	var clients []*Client
+	for _, room := range h.Hub.Rooms {
+		room.Mutex.RLock()
+		for _, client := range room.Clients {
+			if client != nil && client.UserID > 0 && !client.IsGuest {
+				clients = append(clients, client)
+			}
+		}
+		room.Mutex.RUnlock()
+	}
+	h.Hub.Mutex.RUnlock()
+
+	for _, client := range clients {
+		if !h.validateActiveClient(ctx, client) {
+			sendError(ctx, client, "invalid or revoked token")
+			go func(c *Client) {
+				time.Sleep(20 * time.Millisecond)
+				c.Close()
+			}(client)
+		}
+	}
+}
+
+func (h *Handler) StartActiveAuthChecker(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				h.CheckActiveClients(ctx)
+			}
+		}
+	}()
 }

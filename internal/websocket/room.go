@@ -87,15 +87,12 @@ func (r *Room) IsGameStarted() bool {
 }
 
 func (r *Room) Broadcast(message []byte) {
-
 	r.Mutex.RLock()
 	defer r.Mutex.RUnlock()
 
 	for _, client := range r.Clients {
-
-		select {
-		case client.Send <- message:
-		default:
+		if client != nil {
+			client.SafeSend(message)
 		}
 	}
 }
