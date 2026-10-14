@@ -10,16 +10,21 @@ type SessionCleaner interface {
 	CleanExpiredSessions(ctx context.Context) (int64, error)
 }
 
-func StartSessionCleanup(sessions SessionCleaner) {
+func StartSessionCleanup(ctx context.Context, sessions SessionCleaner, interval time.Duration) {
 	go func() {
-		ticker := time.NewTicker(10 * time.Second)
+		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
-		for range ticker.C {
-			deleted, err := sessions.CleanExpiredSessions(context.Background())
-			if err != nil {
-				slog.Error("failed to clean expired sessions", "error", err)
-			} else if deleted > 0 {
-				slog.Info("cleaned up expired sessions", "count", deleted)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				deleted, err := sessions.CleanExpiredSessions(ctx)
+				if err != nil {
+					slog.Error("failed to clean expired sessions", "error", err)
+				} else if deleted > 0 {
+					slog.Info("cleaned up expired sessions", "count", deleted)
+				}
 			}
 		}
 	}()

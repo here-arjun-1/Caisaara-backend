@@ -178,9 +178,12 @@ func run() error {
 		return fmt.Errorf("setup router: %w", err)
 	}
 
+	cleanupCtx, stopCleanup := context.WithCancel(context.Background())
+	defer stopCleanup()
+
 	asynqServer := worker.StartEmailServer(asynqRedisOpt, email.NewSender(cfg.SMTP))
 	analysisServer := analysis.StartAnalysisServer(asynqRedisOpt, analysisProcessor, 2)
-	worker.StartSessionCleanup(authModule.SessionRepository)
+	worker.StartSessionCleanup(cleanupCtx, authModule.SessionRepository, 1*time.Hour)
 	matcher.Start()
 	tournament.StartTournamentCleanup(context.Background(), tournamentRepo, 24*time.Hour)
 	gameService.StartTimeoutChecker(context.Background(), 1*time.Second)
@@ -218,6 +221,8 @@ func run() error {
 	<-quit
 
 	slog.Info("shutting down server...")
+
+	stopCleanup()
 
 	if asynqServer != nil {
 		asynqServer.Stop()
