@@ -1,6 +1,7 @@
 package invitation
 
 import (
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -14,7 +15,62 @@ type CreateInviteRequest struct {
 	IncrementSeconds   int    `json:"increment_seconds"`
 	Color              string `json:"color" binding:"required"`
 	OpponentID         int64  `json:"opponent_id"`
-	Rated              *bool  `json:"rated"`
+	Rated              *bool  `json:"-"`
+}
+
+func (r *CreateInviteRequest) UnmarshalJSON(data []byte) error {
+	type Alias CreateInviteRequest
+	aux := struct {
+		*Alias
+		RawRated      interface{} `json:"rated"`
+		RawGameType   interface{} `json:"game_type"`
+		RawType       interface{} `json:"type"`
+		RawMode       interface{} `json:"mode"`
+		RawRatingType interface{} `json:"rating_type"`
+	}{
+		Alias: (*Alias)(r),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	parseRated := func(val interface{}) *bool {
+		if val == nil {
+			return nil
+		}
+		switch v := val.(type) {
+		case bool:
+			return &v
+		case string:
+			s := strings.ToLower(strings.TrimSpace(v))
+			if s == "rated" || s == "true" || s == "1" {
+				b := true
+				return &b
+			}
+			if s == "unrated" || s == "casual" || s == "false" || s == "0" {
+				b := false
+				return &b
+			}
+		case float64:
+			b := v != 0
+			return &b
+		}
+		return nil
+	}
+
+	if b := parseRated(aux.RawRated); b != nil {
+		r.Rated = b
+	} else if b := parseRated(aux.RawGameType); b != nil {
+		r.Rated = b
+	} else if b := parseRated(aux.RawType); b != nil {
+		r.Rated = b
+	} else if b := parseRated(aux.RawMode); b != nil {
+		r.Rated = b
+	} else if b := parseRated(aux.RawRatingType); b != nil {
+		r.Rated = b
+	}
+
+	return nil
 }
 
 type Handler struct {
@@ -146,6 +202,7 @@ func (h *Handler) Play(c *gin.Context) {
 		"increment_seconds":    invite.IncrementSeconds,
 		"color":                invite.Color,
 		"status":               status,
+		"rated":                invite.Rated,
 	})
 }
 
@@ -186,6 +243,7 @@ func (h *Handler) Preview(c *gin.Context) {
 		"increment_seconds":    invite.IncrementSeconds,
 		"color":                invite.Color,
 		"status":               status,
+		"rated":                invite.Rated,
 	})
 }
 

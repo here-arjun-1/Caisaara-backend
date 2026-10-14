@@ -480,7 +480,8 @@ func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Ga
 	for _, client := range room.Clients {
 		msg := response
 		if g.Status == game.StatusFinished && g.Rated && g.WhiteRatingBefore != nil && g.WhiteRatingAfter != nil && g.BlackRatingBefore != nil && g.BlackRatingAfter != nil {
-			if client.UserID == g.WhitePlayerID {
+			switch client.UserID {
+			case g.WhitePlayerID:
 				msg.RatingUpdate = &game.RatingUpdate{
 					Mode:        g.TimeControlMode,
 					Before:      *g.WhiteRatingBefore,
@@ -488,7 +489,7 @@ func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Ga
 					Change:      *g.WhiteRatingAfter - *g.WhiteRatingBefore,
 					Provisional: g.WhiteProvisional != nil && *g.WhiteProvisional,
 				}
-			} else if client.UserID == g.BlackPlayerID {
+			case g.BlackPlayerID:
 				msg.RatingUpdate = &game.RatingUpdate{
 					Mode:        g.TimeControlMode,
 					Before:      *g.BlackRatingBefore,
@@ -660,7 +661,8 @@ func (h *Handler) sendClientGameState(
 	}
 
 	if g.Status == game.StatusFinished && g.Rated && g.WhiteRatingBefore != nil && g.WhiteRatingAfter != nil && g.BlackRatingBefore != nil && g.BlackRatingAfter != nil {
-		if client.UserID == g.WhitePlayerID {
+		switch client.UserID {
+		case g.WhitePlayerID:
 			response.RatingUpdate = &game.RatingUpdate{
 				Mode:        g.TimeControlMode,
 				Before:      *g.WhiteRatingBefore,
@@ -668,7 +670,7 @@ func (h *Handler) sendClientGameState(
 				Change:      *g.WhiteRatingAfter - *g.WhiteRatingBefore,
 				Provisional: g.WhiteProvisional != nil && *g.WhiteProvisional,
 			}
-		} else if client.UserID == g.BlackPlayerID {
+		case g.BlackPlayerID:
 			response.RatingUpdate = &game.RatingUpdate{
 				Mode:        g.TimeControlMode,
 				Before:      *g.BlackRatingBefore,

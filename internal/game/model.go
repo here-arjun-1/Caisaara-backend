@@ -85,24 +85,24 @@ type MoveMessage struct {
 }
 
 type GameStateMessage struct {
-	Type            string     `json:"type"`
-	GameID          string     `json:"game_id"`
-	WhitePlayerID   int64      `json:"white_player_id"`
-	BlackPlayerID   int64      `json:"black_player_id"`
-	WhiteUsername   string     `json:"white_username,omitempty"`
-	BlackUsername   string     `json:"black_username,omitempty"`
-	Position        string     `json:"position"`
-	Status          string     `json:"status"`
-	Result          string     `json:"result,omitempty"`
-	EndReason       string     `json:"end_reason,omitempty"`
-	TimeControlMode string     `json:"time_control_mode"`
-	DailyMoveTimeMs int64      `json:"daily_move_time_ms,omitempty"`
-	InitialTimeMs   int64      `json:"initial_time_ms"`
-	IncrementMs     int64      `json:"increment_ms"`
-	WhiteTimeMs     int64      `json:"white_time_ms"`
-	BlackTimeMs     int64      `json:"black_time_ms"`
-	CurrentTurn     string     `json:"current_turn"`
-	TurnStartedAt   *time.Time `json:"turn_started_at,omitempty"`
+	Type            string        `json:"type"`
+	GameID          string        `json:"game_id"`
+	WhitePlayerID   int64         `json:"white_player_id"`
+	BlackPlayerID   int64         `json:"black_player_id"`
+	WhiteUsername   string        `json:"white_username,omitempty"`
+	BlackUsername   string        `json:"black_username,omitempty"`
+	Position        string        `json:"position"`
+	Status          string        `json:"status"`
+	Result          string        `json:"result,omitempty"`
+	EndReason       string        `json:"end_reason,omitempty"`
+	TimeControlMode string        `json:"time_control_mode"`
+	DailyMoveTimeMs int64         `json:"daily_move_time_ms,omitempty"`
+	InitialTimeMs   int64         `json:"initial_time_ms"`
+	IncrementMs     int64         `json:"increment_ms"`
+	WhiteTimeMs     int64         `json:"white_time_ms"`
+	BlackTimeMs     int64         `json:"black_time_ms"`
+	CurrentTurn     string        `json:"current_turn"`
+	TurnStartedAt   *time.Time    `json:"turn_started_at,omitempty"`
 	DrawOfferedBy   int64         `json:"draw_offered_by,omitempty"`
 	LastMove        string        `json:"last_move,omitempty"`
 	Moves           []GameMove    `json:"moves,omitempty"`
