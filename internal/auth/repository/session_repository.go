@@ -224,9 +224,8 @@ func (r *SessionRepository) RevokeAllSessionsByTokenHash(
 func (r *SessionRepository) CleanExpiredSessions(ctx context.Context) (int64, error) {
 	result, err := r.DB.Exec(
 		ctx,
-		`DELETE FROM sessions 
-		WHERE expires_at < CURRENT_TIMESTAMP
-		OR revoked_at IS NOT NULL`,
+		`DELETE FROM sessions
+		WHERE expires_at < CURRENT_TIMESTAMP`,
 	)
 
 	if err != nil {
