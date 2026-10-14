@@ -324,7 +324,16 @@ func (s *Service) MakeMove(
 
 	nextTurn := chessGame.Turn()
 
-	err = s.Repository.UpdateGameState(
+	gameMove := NewGameMove(
+		gameID,
+		playerID,
+		moveNumber,
+		move,
+		position,
+	)
+	gameMove.CreatedAt = now
+
+	err = s.Repository.SaveMoveTx(
 		ctx,
 		gameID,
 		position,
@@ -335,24 +344,10 @@ func (s *Service) MakeMove(
 		newWhiteTimeMs,
 		newBlackTimeMs,
 		&now,
+		gameMove,
 	)
 	if err != nil {
-		slog.ErrorContext(ctx, "update game state failed in make move", "game_id", gameID, "error", err)
-		return nil, err
-	}
-
-	gameMove := NewGameMove(
-		gameID,
-		playerID,
-		moveNumber,
-		move,
-		position,
-	)
-	gameMove.CreatedAt = now
-
-	err = s.Repository.AddMove(ctx, gameMove)
-	if err != nil {
-		slog.ErrorContext(ctx, "add move failed in make move", "game_id", gameID, "error", err)
+		slog.ErrorContext(ctx, "save move transaction failed in make move", "game_id", gameID, "error", err)
 		return nil, err
 	}
 

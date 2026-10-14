@@ -110,7 +110,14 @@ func (r *Repository) CountActiveGames(ctx context.Context, playerID int64) (int,
 }
 
 func (r *Repository) UpdateGame(ctx context.Context, game *Game, previousMoves []string) error {
-	tag, err := r.DB.Exec(
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "begin transaction failed for update bot game", "game_id", game.ID, "error", err)
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	tag, err := tx.Exec(
 		ctx,
 		`UPDATE bot_games
 		SET
@@ -139,6 +146,11 @@ func (r *Repository) UpdateGame(ctx context.Context, game *Game, previousMoves [
 
 	if tag.RowsAffected() == 0 {
 		return ErrGameChanged
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "commit transaction failed for update bot game", "game_id", game.ID, "error", err)
+		return err
 	}
 
 	return nil
