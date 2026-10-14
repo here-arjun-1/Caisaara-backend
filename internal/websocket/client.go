@@ -18,6 +18,7 @@ type Client struct {
 
 	closed atomic.Bool
 	once   sync.Once
+	done   chan struct{}
 }
 
 func (c *Client) SafeSend(data []byte) (sent bool) {
@@ -40,6 +41,11 @@ func (c *Client) SafeSend(data []byte) (sent bool) {
 func (c *Client) Close() {
 	c.once.Do(func() {
 		c.closed.Store(true)
-		_ = c.Conn.Close()
+		if c.done != nil {
+			close(c.done)
+		}
+		if c.Conn != nil {
+			_ = c.Conn.Close()
+		}
 	})
 }
