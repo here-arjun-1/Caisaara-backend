@@ -14,6 +14,9 @@ func StartEmailServer(redisOpt asynq.RedisClientOpt, sender *email.Sender) *asyn
 		redisOpt,
 		asynq.Config{
 			Concurrency: 10,
+			Queues: map[string]int{
+				"email": 1,
+			},
 			RetryDelayFunc: func(n int, e error, t *asynq.Task) time.Duration {
 				return 2 * time.Minute
 			},
