@@ -24,7 +24,7 @@ func NewEmailRegistrationTask(to, code string) (*asynq.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	return asynq.NewTask(TypeEmailRegistration, payload), nil
+	return asynq.NewTask(TypeEmailRegistration, payload, asynq.Queue("email")), nil
 }
 
 func NewEmailPasswordResetTask(to, code string) (*asynq.Task, error) {
@@ -32,7 +32,7 @@ func NewEmailPasswordResetTask(to, code string) (*asynq.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	return asynq.NewTask(TypeEmailPasswordReset, payload), nil
+	return asynq.NewTask(TypeEmailPasswordReset, payload, asynq.Queue("email")), nil
 }
 
 type EmailTaskProcessor struct {
