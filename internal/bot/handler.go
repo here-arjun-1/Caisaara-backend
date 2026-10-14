@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -14,14 +15,23 @@ type CreateGameRequest struct {
 	Color  string `json:"color"`
 }
 
+type PasswordVersionGetter interface {
+	GetPasswordVersion(ctx context.Context, userID int64) (int, error)
+}
+
 type Handler struct {
-	Service GameService
+	Service  GameService
+	UserRepo PasswordVersionGetter
 }
 
 func NewHandler(service GameService) *Handler {
 	return &Handler{
 		Service: service,
 	}
+}
+
+func (h *Handler) SetUserRepo(repo PasswordVersionGetter) {
+	h.UserRepo = repo
 }
 
 func getUserID(c *gin.Context) (int64, bool) {

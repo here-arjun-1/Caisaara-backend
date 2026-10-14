@@ -10,9 +10,10 @@ import (
 )
 
 type Module struct {
-	UserRepository    *repository.UserRepository
-	SessionRepository *repository.SessionRepository
-	handlers          Handlers
+	UserRepository       *repository.UserRepository
+	SessionRepository    *repository.SessionRepository
+	PasswordResetService *service.PasswordResetService
+	handlers             Handlers
 }
 
 func NewModule(
@@ -54,8 +55,9 @@ func NewModule(
 	ratingService := service.NewRatingService(userRepository)
 
 	return &Module{
-		UserRepository:    userRepository,
-		SessionRepository: sessionRepository,
+		UserRepository:       userRepository,
+		SessionRepository:    sessionRepository,
+		PasswordResetService: passwordResetService,
 		handlers: Handlers{
 			Register:      handler.NewRegisterHandler(registerService),
 			Login:         handler.NewLoginHandler(loginService),
@@ -64,5 +66,11 @@ func NewModule(
 			PasswordReset: handler.NewPasswordResetHandler(passwordResetService),
 			Rating:        handler.NewRatingHandler(ratingService),
 		},
+	}
+}
+
+func (m *Module) SetDisconnector(d service.SessionDisconnector) {
+	if m.PasswordResetService != nil {
+		m.PasswordResetService.SetDisconnector(d)
 	}
 }

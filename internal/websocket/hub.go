@@ -53,3 +53,20 @@ func (h *Hub) BroadcastToRoom(roomID string, message []byte) {
 		room.Broadcast(message)
 	}
 }
+
+func (h *Hub) DisconnectUser(userID int64) {
+	h.Mutex.RLock()
+	var clients []*Client
+	for _, room := range h.Rooms {
+		room.Mutex.RLock()
+		if client, exists := room.Clients[userID]; exists && client != nil {
+			clients = append(clients, client)
+		}
+		room.Mutex.RUnlock()
+	}
+	h.Mutex.RUnlock()
+
+	for _, client := range clients {
+		client.Close()
+	}
+}

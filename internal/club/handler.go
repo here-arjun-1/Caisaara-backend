@@ -1,6 +1,7 @@
 package club
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -18,9 +19,14 @@ type SendMessageRequest struct {
 	Message string `json:"message" binding:"required"`
 }
 
+type PasswordVersionGetter interface {
+	GetPasswordVersion(ctx context.Context, userID int64) (int, error)
+}
+
 type Handler struct {
-	Service ClubService
-	Hub     *Hub
+	Service  ClubService
+	Hub      *Hub
+	UserRepo PasswordVersionGetter
 }
 
 func NewHandler(service ClubService) *Handler {
@@ -28,6 +34,10 @@ func NewHandler(service ClubService) *Handler {
 		Service: service,
 		Hub:     NewHub(),
 	}
+}
+
+func (h *Handler) SetUserRepo(repo PasswordVersionGetter) {
+	h.UserRepo = repo
 }
 
 func getUserID(c *gin.Context) (int64, bool) {
