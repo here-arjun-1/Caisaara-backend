@@ -1,17 +1,14 @@
 package analysis
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"os/exec"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/here-arjun-1/Caisaara-backend/internal/stockfish"
 )
 
 var (
@@ -20,9 +17,10 @@ var (
 	ErrTimeout        = errors.New("engine search timed out")
 )
 
+const analysisPoolSize = 2
+
 type AnalysisEngine struct {
-	Path string
-	mu   sync.Mutex
+	Pool *stockfish.Pool
 }
 
 type PositionOptions struct {
@@ -70,14 +68,11 @@ func NewAnalysisEngine(path string) *AnalysisEngine {
 		path = "stockfish"
 	}
 	return &AnalysisEngine{
-		Path: path,
+		Pool: stockfish.NewPool(path, analysisPoolSize),
 	}
 }
 
 func (e *AnalysisEngine) Analyze(ctx context.Context, pos PositionOptions, opts AnalysisOptions) (*AnalysisResult, error) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
 	var cancel context.CancelFunc
 	switch {
 	case opts.Timeout > 0:
@@ -89,70 +84,84 @@ func (e *AnalysisEngine) Analyze(ctx context.Context, pos PositionOptions, opts 
 	}
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, filepath.Clean(e.Path)) //nolint:gosec
-
-	stdin, err := cmd.StdinPipe()
+	process, err := e.Pool.GetProcess(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("open stdin: %w", err)
-	}
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("open stdout: %w", err)
-	}
-
-	if err := cmd.Start(); err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, ErrTimeout
+		}
 		return nil, fmt.Errorf("%w: %w", ErrEngineNotFound, err)
 	}
 
-	defer func() {
-		if cmd.Process != nil {
-			_ = cmd.Process.Kill()
+	stopWatching := context.AfterFunc(ctx, process.Kill)
+
+	result, err := runAnalysis(process, pos, opts)
+
+	if !stopWatching() {
+		e.Pool.ReplaceBrokenProcess(process)
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, ErrTimeout
 		}
-		_ = cmd.Wait()
-	}()
-
-	scanner := bufio.NewScanner(stdout)
-
-	if err := sendCommand(stdin, "uci"); err != nil {
+		return nil, ctx.Err()
+	}
+	if errors.Is(err, ErrNoBestMove) {
+		e.Pool.ReturnProcess(process)
 		return nil, err
 	}
-	if _, err := waitForPrefix(scanner, "uciok"); err != nil {
-		return nil, fmt.Errorf("uci handshake failed: %w", err)
+	if err != nil {
+		e.Pool.ReplaceBrokenProcess(process)
+		return nil, err
 	}
 
-	var options []string
+	e.Pool.ReturnProcess(process)
+	return result, nil
+}
+
+func (e *AnalysisEngine) Close() {
+	e.Pool.Close()
+}
+
+func runAnalysis(process *stockfish.Process, pos PositionOptions, opts AnalysisOptions) (*AnalysisResult, error) {
+	threads := 1
 	if opts.Threads > 0 {
-		options = append(options, fmt.Sprintf("setoption name Threads value %d", opts.Threads))
+		threads = opts.Threads
 	}
+	hashMB := 16
 	if opts.HashMB > 0 {
-		options = append(options, fmt.Sprintf("setoption name Hash value %d", opts.HashMB))
+		hashMB = opts.HashMB
 	}
+	multiPV := 1
 	if opts.MultiPV > 0 {
-		options = append(options, fmt.Sprintf("setoption name MultiPV value %d", opts.MultiPV))
+		multiPV = opts.MultiPV
 	}
-	if opts.LimitStrength && opts.Elo != nil {
-		options = append(options,
-			"setoption name UCI_LimitStrength value true",
-			fmt.Sprintf("setoption name UCI_Elo value %d", *opts.Elo),
-		)
-	}
+	skillLevel := 20
 	if opts.SkillLevel != nil {
-		options = append(options, fmt.Sprintf("setoption name Skill Level value %d", *opts.SkillLevel))
+		skillLevel = *opts.SkillLevel
 	}
+	limitStrength := opts.LimitStrength && opts.Elo != nil
 
-	options = append(options, "isready")
+	commands := []string{
+		"ucinewgame",
+		fmt.Sprintf("setoption name Threads value %d", threads),
+		fmt.Sprintf("setoption name Hash value %d", hashMB),
+		fmt.Sprintf("setoption name MultiPV value %d", multiPV),
+		fmt.Sprintf("setoption name UCI_LimitStrength value %t", limitStrength),
+		fmt.Sprintf("setoption name Skill Level value %d", skillLevel),
+	}
+	if limitStrength {
+		commands = append(commands, fmt.Sprintf("setoption name UCI_Elo value %d", *opts.Elo))
+	}
+	commands = append(commands, "isready")
 
-	for _, opt := range options {
-		if err := sendCommand(stdin, opt); err != nil {
+	for _, command := range commands {
+		if err := process.Send(command); err != nil {
 			return nil, err
 		}
 	}
-	if _, err := waitForPrefix(scanner, "readyok"); err != nil {
+	if _, err := process.WaitFor("readyok"); err != nil {
 		return nil, fmt.Errorf("readyok failed: %w", err)
 	}
 
-	if err := sendCommand(stdin, pos.BuildCommand()); err != nil {
+	if err := process.Send(pos.BuildCommand()); err != nil {
 		return nil, fmt.Errorf("send position command: %w", err)
 	}
 
@@ -168,13 +177,17 @@ func (e *AnalysisEngine) Analyze(ctx context.Context, pos PositionOptions, opts 
 		goCmd = "go depth 15"
 	}
 
-	if err := sendCommand(stdin, goCmd); err != nil {
+	if err := process.Send(goCmd); err != nil {
 		return nil, fmt.Errorf("send go command: %w", err)
 	}
 
 	result := &AnalysisResult{}
-	for scanner.Scan() {
-		line := scanner.Text()
+	for {
+		line, err := process.ReadLine()
+		if err != nil {
+			return nil, err
+		}
+
 		if strings.HasPrefix(line, "info ") {
 			parseInfoLine(line, result)
 		} else if strings.HasPrefix(line, "bestmove ") {
@@ -183,19 +196,9 @@ func (e *AnalysisEngine) Analyze(ctx context.Context, pos PositionOptions, opts 
 		}
 	}
 
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("scan output error: %w", err)
-	}
-
-	if ctx.Err() == context.DeadlineExceeded {
-		return nil, ErrTimeout
-	}
-
 	if result.BestMove == "" || result.BestMove == "(none)" {
 		return nil, ErrNoBestMove
 	}
-
-	_ = sendCommand(stdin, "quit")
 
 	return result, nil
 }
@@ -248,24 +251,4 @@ func parseBestMoveLine(line string, res *AnalysisResult) {
 	if len(fields) >= 4 && fields[2] == "ponder" {
 		res.PonderMove = fields[3]
 	}
-}
-
-func sendCommand(w io.Writer, cmd string) error {
-	if _, err := io.WriteString(w, cmd+"\n"); err != nil {
-		return fmt.Errorf("send command %q: %w", cmd, err)
-	}
-	return nil
-}
-
-func waitForPrefix(scanner *bufio.Scanner, prefix string) (string, error) {
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.HasPrefix(line, prefix) {
-			return line, nil
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return "", err
-	}
-	return "", fmt.Errorf("EOF reached before %q", prefix)
 }

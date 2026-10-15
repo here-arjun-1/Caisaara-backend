@@ -86,12 +86,14 @@ func run() error {
 
 	analysisRepo := analysis.NewRepository(conn)
 	analysisEngine := analysis.NewAnalysisEngine(cfg.StockfishPath)
+	defer analysisEngine.Close()
 	analysisService := analysis.NewService(analysisRepo, gameRepository, taskDistributor)
 	analysisHandler := analysis.NewHandler(analysisService)
 	analysisProcessor := analysis.NewAnalysisProcessor(analysisEngine, analysisRepo, gameRepository)
 
 	botRepository := bot.NewRepository(conn)
 	botEngine := bot.NewEngine(cfg.StockfishPath)
+	defer botEngine.Close()
 	botService := bot.NewService(botRepository, botEngine)
 	botHandler := bot.NewHandler(botService)
 
