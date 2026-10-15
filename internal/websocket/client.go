@@ -21,6 +21,18 @@ type Client struct {
 	done   chan struct{}
 }
 
+func NewClient(conn *websocket.Conn, userID int64, gameID string, passwordVersion int, isGuest bool) *Client {
+	return &Client{
+		Conn:            conn,
+		UserID:          userID,
+		GameID:          gameID,
+		PasswordVersion: passwordVersion,
+		IsGuest:         isGuest,
+		Send:            make(chan []byte, 256),
+		done:            make(chan struct{}),
+	}
+}
+
 func (c *Client) SafeSend(data []byte) (sent bool) {
 	if c.closed.Load() {
 		return false

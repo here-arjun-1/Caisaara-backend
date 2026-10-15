@@ -150,22 +150,11 @@ func (h *Handler) Connect(c *gin.Context) {
 						return
 					}
 
-					client := &Client{
-						Conn:            conn,
-						UserID:          claims.UserID,
-						GameID:          gameID,
-						PasswordVersion: claims.PasswordVersion,
-						IsGuest:         claims.IsGuest,
-						Send:            make(chan []byte, 256),
-						done:            make(chan struct{}),
-					}
-
+					client := newClientFromClaims(conn, claims, gameID)
 					room := h.Hub.GetOrCreateRoom(gameID)
 					room.AddClient(client)
 
-					wsCtx := context.WithoutCancel(ctx)
-					go h.writePump(wsCtx, client)
-					go h.readPump(wsCtx, client, room)
+					h.startPumps(ctx, client, room)
 
 					waitingMsg := map[string]interface{}{
 						"type":    "waiting",
@@ -205,15 +194,7 @@ func (h *Handler) Connect(c *gin.Context) {
 		return
 	}
 
-	client := &Client{
-		Conn:            conn,
-		UserID:          claims.UserID,
-		GameID:          gameID,
-		PasswordVersion: claims.PasswordVersion,
-		IsGuest:         claims.IsGuest,
-		Send:            make(chan []byte, 256),
-		done:            make(chan struct{}),
-	}
+	client := newClientFromClaims(conn, claims, gameID)
 
 	timerKey := gameID + ":" + strconv.FormatInt(claims.UserID, 10)
 	if val, ok := h.disconnectTimers.LoadAndDelete(timerKey); ok {
@@ -228,14 +209,12 @@ func (h *Handler) Connect(c *gin.Context) {
 
 	moves, _ := h.GameService.GetMoves(ctx, gameID)
 
-	wsCtx := context.WithoutCancel(ctx)
-	go h.writePump(wsCtx, client)
-	go h.readPump(wsCtx, client, room)
+	h.startPumps(ctx, client, room)
 
-	h.sendClientGameState(wsCtx, client, currentGame, moves, "game_state")
+	h.sendClientGameState(ctx, client, currentGame, moves, "game_state")
 
 	if room.Count() == 2 && len(moves) == 0 && room.MarkGameStarted() {
-		h.sendGameStart(wsCtx, room, currentGame, moves)
+		h.sendGameStart(ctx, room, currentGame, moves)
 	}
 }
 
@@ -339,8 +318,7 @@ func (h *Handler) readPump(
 				incomingMsg.Move,
 			)
 			if err != nil {
-				slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", incomingMsg.Type, "error", err)
-				sendError(ctx, client, err.Error())
+				h.handleActionError(ctx, client, incomingMsg.Type, err)
 				continue
 			}
 			h.broadcastGameState(ctx, room, currentGame)
@@ -352,21 +330,19 @@ func (h *Handler) readPump(
 				client.UserID,
 			)
 			if err != nil {
-				slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", incomingMsg.Type, "error", err)
-				sendError(ctx, client, err.Error())
+				h.handleActionError(ctx, client, incomingMsg.Type, err)
 				continue
 			}
 			h.broadcastGameState(ctx, room, currentGame)
 
-		case "offer_draw", "draw_offer":
+		case "offer_draw", "draw_offer", "draw":
 			currentGame, accepted, offererID, err := h.GameService.OfferDraw(
 				ctx,
 				client.GameID,
 				client.UserID,
 			)
 			if err != nil {
-				slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", incomingMsg.Type, "error", err)
-				sendError(ctx, client, err.Error())
+				h.handleActionError(ctx, client, incomingMsg.Type, err)
 				continue
 			}
 			if accepted {
@@ -382,8 +358,7 @@ func (h *Handler) readPump(
 				client.UserID,
 			)
 			if err != nil {
-				slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", incomingMsg.Type, "error", err)
-				sendError(ctx, client, err.Error())
+				h.handleActionError(ctx, client, incomingMsg.Type, err)
 				continue
 			}
 			h.broadcastGameState(ctx, room, currentGame)
@@ -395,28 +370,10 @@ func (h *Handler) readPump(
 				client.UserID,
 			)
 			if err != nil {
-				slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", incomingMsg.Type, "error", err)
-				sendError(ctx, client, err.Error())
+				h.handleActionError(ctx, client, incomingMsg.Type, err)
 				continue
 			}
 			h.broadcastDrawDeclined(ctx, room, client.GameID, client.UserID)
-
-		case "draw":
-			currentGame, accepted, offererID, err := h.GameService.OfferDraw(
-				ctx,
-				client.GameID,
-				client.UserID,
-			)
-			if err != nil {
-				slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", incomingMsg.Type, "error", err)
-				sendError(ctx, client, err.Error())
-				continue
-			}
-			if accepted {
-				h.broadcastGameState(ctx, room, currentGame)
-			} else {
-				h.broadcastDrawOffer(ctx, room, client.GameID, offererID)
-			}
 
 		case "chat", "chat_message":
 			if h.ChatService == nil {
@@ -474,8 +431,7 @@ func (h *Handler) readPump(
 					client.GameID,
 				)
 				if err != nil {
-					slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", incomingMsg.Type, "error", err)
-					sendError(ctx, client, err.Error())
+					h.handleActionError(ctx, client, incomingMsg.Type, err)
 					continue
 				}
 				h.broadcastGameState(ctx, room, currentGame)
@@ -517,82 +473,14 @@ func (h *Handler) broadcastDrawDeclined(ctx context.Context, room *Room, gameID 
 }
 
 func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Game) {
-	moves, _ := h.GameService.GetMoves(ctx, g.ID)
-	whiteTime, blackTime, turnStartedAt := calculateLiveClocks(g)
-
-	if (g.WhiteUsername == "" || g.BlackUsername == "") && h.GameService != nil {
-		if fullGame, err := h.GameService.GetGame(ctx, g.ID); err == nil && fullGame != nil {
-			g.WhiteUsername = fullGame.WhiteUsername
-			g.BlackUsername = fullGame.BlackUsername
-		}
-	}
-
-	if g.Status == game.StatusFinished && g.Rated && g.WhiteRatingBefore == nil && h.GameService != nil {
-		if fullGame, err := h.GameService.GetGame(ctx, g.ID); err == nil && fullGame != nil {
-			g.WhiteRatingBefore = fullGame.WhiteRatingBefore
-			g.WhiteRatingAfter = fullGame.WhiteRatingAfter
-			g.BlackRatingBefore = fullGame.BlackRatingBefore
-			g.BlackRatingAfter = fullGame.BlackRatingAfter
-			g.WhiteProvisional = fullGame.WhiteProvisional
-			g.BlackProvisional = fullGame.BlackProvisional
-		}
-	}
-
-	var lastMove string
-	if len(moves) > 0 {
-		lastMove = moves[len(moves)-1].Move
-	}
-
-	response := game.GameStateMessage{
-		Type:            "game_state",
-		GameID:          g.ID,
-		WhitePlayerID:   g.WhitePlayerID,
-		BlackPlayerID:   g.BlackPlayerID,
-		WhiteUsername:   g.WhiteUsername,
-		BlackUsername:   g.BlackUsername,
-		Position:        g.Position,
-		Status:          g.Status,
-		Result:          g.Result,
-		EndReason:       g.EndReason,
-		Rated:           g.Rated,
-		TimeControlMode: g.TimeControlMode,
-		DailyMoveTimeMs: g.DailyMoveTimeMs,
-		InitialTimeMs:   g.InitialTimeMs,
-		IncrementMs:     g.IncrementMs,
-		WhiteTimeMs:     whiteTime,
-		BlackTimeMs:     blackTime,
-		CurrentTurn:     g.CurrentTurn,
-		TurnStartedAt:   turnStartedAt,
-		DrawOfferedBy:   g.DrawOfferedBy,
-		LastMove:        lastMove,
-		Moves:           moves,
-	}
+	baseMsg := h.buildGameStateMessage(ctx, g, nil, "game_state")
 
 	room.Mutex.RLock()
 	defer room.Mutex.RUnlock()
 
 	for _, client := range room.Clients {
-		msg := response
-		if g.Status == game.StatusFinished && g.Rated && g.WhiteRatingBefore != nil && g.WhiteRatingAfter != nil && g.BlackRatingBefore != nil && g.BlackRatingAfter != nil {
-			switch client.UserID {
-			case g.WhitePlayerID:
-				msg.RatingUpdate = &game.RatingUpdate{
-					Mode:        g.TimeControlMode,
-					Before:      *g.WhiteRatingBefore,
-					After:       *g.WhiteRatingAfter,
-					Change:      *g.WhiteRatingAfter - *g.WhiteRatingBefore,
-					Provisional: g.WhiteProvisional != nil && *g.WhiteProvisional,
-				}
-			case g.BlackPlayerID:
-				msg.RatingUpdate = &game.RatingUpdate{
-					Mode:        g.TimeControlMode,
-					Before:      *g.BlackRatingBefore,
-					After:       *g.BlackRatingAfter,
-					Change:      *g.BlackRatingAfter - *g.BlackRatingBefore,
-					Provisional: g.BlackProvisional != nil && *g.BlackProvisional,
-				}
-			}
-		}
+		msg := baseMsg
+		attachRatingUpdate(&msg, g, client.UserID)
 
 		data, err := json.Marshal(msg)
 		if err != nil {
@@ -716,67 +604,9 @@ func (h *Handler) sendClientGameState(
 	moves []game.GameMove,
 	messageType string,
 ) {
-	if moves == nil {
-		moves = []game.GameMove{}
-	}
-	whiteTime, blackTime, turnStartedAt := calculateLiveClocks(g)
-
-	if (g.WhiteUsername == "" || g.BlackUsername == "") && h.GameService != nil {
-		if fullGame, err := h.GameService.GetGame(ctx, g.ID); err == nil && fullGame != nil {
-			g.WhiteUsername = fullGame.WhiteUsername
-			g.BlackUsername = fullGame.BlackUsername
-		}
-	}
-
-	var lastMove string
-	if len(moves) > 0 {
-		lastMove = moves[len(moves)-1].Move
-	}
-
-	response := game.GameStateMessage{
-		Type:            messageType,
-		GameID:          g.ID,
-		WhitePlayerID:   g.WhitePlayerID,
-		BlackPlayerID:   g.BlackPlayerID,
-		WhiteUsername:   g.WhiteUsername,
-		BlackUsername:   g.BlackUsername,
-		Position:        g.Position,
-		Status:          g.Status,
-		Result:          g.Result,
-		EndReason:       g.EndReason,
-		Rated:           g.Rated,
-		TimeControlMode: g.TimeControlMode,
-		DailyMoveTimeMs: g.DailyMoveTimeMs,
-		InitialTimeMs:   g.InitialTimeMs,
-		IncrementMs:     g.IncrementMs,
-		WhiteTimeMs:     whiteTime,
-		BlackTimeMs:     blackTime,
-		CurrentTurn:     g.CurrentTurn,
-		TurnStartedAt:   turnStartedAt,
-		DrawOfferedBy:   g.DrawOfferedBy,
-		LastMove:        lastMove,
-		Moves:           moves,
-	}
-
-	if g.Status == game.StatusFinished && g.Rated && g.WhiteRatingBefore != nil && g.WhiteRatingAfter != nil && g.BlackRatingBefore != nil && g.BlackRatingAfter != nil {
-		switch client.UserID {
-		case g.WhitePlayerID:
-			response.RatingUpdate = &game.RatingUpdate{
-				Mode:        g.TimeControlMode,
-				Before:      *g.WhiteRatingBefore,
-				After:       *g.WhiteRatingAfter,
-				Change:      *g.WhiteRatingAfter - *g.WhiteRatingBefore,
-				Provisional: g.WhiteProvisional != nil && *g.WhiteProvisional,
-			}
-		case g.BlackPlayerID:
-			response.RatingUpdate = &game.RatingUpdate{
-				Mode:        g.TimeControlMode,
-				Before:      *g.BlackRatingBefore,
-				After:       *g.BlackRatingAfter,
-				Change:      *g.BlackRatingAfter - *g.BlackRatingBefore,
-				Provisional: g.BlackProvisional != nil && *g.BlackProvisional,
-			}
-		}
+	response := h.buildGameStateMessage(ctx, g, moves, messageType)
+	if client != nil {
+		attachRatingUpdate(&response, g, client.UserID)
 	}
 
 	data, err := json.Marshal(response)
@@ -799,49 +629,8 @@ func (h *Handler) sendGameStart(ctx context.Context, room *Room, g *game.Game, m
 			return
 		}
 	}
-	if moves == nil {
-		moves, _ = h.GameService.GetMoves(ctx, room.GameID)
-	}
-	if moves == nil {
-		moves = []game.GameMove{}
-	}
-	whiteTime, blackTime, turnStartedAt := calculateLiveClocks(g)
 
-	if (g.WhiteUsername == "" || g.BlackUsername == "") && h.GameService != nil {
-		if fullGame, err := h.GameService.GetGame(ctx, g.ID); err == nil && fullGame != nil {
-			g.WhiteUsername = fullGame.WhiteUsername
-			g.BlackUsername = fullGame.BlackUsername
-		}
-	}
-
-	var lastMove string
-	if len(moves) > 0 {
-		lastMove = moves[len(moves)-1].Move
-	}
-
-	response := game.GameStateMessage{
-		Type:            "game_start",
-		GameID:          g.ID,
-		WhitePlayerID:   g.WhitePlayerID,
-		BlackPlayerID:   g.BlackPlayerID,
-		WhiteUsername:   g.WhiteUsername,
-		BlackUsername:   g.BlackUsername,
-		Position:        g.Position,
-		Status:          g.Status,
-		Result:          g.Result,
-		EndReason:       g.EndReason,
-		TimeControlMode: g.TimeControlMode,
-		DailyMoveTimeMs: g.DailyMoveTimeMs,
-		InitialTimeMs:   g.InitialTimeMs,
-		IncrementMs:     g.IncrementMs,
-		WhiteTimeMs:     whiteTime,
-		BlackTimeMs:     blackTime,
-		CurrentTurn:     g.CurrentTurn,
-		TurnStartedAt:   turnStartedAt,
-		DrawOfferedBy:   g.DrawOfferedBy,
-		LastMove:        lastMove,
-		Moves:           moves,
-	}
+	response := h.buildGameStateMessage(ctx, g, moves, "game_start")
 
 	data, err := json.Marshal(response)
 	if err != nil {
@@ -904,15 +693,7 @@ func (h *Handler) ConnectTournament(c *gin.Context) {
 	roomKey := "tournament:" + tournamentID
 	room := h.Hub.GetOrCreateRoom(roomKey)
 
-	client := &Client{
-		Conn:            conn,
-		UserID:          claims.UserID,
-		GameID:          roomKey,
-		PasswordVersion: claims.PasswordVersion,
-		IsGuest:         claims.IsGuest,
-		Send:            make(chan []byte, 256),
-		done:            make(chan struct{}),
-	}
+	client := newClientFromClaims(conn, claims, roomKey)
 
 	room.AddClient(client)
 
@@ -1102,4 +883,115 @@ func (h *Handler) StartActiveAuthChecker(ctx context.Context, interval time.Dura
 			}
 		}
 	}()
+}
+
+func newClientFromClaims(conn *websocket.Conn, claims *token.AccessTokenClaims, gameID string) *Client {
+	var isGuest bool
+	var version int
+	var userID int64
+	if claims != nil {
+		isGuest = claims.IsGuest
+		version = claims.PasswordVersion
+		userID = claims.UserID
+	}
+	return NewClient(conn, userID, gameID, version, isGuest)
+}
+
+func (h *Handler) startPumps(ctx context.Context, client *Client, room *Room) {
+	wsCtx := context.WithoutCancel(ctx)
+	go h.writePump(wsCtx, client)
+	go h.readPump(wsCtx, client, room)
+}
+
+func (h *Handler) handleActionError(ctx context.Context, client *Client, msgType string, err error) {
+	slog.WarnContext(ctx, "websocket action failed", "game_id", client.GameID, "user_id", client.UserID, "type", msgType, "error", err)
+	sendError(ctx, client, err.Error())
+}
+
+func (h *Handler) buildGameStateMessage(
+	ctx context.Context,
+	g *game.Game,
+	moves []game.GameMove,
+	messageType string,
+) game.GameStateMessage {
+	if moves == nil && h.GameService != nil {
+		moves, _ = h.GameService.GetMoves(ctx, g.ID)
+	}
+	if moves == nil {
+		moves = []game.GameMove{}
+	}
+
+	whiteTime, blackTime, turnStartedAt := calculateLiveClocks(g)
+
+	if (g.WhiteUsername == "" || g.BlackUsername == "") && h.GameService != nil {
+		if fullGame, err := h.GameService.GetGame(ctx, g.ID); err == nil && fullGame != nil {
+			g.WhiteUsername = fullGame.WhiteUsername
+			g.BlackUsername = fullGame.BlackUsername
+		}
+	}
+
+	if g.Status == game.StatusFinished && g.Rated && g.WhiteRatingBefore == nil && h.GameService != nil {
+		if fullGame, err := h.GameService.GetGame(ctx, g.ID); err == nil && fullGame != nil {
+			g.WhiteRatingBefore = fullGame.WhiteRatingBefore
+			g.WhiteRatingAfter = fullGame.WhiteRatingAfter
+			g.BlackRatingBefore = fullGame.BlackRatingBefore
+			g.BlackRatingAfter = fullGame.BlackRatingAfter
+			g.WhiteProvisional = fullGame.WhiteProvisional
+			g.BlackProvisional = fullGame.BlackProvisional
+		}
+	}
+
+	var lastMove string
+	if len(moves) > 0 {
+		lastMove = moves[len(moves)-1].Move
+	}
+
+	return game.GameStateMessage{
+		Type:            messageType,
+		GameID:          g.ID,
+		WhitePlayerID:   g.WhitePlayerID,
+		BlackPlayerID:   g.BlackPlayerID,
+		WhiteUsername:   g.WhiteUsername,
+		BlackUsername:   g.BlackUsername,
+		Position:        g.Position,
+		Status:          g.Status,
+		Result:          g.Result,
+		EndReason:       g.EndReason,
+		Rated:           g.Rated,
+		TimeControlMode: g.TimeControlMode,
+		DailyMoveTimeMs: g.DailyMoveTimeMs,
+		InitialTimeMs:   g.InitialTimeMs,
+		IncrementMs:     g.IncrementMs,
+		WhiteTimeMs:     whiteTime,
+		BlackTimeMs:     blackTime,
+		CurrentTurn:     g.CurrentTurn,
+		TurnStartedAt:   turnStartedAt,
+		DrawOfferedBy:   g.DrawOfferedBy,
+		LastMove:        lastMove,
+		Moves:           moves,
+	}
+}
+
+func attachRatingUpdate(msg *game.GameStateMessage, g *game.Game, userID int64) {
+	if g == nil || g.Status != game.StatusFinished || !g.Rated || g.WhiteRatingBefore == nil || g.WhiteRatingAfter == nil || g.BlackRatingBefore == nil || g.BlackRatingAfter == nil {
+		return
+	}
+	switch userID {
+	case g.WhitePlayerID:
+		msg.RatingUpdate = &game.RatingUpdate{
+			Mode:        g.TimeControlMode,
+			Before:      *g.WhiteRatingBefore,
+			After:       *g.WhiteRatingAfter,
+			Change:      *g.WhiteRatingAfter - *g.WhiteRatingBefore,
+			Provisional: g.WhiteProvisional != nil && *g.WhiteProvisional,
+		}
+	case g.BlackPlayerID:
+		msg.RatingUpdate = &game.RatingUpdate{
+			Mode:        g.TimeControlMode,
+			Before:      *g.BlackRatingBefore,
+			After:       *g.BlackRatingAfter,
+			Change:      *g.BlackRatingAfter - *g.BlackRatingBefore,
+			Provisional: g.BlackProvisional != nil && *g.BlackProvisional,
+		}
+	}
 }

@@ -91,3 +91,14 @@ func ValidateToken(tokenString string) (*AccessTokenClaims, error) {
 
 	return claims, nil
 }
+
+func ValidateUserToken(tokenString string) (*AccessTokenClaims, bool) {
+	if tokenString == "" {
+		return nil, false
+	}
+	claims, err := ValidateToken(tokenString)
+	if err != nil || claims.IsGuest || claims.UserID == 0 {
+		return nil, false
+	}
+	return claims, true
+}
