@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -80,14 +81,10 @@ func (s *PasswordResetService) ForgotPassword(ctx context.Context, req dto.Forgo
 		return ErrInternal
 	}
 
-	otpHash, err := bcrypt.GenerateFromPassword([]byte(otp), bcrypt.DefaultCost)
-	if err != nil {
-		slog.Error("hash otp failed", "error", err)
-		return ErrInternal
-	}
+	otpHash := hashOTP(otp)
 
 	data := OTPData{
-		CodeHash:  string(otpHash),
+		CodeHash:  otpHash,
 		ExpiresAt: time.Now().Add(15 * time.Minute),
 	}
 	dataJSON, _ := json.Marshal(data)
@@ -152,7 +149,7 @@ func (s *PasswordResetService) VerifyCode(ctx context.Context, req dto.VerifyCod
 		newData, _ := json.Marshal(data)
 		ttl := tx.TTL(ctx, key).Val()
 
-		if err := bcrypt.CompareHashAndPassword([]byte(data.CodeHash), []byte(req.Code)); err != nil {
+		if !verifyOTP(data.CodeHash, req.Code) {
 			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 				pipe.Set(ctx, key, newData, ttl)
 				return nil
@@ -244,4 +241,17 @@ func generateResetToken() (string, error) {
 func hashResetToken(token string) string {
 	hash := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(hash[:])
+}
+
+func hashOTP(code string) string {
+	hash := sha256.Sum256([]byte(code))
+	return hex.EncodeToString(hash[:])
+}
+
+func verifyOTP(storedHash, code string) bool {
+	if strings.HasPrefix(storedHash, "$2") {
+		return bcrypt.CompareHashAndPassword([]byte(storedHash), []byte(code)) == nil
+	}
+	computed := hashOTP(code)
+	return subtle.ConstantTimeCompare([]byte(storedHash), []byte(computed)) == 1
 }

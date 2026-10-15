@@ -87,11 +87,7 @@ func (s *RegisterService) Register(ctx context.Context, req dto.RegisterData) er
 		return ErrInternal
 	}
 
-	codeHash, err := bcrypt.GenerateFromPassword([]byte(code), bcrypt.DefaultCost)
-	if err != nil {
-		slog.Error("hash otp failed", "error", err)
-		return ErrInternal
-	}
+	codeHash := hashOTP(code)
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
@@ -102,7 +98,7 @@ func (s *RegisterService) Register(ctx context.Context, req dto.RegisterData) er
 
 	pUser := pendingUser{
 		Req:       req,
-		CodeHash:  string(codeHash),
+		CodeHash:  codeHash,
 		ExpiresAt: time.Now().Add(15 * time.Minute),
 	}
 	pUserJSON, _ := json.Marshal(pUser)
@@ -162,7 +158,7 @@ func (s *RegisterService) VerifyRegistration(ctx context.Context, req dto.Verify
 		newData, _ := json.Marshal(pUser)
 		ttl := tx.TTL(ctx, key).Val()
 
-		if err := bcrypt.CompareHashAndPassword([]byte(pUser.CodeHash), []byte(req.Code)); err != nil {
+		if !verifyOTP(pUser.CodeHash, req.Code) {
 			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
 				pipe.Set(ctx, key, newData, ttl)
 				return nil
