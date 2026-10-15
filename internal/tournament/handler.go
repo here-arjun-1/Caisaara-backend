@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
 )
 
 type Handler struct {
@@ -20,17 +21,8 @@ func NewHandler(service Service) *Handler {
 	}
 }
 
-func getUserID(c *gin.Context) (int64, bool) {
-	val, exists := c.Get("user_id")
-	if !exists {
-		return 0, false
-	}
-	id, ok := val.(int64)
-	return id, ok
-}
-
 func (h *Handler) CreateTournament(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "user not authenticated",
@@ -145,7 +137,7 @@ func (h *Handler) GetTournamentByInviteCode(c *gin.Context) {
 }
 
 func (h *Handler) JoinTournament(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "user not authenticated",
@@ -206,7 +198,7 @@ func (h *Handler) JoinTournament(c *gin.Context) {
 }
 
 func (h *Handler) JoinTournamentByInviteCode(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "user not authenticated",
@@ -252,7 +244,7 @@ func (h *Handler) JoinTournamentByInviteCode(c *gin.Context) {
 }
 
 func (h *Handler) LeaveTournament(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "user not authenticated",
@@ -301,7 +293,7 @@ func (h *Handler) LeaveTournament(c *gin.Context) {
 }
 
 func (h *Handler) StartTournament(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "user not authenticated",
@@ -435,7 +427,7 @@ func (h *Handler) GetGames(c *gin.Context) {
 }
 
 func (h *Handler) GetMyGames(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
 		return

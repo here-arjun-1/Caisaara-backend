@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
 )
 
 type CreateGameRequest struct {
@@ -34,18 +35,8 @@ func (h *Handler) SetUserRepo(repo PasswordVersionGetter) {
 	h.UserRepo = repo
 }
 
-func getUserID(c *gin.Context) (int64, bool) {
-	userIDValue, exists := c.Get("user_id")
-	if !exists {
-		return 0, false
-	}
-
-	userID, ok := userIDValue.(int64)
-	return userID, ok
-}
-
 func (h *Handler) CreateGame(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "user not authenticated",
@@ -90,7 +81,7 @@ func (h *Handler) CreateGame(c *gin.Context) {
 }
 
 func (h *Handler) GetGame(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "user not authenticated",

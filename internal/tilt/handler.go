@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
 )
 
 type Handler struct {
@@ -17,9 +18,8 @@ func NewHandler(service *Service) *Handler {
 }
 
 func (h *Handler) GetStatus(c *gin.Context) {
-	userIDValue, exists := c.Get("user_id")
-	userID, ok := userIDValue.(int64)
-	if !exists || !ok {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "user not authenticated",
 		})

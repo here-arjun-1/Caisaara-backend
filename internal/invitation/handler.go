@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
 )
 
 type CreateInviteRequest struct {
@@ -84,18 +85,10 @@ func NewHandler(service InvitationService) *Handler {
 }
 
 func (h *Handler) Create(c *gin.Context) {
-	userIDValue, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "user not authenticated",
-		})
-		return
-	}
-
-	userID, ok := userIDValue.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "invalid user id",
+			"error": "user not authenticated",
 		})
 		return
 	}
@@ -248,18 +241,10 @@ func (h *Handler) Preview(c *gin.Context) {
 }
 
 func (h *Handler) Join(c *gin.Context) {
-	userIDValue, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "user not authenticated",
-		})
-		return
-	}
-
-	userID, ok := userIDValue.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "invalid user id",
+			"error": "user not authenticated",
 		})
 		return
 	}
@@ -311,18 +296,10 @@ func (h *Handler) Join(c *gin.Context) {
 }
 
 func (h *Handler) GetMyChallenges(c *gin.Context) {
-	userIDValue, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "user not authenticated",
-		})
-		return
-	}
-
-	userID, ok := userIDValue.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "invalid user id",
+			"error": "user not authenticated",
 		})
 		return
 	}
@@ -341,18 +318,10 @@ func (h *Handler) GetMyChallenges(c *gin.Context) {
 }
 
 func (h *Handler) DeclineChallenge(c *gin.Context) {
-	userIDValue, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "user not authenticated",
-		})
-		return
-	}
-
-	userID, ok := userIDValue.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "invalid user id",
+			"error": "user not authenticated",
 		})
 		return
 	}

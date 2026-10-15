@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
 )
 
 type UpdateLocationRequest struct {
@@ -27,18 +28,8 @@ func NewHandler(service *Service) *Handler {
 	}
 }
 
-func getUserID(c *gin.Context) (int64, bool) {
-	userIDValue, exists := c.Get("user_id")
-	if !exists {
-		return 0, false
-	}
-
-	userID, ok := userIDValue.(int64)
-	return userID, ok
-}
-
 func (h *Handler) UpdateLocation(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
 		return
@@ -60,7 +51,7 @@ func (h *Handler) UpdateLocation(c *gin.Context) {
 }
 
 func (h *Handler) SetNearby(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
 		return
@@ -82,7 +73,7 @@ func (h *Handler) SetNearby(c *gin.Context) {
 }
 
 func (h *Handler) GetNearbyPlayers(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
 		return
