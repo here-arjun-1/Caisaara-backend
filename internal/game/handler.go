@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
 )
 
 type Handler struct {
@@ -71,10 +72,8 @@ func (h *Handler) GetMoves(c *gin.Context) {
 
 func (h *Handler) GetGameHistory(c *gin.Context) {
 	var playerID int64
-	if val, exists := c.Get("user_id"); exists {
-		if id, ok := val.(int64); ok {
-			playerID = id
-		}
+	if id, ok := middleware.GetUserID(c); ok {
+		playerID = id
 	}
 
 	if playerID == 0 {
@@ -114,10 +113,8 @@ func (h *Handler) Resign(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	var playerID int64
-	if val, exists := c.Get("user_id"); exists {
-		if id, ok := val.(int64); ok {
-			playerID = id
-		}
+	if id, ok := middleware.GetUserID(c); ok {
+		playerID = id
 	}
 	if playerID == 0 {
 		if param := c.Query("player_id"); param != "" {
@@ -154,10 +151,8 @@ func (h *Handler) OfferDraw(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	var playerID int64
-	if val, exists := c.Get("user_id"); exists {
-		if id, ok := val.(int64); ok {
-			playerID = id
-		}
+	if id, ok := middleware.GetUserID(c); ok {
+		playerID = id
 	}
 	if playerID == 0 {
 		if param := c.Query("player_id"); param != "" {
@@ -194,10 +189,8 @@ func (h *Handler) AcceptDraw(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	var playerID int64
-	if val, exists := c.Get("user_id"); exists {
-		if id, ok := val.(int64); ok {
-			playerID = id
-		}
+	if id, ok := middleware.GetUserID(c); ok {
+		playerID = id
 	}
 	if playerID == 0 {
 		if param := c.Query("player_id"); param != "" {
@@ -230,10 +223,8 @@ func (h *Handler) DeclineDraw(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	var playerID int64
-	if val, exists := c.Get("user_id"); exists {
-		if id, ok := val.(int64); ok {
-			playerID = id
-		}
+	if id, ok := middleware.GetUserID(c); ok {
+		playerID = id
 	}
 	if playerID == 0 {
 		if param := c.Query("player_id"); param != "" {

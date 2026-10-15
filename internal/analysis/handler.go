@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
 )
 
 type Handler struct {
@@ -18,19 +19,10 @@ func NewHandler(service AnalysisService) *Handler {
 	}
 }
 
-func getUserIDFromContext(c *gin.Context) int64 {
-	if val, exists := c.Get("user_id"); exists {
-		if id, ok := val.(int64); ok {
-			return id
-		}
-	}
-	return 0
-}
-
 func (h *Handler) TriggerAnalysis(c *gin.Context) {
 	gameID := c.Param("gameID")
 	ctx := c.Request.Context()
-	userID := getUserIDFromContext(c)
+	userID, _ := middleware.GetUserID(c)
 
 	analysis, err := h.Service.TriggerAnalysis(ctx, gameID, userID)
 	if err != nil {
@@ -54,7 +46,7 @@ func (h *Handler) TriggerAnalysis(c *gin.Context) {
 func (h *Handler) GetAnalysis(c *gin.Context) {
 	gameID := c.Param("gameID")
 	ctx := c.Request.Context()
-	userID := getUserIDFromContext(c)
+	userID, _ := middleware.GetUserID(c)
 
 	result, err := h.Service.GetAnalysis(ctx, gameID, userID)
 	if err != nil {
@@ -76,7 +68,7 @@ func (h *Handler) GetAnalysis(c *gin.Context) {
 func (h *Handler) GetMoveAnalyses(c *gin.Context) {
 	gameID := c.Param("gameID")
 	ctx := c.Request.Context()
-	userID := getUserIDFromContext(c)
+	userID, _ := middleware.GetUserID(c)
 
 	moves, err := h.Service.GetMoveAnalyses(ctx, gameID, userID)
 	if err != nil {
@@ -99,7 +91,7 @@ func (h *Handler) GetMoveAnalysisByNumber(c *gin.Context) {
 	gameID := c.Param("gameID")
 	moveNumberStr := c.Param("moveNumber")
 	ctx := c.Request.Context()
-	userID := getUserIDFromContext(c)
+	userID, _ := middleware.GetUserID(c)
 
 	moveNumber, err := strconv.Atoi(moveNumberStr)
 	if err != nil || moveNumber <= 0 {
@@ -127,7 +119,7 @@ func (h *Handler) GetMoveAnalysisByNumber(c *gin.Context) {
 func (h *Handler) RetryAnalysis(c *gin.Context) {
 	gameID := c.Param("gameID")
 	ctx := c.Request.Context()
-	userID := getUserIDFromContext(c)
+	userID, _ := middleware.GetUserID(c)
 
 	analysis, err := h.Service.RetryAnalysis(ctx, gameID, userID)
 	if err != nil {

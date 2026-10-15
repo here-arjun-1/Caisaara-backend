@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
 	"github.com/here-arjun-1/Caisaara-backend/internal/response"
 )
 
@@ -22,16 +23,6 @@ func NewHandler(service *Service) *Handler {
 	return &Handler{
 		Service: service,
 	}
-}
-
-func getUserID(c *gin.Context) (int64, bool) {
-	userIDValue, exists := c.Get("user_id")
-	if !exists {
-		return 0, false
-	}
-
-	userID, ok := userIDValue.(int64)
-	return userID, ok
 }
 
 func getRequestID(c *gin.Context) (int64, bool) {
@@ -51,7 +42,7 @@ func getFriendID(c *gin.Context) (int64, bool) {
 }
 
 func (h *Handler) SendRequest(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		response.Error(c, http.StatusUnauthorized, "user not authenticated")
 		return
@@ -73,7 +64,7 @@ func (h *Handler) SendRequest(c *gin.Context) {
 }
 
 func (h *Handler) GetPendingRequests(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		response.Error(c, http.StatusUnauthorized, "user not authenticated")
 		return
@@ -89,7 +80,7 @@ func (h *Handler) GetPendingRequests(c *gin.Context) {
 }
 
 func (h *Handler) AcceptRequest(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		response.Error(c, http.StatusUnauthorized, "user not authenticated")
 		return
@@ -111,7 +102,7 @@ func (h *Handler) AcceptRequest(c *gin.Context) {
 }
 
 func (h *Handler) RejectRequest(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		response.Error(c, http.StatusUnauthorized, "user not authenticated")
 		return
@@ -133,7 +124,7 @@ func (h *Handler) RejectRequest(c *gin.Context) {
 }
 
 func (h *Handler) GetFriends(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		response.Error(c, http.StatusUnauthorized, "user not authenticated")
 		return
@@ -163,7 +154,7 @@ func handleError(c *gin.Context, err error) {
 }
 
 func (h *Handler) CancelRequest(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		response.Error(c, http.StatusUnauthorized, "user not authenticated")
 		return
@@ -185,7 +176,7 @@ func (h *Handler) CancelRequest(c *gin.Context) {
 }
 
 func (h *Handler) RemoveFriend(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		response.Error(c, http.StatusUnauthorized, "user not authenticated")
 		return
@@ -207,7 +198,7 @@ func (h *Handler) RemoveFriend(c *gin.Context) {
 }
 
 func (h *Handler) GetSentRequests(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		response.Error(c, http.StatusUnauthorized, "user not authenticated")
 		return

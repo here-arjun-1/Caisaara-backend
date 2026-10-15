@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
 )
 
 type Handler struct {
@@ -26,18 +27,10 @@ func (h *Handler) SendMessage(c *gin.Context) {
 	ctx := c.Request.Context()
 	gameID := c.Param("gameID")
 
-	val, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "unauthorized",
-		})
-		return
-	}
-
-	userID, ok := val.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "invalid user id in context",
+			"error": "unauthorized",
 		})
 		return
 	}
@@ -89,18 +82,10 @@ func (h *Handler) GetMessages(c *gin.Context) {
 	ctx := c.Request.Context()
 	gameID := c.Param("gameID")
 
-	val, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "unauthorized",
-		})
-		return
-	}
-
-	userID, ok := val.(int64)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "invalid user id in context",
+			"error": "unauthorized",
 		})
 		return
 	}

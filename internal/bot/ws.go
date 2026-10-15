@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 
-	"github.com/here-arjun-1/Caisaara-backend/internal/auth/token"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
 )
 
 const (
@@ -94,7 +94,7 @@ func (h *Handler) Connect(c *gin.Context) {
 	ctx := c.Request.Context()
 	gameID := c.Param("gameID")
 
-	claims, ok := claimsFromToken(c.Query("token"))
+	claims, ok := middleware.ClaimsFromToken(c.Query("token"))
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "invalid or missing token",
@@ -202,19 +202,6 @@ func (h *Handler) playBotTurn(ctx context.Context, cl *client, game *Game) {
 	}
 
 	sendGame(cl, updatedGame)
-}
-
-func claimsFromToken(tokenString string) (*token.AccessTokenClaims, bool) {
-	if tokenString == "" {
-		return nil, false
-	}
-
-	claims, err := token.ValidateToken(tokenString)
-	if err != nil || claims.IsGuest || claims.UserID == 0 {
-		return nil, false
-	}
-
-	return claims, true
 }
 
 func isBotTurn(game *Game) bool {

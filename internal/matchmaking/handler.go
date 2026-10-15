@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
 )
 
 type JoinRequest struct {
@@ -24,18 +25,8 @@ func NewHandler(service MatchmakingService) *Handler {
 	}
 }
 
-func getUserID(c *gin.Context) (int64, bool) {
-	userIDValue, exists := c.Get("user_id")
-	if !exists {
-		return 0, false
-	}
-
-	userID, ok := userIDValue.(int64)
-	return userID, ok
-}
-
 func (h *Handler) Join(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "user not authenticated",
@@ -88,7 +79,7 @@ func (h *Handler) Join(c *gin.Context) {
 }
 
 func (h *Handler) Cancel(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "user not authenticated",
@@ -118,7 +109,7 @@ func (h *Handler) Cancel(c *gin.Context) {
 }
 
 func (h *Handler) Status(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"error": "user not authenticated",

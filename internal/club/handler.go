@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
 )
 
 type CreateClubRequest struct {
@@ -40,18 +41,8 @@ func (h *Handler) SetUserRepo(repo PasswordVersionGetter) {
 	h.UserRepo = repo
 }
 
-func getUserID(c *gin.Context) (int64, bool) {
-	userIDValue, exists := c.Get("user_id")
-	if !exists {
-		return 0, false
-	}
-
-	userID, ok := userIDValue.(int64)
-	return userID, ok
-}
-
 func (h *Handler) CreateClub(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
 		return
@@ -96,7 +87,7 @@ func (h *Handler) GetClub(c *gin.Context) {
 }
 
 func (h *Handler) JoinClub(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
 		return
@@ -111,7 +102,7 @@ func (h *Handler) JoinClub(c *gin.Context) {
 }
 
 func (h *Handler) LeaveClub(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
 		return
@@ -146,7 +137,7 @@ func (h *Handler) GetLeaderboard(c *gin.Context) {
 }
 
 func (h *Handler) GetMessages(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
 		return
@@ -162,7 +153,7 @@ func (h *Handler) GetMessages(c *gin.Context) {
 }
 
 func (h *Handler) SendMessage(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
 		return
@@ -218,7 +209,7 @@ func getTargetID(c *gin.Context) (int64, bool) {
 }
 
 func (h *Handler) PromoteToAdmin(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
 		return
@@ -237,7 +228,7 @@ func (h *Handler) PromoteToAdmin(c *gin.Context) {
 }
 
 func (h *Handler) RemoveAdmin(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
 		return
@@ -255,7 +246,7 @@ func (h *Handler) RemoveAdmin(c *gin.Context) {
 }
 
 func (h *Handler) KickMember(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
 		return
@@ -273,7 +264,7 @@ func (h *Handler) KickMember(c *gin.Context) {
 }
 
 func (h *Handler) TransferLeadership(c *gin.Context) {
-	userID, ok := getUserID(c)
+	userID, ok := middleware.GetUserID(c)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
 		return
