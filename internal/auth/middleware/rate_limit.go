@@ -19,6 +19,7 @@ type TokenBucketLimiter struct {
 	clients    map[string]*client
 	capacity   float64
 	refillRate float64
+	stop       chan struct{}
 }
 
 func NewTokenBucketLimiter(limit int, window time.Duration) *TokenBucketLimiter {
@@ -26,9 +27,18 @@ func NewTokenBucketLimiter(limit int, window time.Duration) *TokenBucketLimiter 
 		clients:    make(map[string]*client),
 		capacity:   float64(limit),
 		refillRate: float64(limit) / window.Seconds(),
+		stop:       make(chan struct{}),
 	}
 	go l.cleanup()
 	return l
+}
+
+func (l *TokenBucketLimiter) Stop() {
+	select {
+	case <-l.stop:
+	default:
+		close(l.stop)
+	}
 }
 
 func (l *TokenBucketLimiter) allow(ip string) bool {
@@ -57,15 +67,21 @@ func (l *TokenBucketLimiter) allow(ip string) bool {
 }
 
 func (l *TokenBucketLimiter) cleanup() {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
 	for {
-		time.Sleep(time.Minute)
-		l.mu.Lock()
-		for ip, cl := range l.clients {
-			if time.Since(cl.lastRefill) > 15*time.Minute {
-				delete(l.clients, ip)
+		select {
+		case <-l.stop:
+			return
+		case <-ticker.C:
+			l.mu.Lock()
+			for ip, cl := range l.clients {
+				if time.Since(cl.lastRefill) > 15*time.Minute {
+					delete(l.clients, ip)
+				}
 			}
+			l.mu.Unlock()
 		}
-		l.mu.Unlock()
 	}
 }
 

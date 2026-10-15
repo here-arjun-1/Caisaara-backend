@@ -180,16 +180,16 @@ func run() error {
 		return fmt.Errorf("setup router: %w", err)
 	}
 
-	cleanupCtx, stopCleanup := context.WithCancel(context.Background())
-	defer stopCleanup()
+	appCtx, appCancel := context.WithCancel(context.Background())
+	defer appCancel()
 
 	asynqServer := worker.StartEmailServer(asynqRedisOpt, email.NewSender(cfg.SMTP))
 	analysisServer := analysis.StartAnalysisServer(asynqRedisOpt, analysisProcessor, 2)
-	worker.StartSessionCleanup(cleanupCtx, authModule.SessionRepository, 1*time.Hour)
-	matcher.Start()
-	tournament.StartTournamentCleanup(context.Background(), tournamentRepo, 24*time.Hour)
-	gameService.StartTimeoutChecker(context.Background(), 1*time.Second)
-	wsHandler.StartActiveAuthChecker(context.Background(), 5*time.Second)
+	worker.StartSessionCleanup(appCtx, authModule.SessionRepository, 1*time.Hour)
+	matcher.Start(appCtx)
+	tournament.StartTournamentCleanup(appCtx, tournamentRepo, 24*time.Hour)
+	gameService.StartTimeoutChecker(appCtx, 1*time.Second)
+	wsHandler.StartActiveAuthChecker(appCtx, 5*time.Second)
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
@@ -224,7 +224,7 @@ func run() error {
 
 	slog.Info("shutting down server...")
 
-	stopCleanup()
+	appCancel()
 
 	if asynqServer != nil {
 		asynqServer.Stop()
