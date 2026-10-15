@@ -646,7 +646,9 @@ func (h *Handler) BroadcastChatMessage(gameID string, msg *chat.ChatMessage) {
 	room, exists := h.Hub.Rooms[gameID]
 	h.Hub.Mutex.RUnlock()
 	if exists && room != nil {
-		h.broadcastChatMessage(context.Background(), room, msg)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		h.broadcastChatMessage(ctx, room, msg)
 	}
 }
 
@@ -658,7 +660,9 @@ func (h *Handler) BroadcastGameState(g *game.Game) {
 	room, exists := h.Hub.Rooms[g.ID]
 	h.Hub.Mutex.RUnlock()
 	if exists && room != nil {
-		h.broadcastGameState(context.Background(), room, g)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		h.broadcastGameState(ctx, room, g)
 	}
 }
 
@@ -1004,7 +1008,8 @@ func (h *Handler) handlePlayerDisconnect(gameID string, userID int64, room *Room
 		return
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	g, err := h.GameService.GetGame(ctx, gameID)
 	if err != nil || g == nil || g.Status != game.StatusActive || g.TimeControlMode == game.ModeDaily {
 		return
@@ -1043,7 +1048,8 @@ func (h *Handler) handleDisconnectTimeout(gameID string, userID int64) {
 		return
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
 	g, err := h.GameService.EndGameOnDisconnect(ctx, gameID, userID)
 	if err != nil || g == nil {
 		return

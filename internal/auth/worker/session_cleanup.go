@@ -21,9 +21,9 @@ func StartSessionCleanup(ctx context.Context, sessions SessionCleaner, interval 
 			case <-ticker.C:
 				deleted, err := sessions.CleanExpiredSessions(ctx)
 				if err != nil {
-					slog.Error("failed to clean expired sessions", "error", err)
+					slog.ErrorContext(ctx, "failed to clean expired sessions", "error", err)
 				} else if deleted > 0 {
-					slog.Info("cleaned up expired sessions", "count", deleted)
+					slog.InfoContext(ctx, "cleaned up expired sessions", "count", deleted)
 				}
 			}
 		}

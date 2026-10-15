@@ -2,16 +2,20 @@ package database
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func ConnectDB(databaseURL string) (*pgxpool.Pool, error) {
-	pool, err := pgxpool.New(context.Background(), databaseURL)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.New(ctx, databaseURL)
 	if err != nil {
 		return nil, err
 	}
-	if err := pool.Ping(context.Background()); err != nil {
+	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
 		return nil, err
 	}
@@ -30,7 +34,7 @@ func ConnectDB(databaseURL string) (*pgxpool.Pool, error) {
 	}
 
 	for _, query := range migrations {
-		_, _ = pool.Exec(context.Background(), query)
+		_, _ = pool.Exec(ctx, query)
 	}
 
 	return pool, nil

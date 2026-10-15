@@ -29,12 +29,17 @@ func NewMatcher(queueRepo QueueRepository, gameRepository game.GameRepository) *
 	}
 }
 
-func (m *Matcher) Start() {
+func (m *Matcher) Start(ctx context.Context) {
 	go func() {
 		ticker := time.NewTicker(matchInterval)
 		defer ticker.Stop()
-		for range ticker.C {
-			m.runOnce(context.Background())
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				m.runOnce(ctx)
+			}
 		}
 	}()
 }
