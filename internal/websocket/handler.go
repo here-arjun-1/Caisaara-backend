@@ -271,7 +271,7 @@ func (h *Handler) readPump(
 
 		h.handlePlayerDisconnect(client.GameID, client.UserID, room)
 
-		if room.Count() == 0 {
+		if room.IsEmpty() {
 			h.Hub.RemoveRoom(room.GameID)
 		}
 	}()
@@ -502,6 +502,16 @@ func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Ga
 		default:
 		}
 	}
+
+	spectatorData, err := json.Marshal(baseMsg)
+	if err != nil {
+		return
+	}
+	for _, client := range room.Spectators {
+		if client != nil {
+			client.SafeSend(spectatorData)
+		}
+	}
 }
 
 func (h *Handler) broadcastChatMessage(ctx context.Context, room *Room, msg *chat.ChatMessage) {
@@ -533,7 +543,7 @@ func (h *Handler) broadcastChatMessage(ctx context.Context, room *Room, msg *cha
 		return
 	}
 
-	room.Broadcast(data)
+	room.BroadcastToPlayers(data)
 }
 
 func (h *Handler) BroadcastChatMessage(gameID string, msg *chat.ChatMessage) {
@@ -861,6 +871,11 @@ func (h *Handler) CheckActiveClients(ctx context.Context) {
 	for _, room := range h.Hub.Rooms {
 		room.Mutex.RLock()
 		for _, client := range room.Clients {
+			if client != nil && client.UserID > 0 && !client.IsGuest {
+				clients = append(clients, client)
+			}
+		}
+		for _, client := range room.Spectators {
 			if client != nil && client.UserID > 0 && !client.IsGuest {
 				clients = append(clients, client)
 			}
