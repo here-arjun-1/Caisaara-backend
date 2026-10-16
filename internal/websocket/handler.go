@@ -674,7 +674,7 @@ func sendError(ctx context.Context, client *Client, message string) {
 }
 
 func (h *Handler) ConnectTournament(c *gin.Context) {
-	ctx := c.Request.Context()
+	ctx := context.WithoutCancel(c.Request.Context())
 	tournamentID := c.Param("tournamentID")
 	accessToken := c.Query("token")
 
