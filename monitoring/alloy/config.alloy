@@ -1,0 +1,39 @@
+discovery.docker "backend" {
+  host = "unix:///var/run/docker.sock"
+
+  filter {
+    name   = "name"
+    values = ["caisaara-backend"]
+  }
+}
+
+discovery.relabel "backend" {
+  targets = []
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "backend" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.backend.targets
+  relabel_rules = discovery.relabel.backend.rules
+  forward_to    = [loki.process.backend.receiver]
+}
+
+loki.process "backend" {
+  stage.drop {
+    expression = `GET\s+"/health"`
+  }
+
+  forward_to = [loki.write.local.receiver]
+}
+
+loki.write "local" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}
