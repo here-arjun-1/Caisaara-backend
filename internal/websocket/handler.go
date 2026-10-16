@@ -374,10 +374,10 @@ func (h *Handler) broadcastSpectatorCount(room *Room) {
 	room.Broadcast(data)
 }
 
-func (h *Handler) endWatching(gameID string, spectators []*Client) {
+func (h *Handler) endWatching(ctx context.Context, gameID string, spectators []*Client) {
 	if h.WatchInviteService != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_ = h.WatchInviteService.DeleteWatchInvite(ctx, gameID)
+		deleteCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		_ = h.WatchInviteService.DeleteWatchInvite(deleteCtx, gameID)
 		cancel()
 	}
 
@@ -707,7 +707,7 @@ func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Ga
 		}
 	}
 
-	go h.endWatching(g.ID, spectators)
+	go h.endWatching(context.WithoutCancel(ctx), g.ID, spectators)
 }
 
 func (h *Handler) broadcastChatMessage(ctx context.Context, room *Room, msg *chat.ChatMessage) {
