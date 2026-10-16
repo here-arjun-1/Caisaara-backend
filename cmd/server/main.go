@@ -125,15 +125,16 @@ func run() error {
 
 	clubRepository := club.NewRepository(conn)
 	clubService := club.NewService(clubRepository, chatLimiter)
-	clubHandler := club.NewHandler(clubService)
 
 	wsHub := websocket.NewHub()
+	clubHandler := club.NewHandler(clubService, wsHub)
 	wsHandler := websocket.NewHandler(wsHub, gameService, chatService)
 	wsHandler.SetInviteFinder(invitationService)
 	wsHandler.SetUserRepo(authModule.UserRepository)
 	authModule.SetDisconnector(wsHub)
 	clubHandler.SetUserRepo(authModule.UserRepository)
 	botHandler.SetUserRepo(authModule.UserRepository)
+	botHandler.SetHub(wsHub)
 	chatHandler := chat.NewHandler(chatService, wsHandler.BroadcastChatMessage)
 
 	tournamentRepo := tournament.NewRepository(conn)

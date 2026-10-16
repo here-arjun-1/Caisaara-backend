@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
+	"github.com/here-arjun-1/Caisaara-backend/internal/websocket"
 )
 
 type CreateGameRequest struct {
@@ -22,13 +23,23 @@ type PasswordVersionGetter interface {
 
 type Handler struct {
 	Service  GameService
+	Hub      *websocket.Hub
 	UserRepo PasswordVersionGetter
 }
 
-func NewHandler(service GameService) *Handler {
+func NewHandler(service GameService, hub ...*websocket.Hub) *Handler {
+	var h *websocket.Hub
+	if len(hub) > 0 {
+		h = hub[0]
+	}
 	return &Handler{
 		Service: service,
+		Hub:     h,
 	}
+}
+
+func (h *Handler) SetHub(hub *websocket.Hub) {
+	h.Hub = hub
 }
 
 func (h *Handler) SetUserRepo(repo PasswordVersionGetter) {
