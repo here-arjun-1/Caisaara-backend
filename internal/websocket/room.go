@@ -25,14 +25,16 @@ func NewRoom(gameID string) *Room {
 
 func (r *Room) AddClient(client *Client) {
 	r.Mutex.Lock()
-	defer r.Mutex.Unlock()
-
-	_, alreadyThere := r.Clients[client.UserID]
-	if !alreadyThere {
+	oldClient, exists := r.Clients[client.UserID]
+	if !exists {
 		metrics.WebsocketConnections.Inc()
 	}
-
 	r.Clients[client.UserID] = client
+	r.Mutex.Unlock()
+
+	if exists && oldClient != nil && oldClient != client {
+		oldClient.Close()
+	}
 }
 
 func (r *Room) RemoveClient(userID int64, client ...*Client) {
