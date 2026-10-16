@@ -9,6 +9,14 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+var chatRateLimitScript = redis.NewScript(`
+local count = redis.call('INCR', KEYS[1])
+if count == 1 or redis.call('PTTL', KEYS[1]) < 0 then
+    redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+return count
+`)
+
 type RateLimiter interface {
 	Allow(ctx context.Context, gameID string, userID int64) (bool, error)
 }
@@ -33,14 +41,10 @@ func (r *RedisRateLimiter) Allow(ctx context.Context, gameID string, userID int6
 	}
 
 	key := fmt.Sprintf("chat_ratelimit:%s:%d", gameID, userID)
-	count, err := r.client.Incr(ctx, key).Result()
+	count, err := chatRateLimitScript.Run(ctx, r.client, []string{key}, r.window.Milliseconds()).Int64()
 	if err != nil {
 		slog.ErrorContext(ctx, "redis rate limit error", "game_id", gameID, "user_id", userID, "error", err)
 		return true, nil
-	}
-
-	if count == 1 {
-		_ = r.client.Expire(ctx, key, r.window).Err()
 	}
 
 	if count > r.limit {
