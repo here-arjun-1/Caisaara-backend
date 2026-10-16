@@ -22,6 +22,11 @@ type InviteFinder interface {
 	GetInviteByGameID(ctx context.Context, gameID string) (*invitation.Invite, error)
 }
 
+type WatchInviteService interface {
+	GetWatchInvite(ctx context.Context, code string) (*invitation.WatchInvite, error)
+	DeleteWatchInvite(ctx context.Context, gameID string) error
+}
+
 type PasswordVersionGetter interface {
 	GetPasswordVersion(ctx context.Context, userID int64) (int, error)
 }
@@ -32,12 +37,13 @@ type disconnectTimerEntry struct {
 }
 
 type Handler struct {
-	Hub              *Hub
-	GameService      game.GameService
-	ChatService      chat.ChatService
-	InviteFinder     InviteFinder
-	UserRepo         PasswordVersionGetter
-	disconnectTimers sync.Map
+	Hub                *Hub
+	GameService        game.GameService
+	ChatService        chat.ChatService
+	InviteFinder       InviteFinder
+	WatchInviteService WatchInviteService
+	UserRepo           PasswordVersionGetter
+	disconnectTimers   sync.Map
 }
 
 func NewHandler(hub *Hub, gameService game.GameService, chatService ...chat.ChatService) *Handler {
@@ -53,6 +59,10 @@ func NewHandler(hub *Hub, gameService game.GameService, chatService ...chat.Chat
 
 func (h *Handler) SetInviteFinder(finder InviteFinder) {
 	h.InviteFinder = finder
+}
+
+func (h *Handler) SetWatchInviteService(service WatchInviteService) {
+	h.WatchInviteService = service
 }
 
 func (h *Handler) SetUserRepo(repo PasswordVersionGetter) {
@@ -90,6 +100,8 @@ const (
 	pongWait       = PongWait
 	pingPeriod     = PingPeriod
 	maxMessageSize = MaxMessageSize
+
+	maxSpectatorsPerGame = 50
 )
 
 var upgrader = Upgrader
@@ -211,6 +223,168 @@ func (h *Handler) Connect(c *gin.Context) {
 
 	if room.Count() == 2 && len(moves) == 0 && room.MarkGameStarted() {
 		h.sendGameStart(ctx, room, currentGame, moves)
+	}
+}
+
+func (h *Handler) ConnectSpectator(c *gin.Context) {
+	ctx := context.WithoutCancel(c.Request.Context())
+	code := c.Param("code")
+	accessToken := c.Query("token")
+
+	if accessToken == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "token required"})
+		return
+	}
+
+	claims, err := token.ValidateToken(accessToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
+		return
+	}
+
+	if !h.validatePasswordVersion(ctx, claims) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or revoked token"})
+		return
+	}
+
+	if claims.IsGuest || claims.UserID <= 0 {
+		c.JSON(http.StatusForbidden, gin.H{"error": "login required to watch"})
+		return
+	}
+
+	if h.WatchInviteService == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "watching not available"})
+		return
+	}
+
+	invite, err := h.WatchInviteService.GetWatchInvite(ctx, code)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "watch link not found or expired"})
+		return
+	}
+	gameID := invite.GameID
+
+	currentGame, err := h.GameService.GetGame(ctx, gameID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "game not found"})
+		return
+	}
+
+	if claims.UserID == currentGame.WhitePlayerID || claims.UserID == currentGame.BlackPlayerID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "you are playing this game"})
+		return
+	}
+
+	if currentGame.Status != game.StatusActive {
+		c.JSON(http.StatusGone, gin.H{"error": "game is already over"})
+		return
+	}
+
+	room := h.Hub.GetOrCreateRoom(gameID)
+	if room.SpectatorCount() >= maxSpectatorsPerGame {
+		c.JSON(http.StatusForbidden, gin.H{"error": "too many spectators"})
+		return
+	}
+
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		slog.ErrorContext(ctx, "spectator websocket upgrade failed", "game_id", gameID, "error", err)
+		if room.IsEmpty() {
+			h.Hub.RemoveRoom(gameID)
+		}
+		return
+	}
+
+	client := newClientFromClaims(conn, claims, gameID)
+	room.AddSpectator(client)
+
+	go h.writePump(ctx, client)
+	go h.spectatorReadPump(ctx, client, room)
+
+	moves, _ := h.GameService.GetMoves(ctx, gameID)
+	h.sendClientGameState(ctx, client, currentGame, moves, "game_state")
+
+	h.broadcastSpectatorCount(room)
+}
+
+func (h *Handler) spectatorReadPump(ctx context.Context, client *Client, room *Room) {
+	defer func() {
+		room.RemoveSpectator(client.UserID, client)
+		client.Close()
+
+		h.broadcastSpectatorCount(room)
+
+		if room.IsEmpty() {
+			h.Hub.RemoveRoom(room.GameID)
+		}
+	}()
+
+	client.Conn.SetReadLimit(maxMessageSize)
+	_ = client.Conn.SetReadDeadline(time.Now().Add(pongWait))
+	client.Conn.SetPongHandler(func(string) error {
+		_ = client.Conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
+
+	limiter := newWSRateLimiter(5, time.Second)
+
+	for {
+		_, message, err := client.Conn.ReadMessage()
+		if err != nil {
+			return
+		}
+		_ = client.Conn.SetReadDeadline(time.Now().Add(pongWait))
+
+		if !limiter.allow() {
+			sendError(ctx, client, "rate limit exceeded")
+			continue
+		}
+
+		if !h.validateActiveClient(ctx, client) {
+			sendError(ctx, client, "invalid or revoked token")
+			time.Sleep(10 * time.Millisecond)
+			return
+		}
+
+		var incomingMsg struct {
+			Type string `json:"type"`
+		}
+		if err := json.Unmarshal(message, &incomingMsg); err != nil {
+			sendError(ctx, client, "invalid message format")
+			continue
+		}
+
+		if incomingMsg.Type == "leave" {
+			return
+		}
+		sendError(ctx, client, "spectators can only watch")
+	}
+}
+
+func (h *Handler) broadcastSpectatorCount(room *Room) {
+	wsMsg := map[string]interface{}{
+		"type":    "spectator_count",
+		"game_id": room.GameID,
+		"count":   room.SpectatorCount(),
+	}
+	data, err := json.Marshal(wsMsg)
+	if err != nil {
+		return
+	}
+	room.Broadcast(data)
+}
+
+func (h *Handler) endWatching(gameID string, spectators []*Client) {
+	if h.WatchInviteService != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = h.WatchInviteService.DeleteWatchInvite(ctx, gameID)
+		cancel()
+	}
+
+	time.Sleep(10 * time.Second)
+
+	for _, client := range spectators {
+		client.Close()
 	}
 }
 
@@ -512,6 +686,28 @@ func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Ga
 			client.SafeSend(spectatorData)
 		}
 	}
+
+	if g.Status != game.StatusFinished {
+		return
+	}
+
+	endedData, err := json.Marshal(map[string]interface{}{
+		"type":    "watch_ended",
+		"game_id": g.ID,
+	})
+	if err != nil {
+		return
+	}
+
+	var spectators []*Client
+	for _, client := range room.Spectators {
+		if client != nil {
+			client.SafeSend(endedData)
+			spectators = append(spectators, client)
+		}
+	}
+
+	go h.endWatching(g.ID, spectators)
 }
 
 func (h *Handler) broadcastChatMessage(ctx context.Context, room *Room, msg *chat.ChatMessage) {

@@ -130,6 +130,7 @@ func run() error {
 	clubHandler := club.NewHandler(clubService, wsHub)
 	wsHandler := websocket.NewHandler(wsHub, gameService, chatService)
 	wsHandler.SetInviteFinder(invitationService)
+	wsHandler.SetWatchInviteService(invitationService)
 	wsHandler.SetUserRepo(authModule.UserRepository)
 	authModule.SetDisconnector(wsHub)
 	clubHandler.SetUserRepo(authModule.UserRepository)
