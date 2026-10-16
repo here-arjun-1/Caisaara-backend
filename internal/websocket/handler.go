@@ -215,7 +215,11 @@ func (h *Handler) Connect(c *gin.Context) {
 	room.AddClient(client)
 	h.broadcastPlayerPresence(room, gameID, claims.UserID, true)
 
-	moves, _ := h.GameService.GetMoves(ctx, gameID)
+	moves := room.GetMoves()
+	if len(moves) == 0 {
+		moves, _ = h.GameService.GetMoves(ctx, gameID)
+		room.SetMoves(moves)
+	}
 	if freshGame, freshErr := h.GameService.GetGame(ctx, gameID); freshErr == nil && freshGame != nil {
 		currentGame = freshGame
 	}
@@ -304,7 +308,11 @@ func (h *Handler) ConnectSpectator(c *gin.Context) {
 	go h.writePump(ctx, client)
 	go h.spectatorReadPump(ctx, client, room)
 
-	moves, _ := h.GameService.GetMoves(ctx, gameID)
+	moves := room.GetMoves()
+	if len(moves) == 0 {
+		moves, _ = h.GameService.GetMoves(ctx, gameID)
+		room.SetMoves(moves)
+	}
 	h.sendClientGameState(ctx, client, currentGame, moves, "game_state")
 
 	h.broadcastSpectatorCount(room)
@@ -341,12 +349,6 @@ func (h *Handler) spectatorReadPump(ctx context.Context, client *Client, room *R
 		if !limiter.allow() {
 			sendError(ctx, client, "rate limit exceeded")
 			continue
-		}
-
-		if !h.validateActiveClient(ctx, client) {
-			sendError(ctx, client, "invalid or revoked token")
-			time.Sleep(10 * time.Millisecond)
-			return
 		}
 
 		var incomingMsg struct {
@@ -478,13 +480,6 @@ func (h *Handler) readPump(
 			continue
 		}
 
-		if !h.validateActiveClient(ctx, client) {
-			slog.WarnContext(ctx, "active websocket password version revoked", "user_id", client.UserID, "game_id", client.GameID)
-			sendError(ctx, client, "invalid or revoked token")
-			time.Sleep(10 * time.Millisecond)
-			return
-		}
-
 		var incomingMsg struct {
 			Type    string `json:"type"`
 			Move    string `json:"move,omitempty"`
@@ -507,6 +502,17 @@ func (h *Handler) readPump(
 			if err != nil {
 				h.handleActionError(ctx, client, incomingMsg.Type, err)
 				continue
+			}
+			if room != nil {
+				newMove := game.GameMove{
+					GameID:        client.GameID,
+					PlayerID:      strconv.FormatInt(client.UserID, 10),
+					MoveNumber:    room.MoveCount() + 1,
+					Move:          incomingMsg.Move,
+					PositionAfter: currentGame.Position,
+					CreatedAt:     time.Now(),
+				}
+				room.AddMove(newMove)
 			}
 			h.broadcastGameState(ctx, room, currentGame)
 
@@ -659,8 +665,15 @@ func (h *Handler) broadcastDrawDeclined(ctx context.Context, room *Room, gameID 
 	room.Broadcast(data)
 }
 
-func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Game) {
-	baseMsg := h.buildGameStateMessage(ctx, g, nil, "game_state")
+func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Game, moves ...[]game.GameMove) {
+	var m []game.GameMove
+	if len(moves) > 0 && moves[0] != nil {
+		m = moves[0]
+	} else if room != nil {
+		m = room.GetMoves()
+	}
+
+	baseMsg := h.buildGameStateMessage(ctx, g, m, "game_state")
 
 	room.Mutex.RLock()
 	defer room.Mutex.RUnlock()

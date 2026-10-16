@@ -3,6 +3,7 @@ package websocket
 import (
 	"sync"
 
+	"github.com/here-arjun-1/Caisaara-backend/internal/game"
 	"github.com/here-arjun-1/Caisaara-backend/internal/metrics"
 )
 
@@ -15,6 +16,8 @@ type Room struct {
 
 	GameStarted bool
 
+	Moves []game.GameMove
+
 	Mutex sync.RWMutex
 }
 
@@ -24,6 +27,35 @@ func NewRoom(gameID string) *Room {
 		Clients:    make(map[int64]*Client),
 		Spectators: make(map[int64]*Client),
 	}
+}
+
+func (r *Room) SetMoves(moves []game.GameMove) {
+	r.Mutex.Lock()
+	defer r.Mutex.Unlock()
+	r.Moves = append([]game.GameMove(nil), moves...)
+}
+
+func (r *Room) AddMove(move game.GameMove) {
+	r.Mutex.Lock()
+	defer r.Mutex.Unlock()
+	r.Moves = append(r.Moves, move)
+}
+
+func (r *Room) GetMoves() []game.GameMove {
+	r.Mutex.RLock()
+	defer r.Mutex.RUnlock()
+	if r.Moves == nil {
+		return nil
+	}
+	result := make([]game.GameMove, len(r.Moves))
+	copy(result, r.Moves)
+	return result
+}
+
+func (r *Room) MoveCount() int {
+	r.Mutex.RLock()
+	defer r.Mutex.RUnlock()
+	return len(r.Moves)
 }
 
 func (r *Room) AddClient(client *Client) {
