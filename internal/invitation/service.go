@@ -28,6 +28,9 @@ type InvitationService interface {
 	FindInviteCreator(ctx context.Context, creatorID int64) (*model.User, error)
 	GetMyChallenges(ctx context.Context, userID int64) ([]Challenge, error)
 	DeclineChallenge(ctx context.Context, userID int64, code string) error
+	CreateWatchInvite(ctx context.Context, userID int64, gameID string) (*WatchInvite, error)
+	GetWatchInvite(ctx context.Context, code string) (*WatchInvite, error)
+	DeleteWatchInvite(ctx context.Context, gameID string) error
 }
 
 type Service struct {
@@ -362,5 +365,75 @@ func (s *Service) DeclineChallenge(ctx context.Context, userID int64, code strin
 		return ErrInternal
 	}
 
+	return nil
+}
+
+func (s *Service) CreateWatchInvite(ctx context.Context, userID int64, gameID string) (*WatchInvite, error) {
+	currentGame, err := s.GameRepository.FindGameByID(ctx, gameID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrGameNotFound
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "find game for watch invite failed", "error", err, "game_id", gameID)
+		return nil, ErrInternal
+	}
+
+	if userID != currentGame.WhitePlayerID && userID != currentGame.BlackPlayerID {
+		return nil, ErrNotYourGame
+	}
+
+	if currentGame.Status != game.StatusActive {
+		return nil, ErrGameNotActive
+	}
+
+	existing, err := s.InviteRepo.GetWatchInviteByGameID(ctx, gameID)
+	if err == nil {
+		return existing, nil
+	}
+	if !errors.Is(err, redis.Nil) {
+		slog.ErrorContext(ctx, "get watch invite by game id failed", "error", err, "game_id", gameID)
+		return nil, ErrInternal
+	}
+
+	code, err := generateInviteCode()
+	if err != nil {
+		slog.ErrorContext(ctx, "generate watch code failed", "error", err)
+		return nil, ErrInternal
+	}
+
+	invite := &WatchInvite{
+		Code:      code,
+		GameID:    gameID,
+		CreatedBy: userID,
+	}
+
+	err = s.InviteRepo.SaveWatchInvite(ctx, invite, 24*time.Hour)
+	if err != nil {
+		slog.ErrorContext(ctx, "save watch invite failed", "error", err, "game_id", gameID)
+		return nil, ErrInternal
+	}
+
+	return invite, nil
+}
+
+func (s *Service) GetWatchInvite(ctx context.Context, code string) (*WatchInvite, error) {
+	invite, err := s.InviteRepo.GetWatchInvite(ctx, code)
+	if errors.Is(err, redis.Nil) {
+		return nil, ErrWatchLinkNotFound
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "get watch invite failed", "error", err)
+		return nil, ErrInternal
+	}
+
+	return invite, nil
+}
+
+func (s *Service) DeleteWatchInvite(ctx context.Context, gameID string) error {
+	err := s.InviteRepo.DeleteWatchInvite(ctx, gameID)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete watch invite failed", "error", err, "game_id", gameID)
+		return ErrInternal
+	}
 	return nil
 }
