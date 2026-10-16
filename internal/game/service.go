@@ -105,8 +105,10 @@ func (s *Service) CheckGameTimeout(ctx context.Context, currentGame *Game) (bool
 			endReason = EndReasonDailyTimeout
 			if isWhiteTurn {
 				result = ResultBlackWin
+				newWhiteTimeMs = 0
 			} else {
 				result = ResultWhiteWin
+				newBlackTimeMs = 0
 			}
 		}
 	} else {
@@ -247,10 +249,19 @@ func (s *Service) MakeMove(
 		return nil, errors.New("player is not part of this game")
 	}
 
-	chessGame, err := NewChessGameFromFEN(currentGame.Position)
+	existingMoves, err := s.Repository.GetMoves(ctx, gameID)
 	if err != nil {
-		slog.ErrorContext(ctx, "parse FEN position failed", "game_id", gameID, "position", currentGame.Position, "error", err)
+		slog.ErrorContext(ctx, "fetch moves count failed", "game_id", gameID, "error", err)
 		return nil, err
+	}
+
+	chessGame, err := NewChessGameFromMoves(existingMoves)
+	if err != nil {
+		chessGame, err = NewChessGameFromFEN(currentGame.Position)
+		if err != nil {
+			slog.ErrorContext(ctx, "parse FEN position failed", "game_id", gameID, "position", currentGame.Position, "error", err)
+			return nil, err
+		}
 	}
 
 	if !s.isPlayerTurn(chessGame, currentGame, playerID) {
@@ -289,10 +300,19 @@ func (s *Service) MakeMove(
 		return currentGame, errors.New("time has expired")
 	}
 
-	if isWhiteTurn {
-		newWhiteTimeMs = currentGame.WhiteTimeMs - elapsedMs
+	if currentGame.TimeControlMode == ModeDaily {
+		dailyLimitMs := currentGame.DailyMoveTimeMs
+		if dailyLimitMs <= 0 {
+			dailyLimitMs = 86400000
+		}
+		newWhiteTimeMs = dailyLimitMs
+		newBlackTimeMs = dailyLimitMs
 	} else {
-		newBlackTimeMs = currentGame.BlackTimeMs - elapsedMs
+		if isWhiteTurn {
+			newWhiteTimeMs = currentGame.WhiteTimeMs - elapsedMs
+		} else {
+			newBlackTimeMs = currentGame.BlackTimeMs - elapsedMs
+		}
 	}
 
 	if err := chessGame.MakeMove(move); err != nil {
@@ -308,11 +328,6 @@ func (s *Service) MakeMove(
 		}
 	}
 
-	existingMoves, err := s.Repository.GetMoves(ctx, gameID)
-	if err != nil {
-		slog.ErrorContext(ctx, "fetch moves count failed", "game_id", gameID, "error", err)
-		return nil, err
-	}
 	moveNumber := len(existingMoves) + 1
 
 	position := chessGame.FEN()

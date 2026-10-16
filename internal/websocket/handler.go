@@ -216,6 +216,9 @@ func (h *Handler) Connect(c *gin.Context) {
 	h.broadcastPlayerPresence(room, gameID, claims.UserID, true)
 
 	moves, _ := h.GameService.GetMoves(ctx, gameID)
+	if freshGame, freshErr := h.GameService.GetGame(ctx, gameID); freshErr == nil && freshGame != nil {
+		currentGame = freshGame
+	}
 
 	h.startPumps(ctx, client, room)
 
@@ -774,7 +777,7 @@ func calculateLiveClocks(g *game.Game) (int64, int64, *time.Time) {
 	if g == nil {
 		return 0, 0, nil
 	}
-	if g.Status != game.StatusActive || g.TimeControlMode == game.ModeDaily {
+	if g.Status != game.StatusActive {
 		return g.WhiteTimeMs, g.BlackTimeMs, g.TurnStartedAt
 	}
 
@@ -798,6 +801,21 @@ func calculateLiveClocks(g *game.Game) (int64, int64, *time.Time) {
 	blackTimeMs := g.BlackTimeMs
 
 	isWhiteTurn := g.CurrentTurn == "w" || g.CurrentTurn == "White"
+	if g.TimeControlMode == game.ModeDaily {
+		dailyLimitMs := g.DailyMoveTimeMs
+		if dailyLimitMs <= 0 {
+			dailyLimitMs = 86400000
+		}
+		remaining := dailyLimitMs - elapsedMs
+		if remaining < 0 {
+			remaining = 0
+		}
+		if isWhiteTurn {
+			return remaining, dailyLimitMs, &now
+		}
+		return dailyLimitMs, remaining, &now
+	}
+
 	if isWhiteTurn {
 		whiteTimeMs -= elapsedMs
 		if whiteTimeMs < 0 {

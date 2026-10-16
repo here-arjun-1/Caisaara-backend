@@ -27,6 +27,22 @@ func NewChessGameFromFEN(fen string) (*ChessGame, error) {
 	}, nil
 }
 
+func NewChessGameFromMoves(moves []GameMove) (*ChessGame, error) {
+	g := chess.NewGame()
+	for _, m := range moves {
+		err := g.PushNotationMove(m.Move, chess.UCINotation{}, nil)
+		if err != nil {
+			err = g.PushNotationMove(m.Move, chess.AlgebraicNotation{}, nil)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &ChessGame{
+		game: g,
+	}, nil
+}
+
 func (g *ChessGame) MakeMove(move string) error {
 	if g.game.Outcome() != chess.NoOutcome {
 		return errors.New("game is already finished")
@@ -60,6 +76,12 @@ func (g *ChessGame) Method() string {
 }
 
 func (g *ChessGame) IsFinished() bool {
+	for _, method := range g.game.EligibleDraws() {
+		if method == chess.ThreefoldRepetition || method == chess.FiftyMoveRule || method == chess.FivefoldRepetition || method == chess.SeventyFiveMoveRule {
+			_ = g.game.Draw(method)
+			break
+		}
+	}
 	return g.game.Outcome() != chess.NoOutcome
 }
 
