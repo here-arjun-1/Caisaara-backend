@@ -22,3 +22,9 @@ type Challenge struct {
 	IncrementSeconds   int    `json:"increment_seconds"`
 	Rated              bool   `json:"rated"`
 }
+
+type WatchInvite struct {
+	Code      string `json:"code"`
+	GameID    string `json:"game_id"`
+	CreatedBy int64  `json:"created_by"`
+}

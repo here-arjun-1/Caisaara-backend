@@ -19,6 +19,10 @@ type InviteRepository interface {
 	AddChallenge(ctx context.Context, opponentID int64, code string, ttl time.Duration) error
 	GetChallengeCodes(ctx context.Context, userID int64) ([]string, error)
 	RemoveChallenge(ctx context.Context, userID int64, code string) error
+	SaveWatchInvite(ctx context.Context, invite *WatchInvite, ttl time.Duration) error
+	GetWatchInvite(ctx context.Context, code string) (*WatchInvite, error)
+	GetWatchInviteByGameID(ctx context.Context, gameID string) (*WatchInvite, error)
+	DeleteWatchInvite(ctx context.Context, gameID string) error
 }
 
 type RedisInviteRepository struct {
@@ -45,6 +49,14 @@ func lockKey(code string) string {
 
 func challengesKey(userID int64) string {
 	return "invite:challenges:" + strconv.FormatInt(userID, 10)
+}
+
+func watchKey(code string) string {
+	return "watch:" + code
+}
+
+func watchGameKey(gameID string) string {
+	return "watch:game:" + gameID
 }
 
 func (r *RedisInviteRepository) SaveInvite(ctx context.Context, invite *Invite, ttl time.Duration) error {
@@ -120,4 +132,55 @@ func (r *RedisInviteRepository) GetChallengeCodes(ctx context.Context, userID in
 
 func (r *RedisInviteRepository) RemoveChallenge(ctx context.Context, userID int64, code string) error {
 	return r.Client.SRem(ctx, challengesKey(userID), code).Err()
+}
+
+func (r *RedisInviteRepository) SaveWatchInvite(ctx context.Context, invite *WatchInvite, ttl time.Duration) error {
+	data, err := json.Marshal(invite)
+	if err != nil {
+		return err
+	}
+	pipe := r.Client.Pipeline()
+	pipe.Set(ctx, watchKey(invite.Code), data, ttl)
+	pipe.Set(ctx, watchGameKey(invite.GameID), data, ttl)
+	_, err = pipe.Exec(ctx)
+	return err
+}
+
+func (r *RedisInviteRepository) GetWatchInvite(ctx context.Context, code string) (*WatchInvite, error) {
+	data, err := r.Client.Get(ctx, watchKey(code)).Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	var invite WatchInvite
+	if err := json.Unmarshal(data, &invite); err != nil {
+		return nil, err
+	}
+
+	return &invite, nil
+}
+
+func (r *RedisInviteRepository) GetWatchInviteByGameID(ctx context.Context, gameID string) (*WatchInvite, error) {
+	data, err := r.Client.Get(ctx, watchGameKey(gameID)).Bytes()
+	if err != nil {
+		return nil, err
+	}
+
+	var invite WatchInvite
+	if err := json.Unmarshal(data, &invite); err != nil {
+		return nil, err
+	}
+
+	return &invite, nil
+}
+
+func (r *RedisInviteRepository) DeleteWatchInvite(ctx context.Context, gameID string) error {
+	invite, _ := r.GetWatchInviteByGameID(ctx, gameID)
+	pipe := r.Client.Pipeline()
+	pipe.Del(ctx, watchGameKey(gameID))
+	if invite != nil && invite.Code != "" {
+		pipe.Del(ctx, watchKey(invite.Code))
+	}
+	_, err := pipe.Exec(ctx)
+	return err
 }
