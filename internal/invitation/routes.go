@@ -13,4 +13,6 @@ func RegisterRoutes(handler *Handler, public *gin.Engine, protected *gin.RouterG
 
 	protected.GET("/challenges", middleware.RequireRegisteredUser(), handler.GetMyChallenges)
 	protected.POST("/challenges/:code/decline", middleware.RequireRegisteredUser(), handler.DeclineChallenge)
+
+	protected.POST("/games/:gameID/watch-invite", middleware.RequireRegisteredUser(), handler.CreateWatchInvite)
 }

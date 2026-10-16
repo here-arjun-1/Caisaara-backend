@@ -355,3 +355,51 @@ func (h *Handler) DeclineChallenge(c *gin.Context) {
 		"message": "challenge declined",
 	})
 }
+
+func (h *Handler) CreateWatchInvite(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "user not authenticated",
+		})
+		return
+	}
+
+	gameID := c.Param("gameID")
+
+	invite, err := h.Service.CreateWatchInvite(c.Request.Context(), userID, gameID)
+
+	if errors.Is(err, ErrInternal) {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	if errors.Is(err, ErrGameNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if errors.Is(err, ErrNotYourGame) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"watch_code": invite.Code,
+		"game_id":    invite.GameID,
+		"link":       "https://caisaara.duckdns.org/watch/" + invite.Code,
+	})
+}
