@@ -103,7 +103,6 @@ func (s *RegisterService) Register(ctx context.Context, req dto.RegisterData) er
 	}
 	pUserJSON, _ := json.Marshal(pUser)
 	s.RedisClient.Set(ctx, "register:"+req.Email, pUserJSON, 15*time.Minute)
-	s.RedisClient.Set(ctx, "raw_otp:"+req.Email, code, 15*time.Minute)
 	slog.Info("generated registration OTP", "email", req.Email, "otp", code)
 
 	task, err := worker.NewEmailRegistrationTask(req.Email, code)
