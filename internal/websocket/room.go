@@ -11,6 +11,8 @@ type Room struct {
 
 	Clients map[int64]*Client
 
+	Spectators map[int64]*Client
+
 	GameStarted bool
 
 	Mutex sync.RWMutex
@@ -18,8 +20,9 @@ type Room struct {
 
 func NewRoom(gameID string) *Room {
 	return &Room{
-		GameID:  gameID,
-		Clients: make(map[int64]*Client),
+		GameID:     gameID,
+		Clients:    make(map[int64]*Client),
+		Spectators: make(map[int64]*Client),
 	}
 }
 
@@ -55,6 +58,37 @@ func (r *Room) RemoveClient(userID int64, client ...*Client) {
 	delete(r.Clients, userID)
 }
 
+func (r *Room) AddSpectator(client *Client) {
+	r.Mutex.Lock()
+	oldClient, exists := r.Spectators[client.UserID]
+	if !exists {
+		metrics.WebsocketConnections.Inc()
+	}
+	r.Spectators[client.UserID] = client
+	r.Mutex.Unlock()
+
+	if exists && oldClient != nil && oldClient != client {
+		oldClient.Close()
+	}
+}
+
+func (r *Room) RemoveSpectator(userID int64, client *Client) {
+	r.Mutex.Lock()
+	defer r.Mutex.Unlock()
+
+	current, exists := r.Spectators[userID]
+	if !exists {
+		return
+	}
+
+	if current != client {
+		return
+	}
+
+	metrics.WebsocketConnections.Dec()
+	delete(r.Spectators, userID)
+}
+
 func (r *Room) HasClient(userID int64) bool {
 	r.Mutex.RLock()
 	defer r.Mutex.RUnlock()
@@ -68,6 +102,20 @@ func (r *Room) Count() int {
 	defer r.Mutex.RUnlock()
 
 	return len(r.Clients)
+}
+
+func (r *Room) SpectatorCount() int {
+	r.Mutex.RLock()
+	defer r.Mutex.RUnlock()
+
+	return len(r.Spectators)
+}
+
+func (r *Room) IsEmpty() bool {
+	r.Mutex.RLock()
+	defer r.Mutex.RUnlock()
+
+	return len(r.Clients) == 0 && len(r.Spectators) == 0
 }
 
 func (r *Room) MarkGameStarted() bool {
@@ -89,6 +137,22 @@ func (r *Room) IsGameStarted() bool {
 }
 
 func (r *Room) Broadcast(message []byte) {
+	r.Mutex.RLock()
+	defer r.Mutex.RUnlock()
+
+	for _, client := range r.Clients {
+		if client != nil {
+			client.SafeSend(message)
+		}
+	}
+	for _, client := range r.Spectators {
+		if client != nil {
+			client.SafeSend(message)
+		}
+	}
+}
+
+func (r *Room) BroadcastToPlayers(message []byte) {
 	r.Mutex.RLock()
 	defer r.Mutex.RUnlock()
 
