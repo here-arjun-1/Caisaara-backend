@@ -132,6 +132,7 @@ func New(
 	if wsHandler != nil {
 		r.GET("/ws/:gameID", wsHandler.Connect)
 		r.GET("/ws/tournament/:tournamentID", wsHandler.ConnectTournament)
+		r.GET("/ws/watch/:code", wsHandler.ConnectSpectator)
 		protected.GET("/games/:gameID/ws", wsHandler.Connect)
 	}
 
