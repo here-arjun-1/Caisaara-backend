@@ -51,6 +51,16 @@ func New(
 	}
 
 	r.Use(metrics.Middleware())
+	r.Use(func(c *gin.Context) {
+		if c.Request.ContentLength > 5<<20 {
+			c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request body too large"})
+			return
+		}
+		if c.Request.Body != nil {
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 5<<20)
+		}
+		c.Next()
+	})
 
 	r.GET("/health", func(c *gin.Context) {
 		response.Success(c, http.StatusOK, "ok", nil)
