@@ -13,4 +13,8 @@ var (
 	ErrChallengeYourself  = errors.New("you cannot challenge yourself")
 	ErrOpponentNotFound   = errors.New("opponent not found")
 	ErrNotYourChallenge   = errors.New("this challenge is for another player")
+	ErrGameNotFound       = errors.New("game not found")
+	ErrNotYourGame        = errors.New("you are not playing this game")
+	ErrGameNotActive      = errors.New("game is not active")
+	ErrWatchLinkNotFound  = errors.New("watch link not found or expired")
 )
