@@ -1,6 +1,9 @@
 package websocket
 
-import "sync"
+import (
+	"encoding/json"
+	"sync"
+)
 
 type Hub struct {
 	Rooms map[string]*Room
@@ -52,6 +55,15 @@ func (h *Hub) BroadcastToRoom(roomID string, message []byte) {
 	if exists && room != nil {
 		room.Broadcast(message)
 	}
+}
+
+func (h *Hub) BroadcastJSON(roomID string, payload any) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	h.BroadcastToRoom(roomID, data)
+	return nil
 }
 
 func (h *Hub) DisconnectUser(userID int64) {

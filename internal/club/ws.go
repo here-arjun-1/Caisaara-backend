@@ -2,62 +2,20 @@ package club
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
+	"github.com/here-arjun-1/Caisaara-backend/internal/websocket"
 )
-
-const (
-	writeWait      = 10 * time.Second
-	pongWait       = 60 * time.Second
-	pingPeriod     = (pongWait * 9) / 10
-	maxMessageSize = 4096
-)
-
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
 
 type wsMessage struct {
 	Type    string `json:"type"`
 	Message string `json:"message"`
-}
-
-type client struct {
-	conn            *websocket.Conn
-	send            chan []byte
-	userID          int64
-	passwordVersion int
-	done            chan struct{}
-	once            sync.Once
-}
-
-func (c *client) close() {
-	c.once.Do(func() {
-		close(c.done)
-		_ = c.conn.Close()
-	})
-}
-
-type Hub struct {
-	mu    sync.RWMutex
-	rooms map[string]map[*client]bool
-}
-
-func NewHub() *Hub {
-	return &Hub{
-		rooms: make(map[string]map[*client]bool),
-	}
 }
 
 func (h *Handler) Connect(c *gin.Context) {
@@ -85,152 +43,69 @@ func (h *Handler) Connect(c *gin.Context) {
 		return
 	}
 
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	conn, err := websocket.Upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		return
 	}
 
-	cl := &client{
-		conn:            conn,
-		send:            make(chan []byte, 64),
-		userID:          claims.UserID,
-		passwordVersion: claims.PasswordVersion,
-		done:            make(chan struct{}),
-	}
-	defer cl.close()
+	roomKey := "club:" + clubID
+	cl := websocket.NewClient(conn, claims.UserID, roomKey, claims.PasswordVersion, claims.IsGuest)
+	defer cl.Close()
 
-	conn.SetReadLimit(maxMessageSize)
-	_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+	conn.SetReadLimit(websocket.MaxMessageSize)
+	_ = conn.SetReadDeadline(time.Now().Add(websocket.PongWait))
 	conn.SetPongHandler(func(string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+		_ = conn.SetReadDeadline(time.Now().Add(websocket.PongWait))
 		return nil
 	})
 
-	h.Hub.join(clubID, cl)
-	defer h.Hub.leave(clubID, cl)
+	room := h.Hub.GetOrCreateRoom(roomKey)
+	room.AddClient(cl)
+	defer func() {
+		room.RemoveClient(cl.UserID, cl)
+		if room.Count() == 0 {
+			h.Hub.RemoveRoom(roomKey)
+		}
+	}()
 
-	go cl.writePump()
+	go cl.WritePump()
 
-	cl.sendJSON(gin.H{"type": "history", "messages": history})
+	cl.SendJSON(gin.H{"type": "history", "messages": history})
+
+	limiter := websocket.NewRateLimiter(10, time.Second)
 
 	for {
 		var msg wsMessage
 		if err := conn.ReadJSON(&msg); err != nil {
 			return
 		}
-		_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+		_ = conn.SetReadDeadline(time.Now().Add(websocket.PongWait))
 
-		if h.UserRepo != nil && cl.userID > 0 {
-			currentVersion, err := h.UserRepo.GetPasswordVersion(ctx, cl.userID)
-			if err != nil || cl.passwordVersion != currentVersion {
-				cl.sendJSON(gin.H{"type": "error", "message": "invalid or revoked token"})
+		if !limiter.Allow() {
+			cl.SendJSON(gin.H{"type": "error", "message": "rate limit exceeded"})
+			continue
+		}
+
+		if h.UserRepo != nil && cl.UserID > 0 {
+			currentVersion, err := h.UserRepo.GetPasswordVersion(ctx, cl.UserID)
+			if err != nil || cl.PasswordVersion != currentVersion {
+				cl.SendJSON(gin.H{"type": "error", "message": "invalid or revoked token"})
 				return
 			}
 		}
 
 		if msg.Type != "message" {
-			cl.sendJSON(gin.H{"type": "error", "message": "unsupported message type"})
+			cl.SendJSON(gin.H{"type": "error", "message": "unsupported message type"})
 			continue
 		}
 
 		sent, err := h.Service.SendMessage(ctx, clubID, userID, msg.Message)
 		if err != nil {
-			cl.sendJSON(gin.H{"type": "error", "message": wsErrorMessage(ctx, err)})
+			cl.SendJSON(gin.H{"type": "error", "message": wsErrorMessage(ctx, err)})
 			continue
 		}
 
-		h.Hub.Broadcast(clubID, gin.H{"type": "message", "message": sent})
-	}
-}
-
-func (h *Hub) join(clubID string, c *client) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	if h.rooms[clubID] == nil {
-		h.rooms[clubID] = make(map[*client]bool)
-	}
-	h.rooms[clubID][c] = true
-}
-
-func (h *Hub) leave(clubID string, c *client) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	delete(h.rooms[clubID], c)
-	if len(h.rooms[clubID]) == 0 {
-		delete(h.rooms, clubID)
-	}
-
-	close(c.send)
-}
-
-func (h *Hub) Broadcast(clubID string, payload any) {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return
-	}
-
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-
-	for c := range h.rooms[clubID] {
-		func(cl *client) {
-			defer func() {
-				_ = recover()
-			}()
-			select {
-			case <-cl.done:
-			case cl.send <- data:
-			default:
-			}
-		}(c)
-	}
-}
-
-func (c *client) writePump() {
-	ticker := time.NewTicker(pingPeriod)
-	defer func() {
-		ticker.Stop()
-		c.close()
-	}()
-
-	for {
-		select {
-		case <-c.done:
-			return
-		case data, ok := <-c.send:
-			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if !ok {
-				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-				return
-			}
-			if err := c.conn.WriteMessage(websocket.TextMessage, data); err != nil {
-				return
-			}
-		case <-ticker.C:
-			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
-			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-				return
-			}
-		}
-	}
-}
-
-func (c *client) sendJSON(payload any) {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return
-	}
-
-	defer func() {
-		_ = recover()
-	}()
-
-	select {
-	case <-c.done:
-	case c.send <- data:
-	default:
+		_ = h.Hub.BroadcastJSON(roomKey, gin.H{"type": "message", "message": sent})
 	}
 }
 

@@ -1,11 +1,27 @@
 package websocket
 
 import (
+	"encoding/json"
+	"net/http"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
+
+const (
+	WriteWait      = 10 * time.Second
+	PongWait       = 60 * time.Second
+	PingPeriod     = (PongWait * 9) / 10
+	MaxMessageSize = 4096
+)
+
+var Upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
 
 type Client struct {
 	Conn            *websocket.Conn
@@ -50,6 +66,43 @@ func (c *Client) SafeSend(data []byte) (sent bool) {
 	}
 }
 
+func (c *Client) SendJSON(payload any) bool {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return false
+	}
+	return c.SafeSend(data)
+}
+
+func (c *Client) WritePump() {
+	ticker := time.NewTicker(PingPeriod)
+	defer func() {
+		ticker.Stop()
+		c.Close()
+	}()
+
+	for {
+		select {
+		case <-c.done:
+			return
+		case message, ok := <-c.Send:
+			_ = c.Conn.SetWriteDeadline(time.Now().Add(WriteWait))
+			if !ok {
+				_ = c.Conn.WriteMessage(websocket.CloseMessage, []byte{})
+				return
+			}
+			if err := c.Conn.WriteMessage(websocket.TextMessage, message); err != nil {
+				return
+			}
+		case <-ticker.C:
+			_ = c.Conn.SetWriteDeadline(time.Now().Add(WriteWait))
+			if err := c.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return
+			}
+		}
+	}
+}
+
 func (c *Client) Close() {
 	c.once.Do(func() {
 		c.closed.Store(true)
@@ -60,4 +113,40 @@ func (c *Client) Close() {
 			_ = c.Conn.Close()
 		}
 	})
+}
+
+type RateLimiter struct {
+	tokens     float64
+	capacity   float64
+	refillRate float64
+	lastRefill time.Time
+}
+
+func NewRateLimiter(limit float64, window time.Duration) *RateLimiter {
+	return &RateLimiter{
+		tokens:     limit,
+		capacity:   limit,
+		refillRate: limit / window.Seconds(),
+		lastRefill: time.Now(),
+	}
+}
+
+func (l *RateLimiter) Allow() bool {
+	now := time.Now()
+	elapsed := now.Sub(l.lastRefill).Seconds()
+	l.tokens += elapsed * l.refillRate
+	if l.tokens > l.capacity {
+		l.tokens = l.capacity
+	}
+	l.lastRefill = now
+
+	if l.tokens < 1.0 {
+		return false
+	}
+	l.tokens -= 1.0
+	return true
+}
+
+func (l *RateLimiter) allow() bool {
+	return l.Allow()
 }

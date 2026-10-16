@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
+	"github.com/here-arjun-1/Caisaara-backend/internal/websocket"
 )
 
 type CreateClubRequest struct {
@@ -26,14 +27,20 @@ type PasswordVersionGetter interface {
 
 type Handler struct {
 	Service  ClubService
-	Hub      *Hub
+	Hub      *websocket.Hub
 	UserRepo PasswordVersionGetter
 }
 
-func NewHandler(service ClubService) *Handler {
+func NewHandler(service ClubService, hub ...*websocket.Hub) *Handler {
+	var h *websocket.Hub
+	if len(hub) > 0 && hub[0] != nil {
+		h = hub[0]
+	} else {
+		h = websocket.NewHub()
+	}
 	return &Handler{
 		Service: service,
-		Hub:     NewHub(),
+		Hub:     h,
 	}
 }
 
@@ -172,7 +179,7 @@ func (h *Handler) SendMessage(c *gin.Context) {
 		return
 	}
 
-	h.Hub.Broadcast(clubID, gin.H{"type": "message", "message": msg})
+	_ = h.Hub.BroadcastJSON("club:"+clubID, gin.H{"type": "message", "message": msg})
 
 	c.JSON(http.StatusCreated, msg)
 }

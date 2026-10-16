@@ -86,17 +86,13 @@ func (h *Handler) validateActiveClient(ctx context.Context, client *Client) bool
 }
 
 const (
-	writeWait      = 10 * time.Second
-	pongWait       = 60 * time.Second
-	pingPeriod     = (pongWait * 9) / 10
-	maxMessageSize = 4096
+	writeWait      = WriteWait
+	pongWait       = PongWait
+	pingPeriod     = PingPeriod
+	maxMessageSize = MaxMessageSize
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
+var upgrader = Upgrader
 
 func (h *Handler) Connect(c *gin.Context) {
 	ctx := context.WithoutCancel(c.Request.Context())
@@ -258,6 +254,12 @@ func (h *Handler) writePump(ctx context.Context, client *Client) {
 	}
 }
 
+type wsRateLimiter = RateLimiter
+
+func newWSRateLimiter(limit float64, window time.Duration) *wsRateLimiter {
+	return NewRateLimiter(limit, window)
+}
+
 func (h *Handler) readPump(
 	ctx context.Context,
 	client *Client,
@@ -281,6 +283,8 @@ func (h *Handler) readPump(
 		return nil
 	})
 
+	limiter := newWSRateLimiter(10, time.Second)
+
 	for {
 		_, message, err := client.Conn.ReadMessage()
 		if err != nil {
@@ -290,6 +294,12 @@ func (h *Handler) readPump(
 			return
 		}
 		_ = client.Conn.SetReadDeadline(time.Now().Add(pongWait))
+
+		if !limiter.allow() {
+			slog.WarnContext(ctx, "websocket rate limit exceeded", "user_id", client.UserID, "game_id", client.GameID)
+			sendError(ctx, client, "rate limit exceeded")
+			continue
+		}
 
 		if !h.validateActiveClient(ctx, client) {
 			slog.WarnContext(ctx, "active websocket password version revoked", "user_id", client.UserID, "game_id", client.GameID)
