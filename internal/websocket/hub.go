@@ -74,6 +74,9 @@ func (h *Hub) DisconnectUser(userID int64) {
 		if client, exists := room.Clients[userID]; exists && client != nil {
 			clients = append(clients, client)
 		}
+		if client, exists := room.Spectators[userID]; exists && client != nil {
+			clients = append(clients, client)
+		}
 		room.Mutex.RUnlock()
 	}
 	h.Mutex.RUnlock()
