@@ -223,6 +223,7 @@ func (h *Handler) Connect(c *gin.Context) {
 	if freshGame, freshErr := h.GameService.GetGame(ctx, gameID); freshErr == nil && freshGame != nil {
 		currentGame = freshGame
 	}
+	room.SetGame(currentGame)
 
 	h.startPumps(ctx, client, room)
 
@@ -312,6 +313,9 @@ func (h *Handler) ConnectSpectator(c *gin.Context) {
 	if len(moves) == 0 {
 		moves, _ = h.GameService.GetMoves(ctx, gameID)
 		room.SetMoves(moves)
+	}
+	if room.GetGame() == nil {
+		room.SetGame(currentGame)
 	}
 	h.sendClientGameState(ctx, client, currentGame, moves, "game_state")
 
@@ -493,11 +497,19 @@ func (h *Handler) readPump(
 
 		switch incomingMsg.Type {
 		case "move":
+			var cachedGame *game.Game
+			var cachedMoves []game.GameMove
+			if room != nil {
+				cachedGame = room.GetGame()
+				cachedMoves = room.GetMoves()
+			}
 			currentGame, err := h.GameService.MakeMove(
 				ctx,
 				client.GameID,
 				client.UserID,
 				incomingMsg.Move,
+				cachedGame,
+				cachedMoves,
 			)
 			if err != nil {
 				h.handleActionError(ctx, client, incomingMsg.Type, err)
@@ -513,6 +525,7 @@ func (h *Handler) readPump(
 					CreatedAt:     time.Now(),
 				}
 				room.AddMove(newMove)
+				room.SetGame(currentGame)
 			}
 			h.broadcastGameState(ctx, room, currentGame)
 
@@ -525,6 +538,9 @@ func (h *Handler) readPump(
 			if err != nil {
 				h.handleActionError(ctx, client, incomingMsg.Type, err)
 				continue
+			}
+			if room != nil {
+				room.SetGame(currentGame)
 			}
 			h.broadcastGameState(ctx, room, currentGame)
 
@@ -553,6 +569,9 @@ func (h *Handler) readPump(
 			if err != nil {
 				h.handleActionError(ctx, client, incomingMsg.Type, err)
 				continue
+			}
+			if room != nil {
+				room.SetGame(currentGame)
 			}
 			h.broadcastGameState(ctx, room, currentGame)
 
@@ -612,6 +631,9 @@ func (h *Handler) readPump(
 							sendError(ctx, client, err.Error())
 							continue
 						}
+						if room != nil {
+							room.SetGame(currentGame)
+						}
 						h.broadcastGameState(ctx, room, currentGame)
 						claimed = true
 					}
@@ -626,6 +648,9 @@ func (h *Handler) readPump(
 				if err != nil {
 					h.handleActionError(ctx, client, incomingMsg.Type, err)
 					continue
+				}
+				if room != nil {
+					room.SetGame(currentGame)
 				}
 				h.broadcastGameState(ctx, room, currentGame)
 			}
