@@ -9,7 +9,7 @@ import (
 )
 
 type GameService interface {
-	MakeMove(ctx context.Context, gameID string, playerID int64, move string) (*Game, error)
+	MakeMove(ctx context.Context, gameID string, playerID int64, move string, cachedState ...interface{}) (*Game, error)
 	ResignGame(ctx context.Context, gameID string, playerID int64) (*Game, error)
 	DrawGame(ctx context.Context, gameID string, playerID int64) (*Game, error)
 	OfferDraw(ctx context.Context, gameID string, playerID int64) (*Game, bool, int64, error)
@@ -27,16 +27,112 @@ type GameService interface {
 	EndGameOnDisconnect(ctx context.Context, gameID string, disconnectedPlayerID int64) (*Game, error)
 }
 
+const moveWorkerCount = 16
+
+type movePersistTask struct {
+	gameID        string
+	position      string
+	status        string
+	result        string
+	endReason     string
+	nextTurn      string
+	whiteTimeMs   int64
+	blackTimeMs   int64
+	turnStartedAt *time.Time
+	move          *GameMove
+	whitePlayerID int64
+	blackPlayerID int64
+	game          *Game
+}
+
 type Service struct {
 	Repository         GameRepository
 	OnGameCompleted    func(ctx context.Context, gameID string, result string)
 	OnGameStateUpdated func(ctx context.Context, g *Game)
 	drawOffers         sync.Map
+	moveQueues         [moveWorkerCount]chan movePersistTask
 }
 
 func NewService(repository GameRepository) GameService {
-	return &Service{
+	s := &Service{
 		Repository: repository,
+	}
+	for i := 0; i < moveWorkerCount; i++ {
+		s.moveQueues[i] = make(chan movePersistTask, 256)
+		go s.startMoveWorker(s.moveQueues[i])
+	}
+	return s
+}
+
+func (s *Service) getWorkerIndex(gameID string) int {
+	var h uint32 = 2166136261
+	for i := 0; i < len(gameID); i++ {
+		h ^= uint32(gameID[i])
+		h *= 16777619
+	}
+	return int(h % moveWorkerCount)
+}
+
+func (s *Service) enqueueMovePersist(task movePersistTask) {
+	idx := s.getWorkerIndex(task.gameID)
+	if s.moveQueues[idx] == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_ = s.Repository.SaveMoveTx(
+			ctx,
+			task.gameID,
+			task.position,
+			task.status,
+			task.result,
+			task.endReason,
+			task.nextTurn,
+			task.whiteTimeMs,
+			task.blackTimeMs,
+			task.turnStartedAt,
+			task.move,
+		)
+		cancel()
+		return
+	}
+	s.moveQueues[idx] <- task
+}
+
+func (s *Service) startMoveWorker(queue <-chan movePersistTask) {
+	for task := range queue {
+		var lastErr error
+		for attempt := 0; attempt < 3; attempt++ {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			err := s.Repository.SaveMoveTx(
+				ctx,
+				task.gameID,
+				task.position,
+				task.status,
+				task.result,
+				task.endReason,
+				task.nextTurn,
+				task.whiteTimeMs,
+				task.blackTimeMs,
+				task.turnStartedAt,
+				task.move,
+			)
+			cancel()
+			if err == nil {
+				lastErr = nil
+				break
+			}
+			lastErr = err
+			time.Sleep(50 * time.Millisecond)
+		}
+		if lastErr != nil {
+			slog.Error("save move transaction failed in worker after retries", "game_id", task.gameID, "error", lastErr)
+		}
+		if task.status == StatusFinished {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			_ = s.Repository.EnforceRetention(ctx, task.whitePlayerID)
+			_ = s.Repository.EnforceRetention(ctx, task.blackPlayerID)
+			s.notifyGameCompleted(ctx, task.game)
+			s.notifyGameStateUpdated(ctx, task.game)
+			cancel()
+		}
 	}
 }
 
@@ -230,13 +326,28 @@ func (s *Service) MakeMove(
 	gameID string,
 	playerID int64,
 	move string,
+	cachedState ...interface{},
 ) (*Game, error) {
 	s.drawOffers.Delete(gameID)
 
-	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
-	if err != nil {
-		slog.ErrorContext(ctx, "find game failed during make move", "game_id", gameID, "error", err)
-		return nil, err
+	var currentGame *Game
+	var existingMoves []GameMove
+	for _, arg := range cachedState {
+		switch v := arg.(type) {
+		case *Game:
+			currentGame = v
+		case []GameMove:
+			existingMoves = v
+		}
+	}
+
+	if currentGame == nil {
+		var err error
+		currentGame, err = s.Repository.FindGameByID(ctx, gameID)
+		if err != nil {
+			slog.ErrorContext(ctx, "find game failed during make move", "game_id", gameID, "error", err)
+			return nil, err
+		}
 	}
 
 	if currentGame.Status != StatusActive {
@@ -249,10 +360,13 @@ func (s *Service) MakeMove(
 		return nil, errors.New("player is not part of this game")
 	}
 
-	existingMoves, err := s.Repository.GetMoves(ctx, gameID)
-	if err != nil {
-		slog.ErrorContext(ctx, "fetch moves count failed", "game_id", gameID, "error", err)
-		return nil, err
+	if existingMoves == nil {
+		var err error
+		existingMoves, err = s.Repository.GetMoves(ctx, gameID)
+		if err != nil {
+			slog.ErrorContext(ctx, "fetch moves count failed", "game_id", gameID, "error", err)
+			return nil, err
+		}
 	}
 
 	chessGame, err := NewChessGameFromMoves(existingMoves)
@@ -348,29 +462,6 @@ func (s *Service) MakeMove(
 	)
 	gameMove.CreatedAt = now
 
-	err = s.Repository.SaveMoveTx(
-		ctx,
-		gameID,
-		position,
-		status,
-		result,
-		endReason,
-		nextTurn,
-		newWhiteTimeMs,
-		newBlackTimeMs,
-		&now,
-		gameMove,
-	)
-	if err != nil {
-		slog.ErrorContext(ctx, "save move transaction failed in make move", "game_id", gameID, "error", err)
-		return nil, err
-	}
-
-	if status == StatusFinished {
-		_ = s.Repository.EnforceRetention(ctx, currentGame.WhitePlayerID)
-		_ = s.Repository.EnforceRetention(ctx, currentGame.BlackPlayerID)
-	}
-
 	currentGame.Position = position
 	currentGame.Status = status
 	currentGame.Result = result
@@ -381,9 +472,21 @@ func (s *Service) MakeMove(
 	currentGame.TurnStartedAt = &now
 	currentGame.LastMove = move
 
-	if status == StatusFinished {
-		s.notifyGameCompleted(ctx, currentGame)
-	}
+	s.enqueueMovePersist(movePersistTask{
+		gameID:        gameID,
+		position:      position,
+		status:        status,
+		result:        result,
+		endReason:     endReason,
+		nextTurn:      nextTurn,
+		whiteTimeMs:   newWhiteTimeMs,
+		blackTimeMs:   newBlackTimeMs,
+		turnStartedAt: &now,
+		move:          gameMove,
+		whitePlayerID: currentGame.WhitePlayerID,
+		blackPlayerID: currentGame.BlackPlayerID,
+		game:          currentGame,
+	})
 
 	slog.InfoContext(ctx, "move completed successfully", "game_id", gameID, "player_id", playerID, "move", move, "status", status)
 
