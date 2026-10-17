@@ -83,7 +83,7 @@ func run() error {
 	communityModule := community.NewModule(conn)
 
 	gameRepository := game.NewRepository(conn)
-	gameService := game.NewService(gameRepository)
+	gameService := game.NewService(gameRepository, redisClient)
 	gameHandler := game.NewHandler(gameService)
 
 	analysisRepo := analysis.NewRepository(conn)
