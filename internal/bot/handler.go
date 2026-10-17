@@ -12,7 +12,7 @@ import (
 )
 
 type CreateGameRequest struct {
-	Level  string `json:"level" binding:"required"`
+	BotID  string `json:"bot_id"`
 	Rating int    `json:"rating"`
 	Color  string `json:"color"`
 }
@@ -64,10 +64,17 @@ func (h *Handler) CreateGame(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	game, err := h.Service.CreateGame(ctx, userID, req.Level, req.Rating, req.Color)
+	game, err := h.Service.CreateGame(ctx, userID, req.BotID, req.Rating, req.Color)
 
-	if errors.Is(err, ErrInvalidLevel) || errors.Is(err, ErrInvalidRating) || errors.Is(err, ErrInvalidColor) {
+	if errors.Is(err, ErrInvalidBot) || errors.Is(err, ErrInvalidRating) || errors.Is(err, ErrInvalidColor) {
 		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if errors.Is(err, ErrBotLocked) {
+		c.JSON(http.StatusForbidden, gin.H{
 			"error": err.Error(),
 		})
 		return
@@ -121,4 +128,54 @@ func (h *Handler) GetGame(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, game)
+}
+
+func (h *Handler) ListGames(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "user not authenticated",
+		})
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	games, err := h.Service.ListGames(ctx, userID)
+	if err != nil {
+		slog.ErrorContext(ctx, "list bot games handler failed", "player_id", userID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"games": games,
+	})
+}
+
+func (h *Handler) ListBots(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "user not authenticated",
+		})
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	bots, err := h.Service.ListBots(ctx, userID)
+	if err != nil {
+		slog.ErrorContext(ctx, "list bots handler failed", "player_id", userID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"bots": bots,
+	})
 }
