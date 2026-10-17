@@ -44,7 +44,11 @@ func New(
 	friendsHandler *friends.Handler,
 	tournamentHandler ...*tournament.Handler,
 ) (*gin.Engine, error) {
-	r := gin.Default()
+	r := gin.New()
+	r.Use(gin.LoggerWithConfig(gin.LoggerConfig{
+		SkipQueryString: true,
+	}))
+	r.Use(gin.Recovery())
 
 	if err := r.SetTrustedProxies([]string{"127.0.0.1", "::1", "172.16.0.0/12"}); err != nil {
 		return nil, fmt.Errorf("set trusted proxies: %w", err)
