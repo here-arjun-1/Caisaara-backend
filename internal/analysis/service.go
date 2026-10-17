@@ -51,9 +51,6 @@ func (s *Service) checkUserGamePermission(ctx context.Context, g *game.Game, use
 	if userID == g.WhitePlayerID || userID == g.BlackPlayerID {
 		return nil
 	}
-	if g.Status == game.StatusFinished {
-		return nil
-	}
 	return errors.New("forbidden: not part of this game")
 }
 
@@ -201,7 +198,18 @@ func (s *Service) RetryAnalysis(ctx context.Context, gameID string, userID int64
 		return nil, errors.New("game is not finished")
 	}
 
-	_ = s.Repo.UpdateStatus(ctx, gameID, StatusPending, "")
+	existing, err := s.Repo.GetAnalysisByGameID(ctx, gameID)
+	if err != nil || existing == nil {
+		return nil, errors.New("analysis not found")
+	}
+
+	if existing.Status == StatusPending || existing.Status == StatusProcessing || existing.Status == StatusCompleted {
+		return existing, nil
+	}
+
+	if err := s.Repo.UpdateStatus(ctx, gameID, StatusPending, ""); err != nil {
+		return nil, fmt.Errorf("update analysis status: %w", err)
+	}
 
 	if s.TaskDistributor != nil {
 		task, err := NewGameAnalysisTask(gameID)
