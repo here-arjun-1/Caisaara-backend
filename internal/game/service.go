@@ -2,10 +2,14 @@ package game
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 type GameService interface {
@@ -30,36 +34,47 @@ type GameService interface {
 const moveWorkerCount = 16
 
 type movePersistTask struct {
-	gameID        string
-	position      string
-	status        string
-	result        string
-	endReason     string
-	nextTurn      string
-	whiteTimeMs   int64
-	blackTimeMs   int64
-	turnStartedAt *time.Time
-	move          *GameMove
-	whitePlayerID int64
-	blackPlayerID int64
-	game          *Game
+	GameID        string     `json:"game_id"`
+	Position      string     `json:"position"`
+	Status        string     `json:"status"`
+	Result        string     `json:"result"`
+	EndReason     string     `json:"end_reason"`
+	NextTurn      string     `json:"next_turn"`
+	WhiteTimeMs   int64      `json:"white_time_ms"`
+	BlackTimeMs   int64      `json:"black_time_ms"`
+	TurnStartedAt *time.Time `json:"turn_started_at"`
+	Move          *GameMove  `json:"move"`
+	WhitePlayerID int64      `json:"white_player_id"`
+	BlackPlayerID int64      `json:"black_player_id"`
+	Game          *Game      `json:"game"`
+	ExpectedTurn  string     `json:"expected_turn"`
 }
 
 type Service struct {
 	Repository         GameRepository
+	RedisClient        *redis.Client
 	OnGameCompleted    func(ctx context.Context, gameID string, result string)
 	OnGameStateUpdated func(ctx context.Context, g *Game)
 	drawOffers         sync.Map
+	gameLocks          sync.Map
 	moveQueues         [moveWorkerCount]chan movePersistTask
 }
 
-func NewService(repository GameRepository) GameService {
+func (s *Service) getGameLock(gameID string) *sync.Mutex {
+	val, _ := s.gameLocks.LoadOrStore(gameID, &sync.Mutex{})
+	return val.(*sync.Mutex)
+}
+
+func NewService(repository GameRepository, redisClient ...*redis.Client) GameService {
 	s := &Service{
 		Repository: repository,
 	}
+	if len(redisClient) > 0 {
+		s.RedisClient = redisClient[0]
+	}
 	for i := 0; i < moveWorkerCount; i++ {
 		s.moveQueues[i] = make(chan movePersistTask, 256)
-		go s.startMoveWorker(s.moveQueues[i])
+		go s.startMoveWorker(i, s.moveQueues[i])
 	}
 	return s
 }
@@ -74,21 +89,34 @@ func (s *Service) getWorkerIndex(gameID string) int {
 }
 
 func (s *Service) enqueueMovePersist(task movePersistTask) {
-	idx := s.getWorkerIndex(task.gameID)
+	idx := s.getWorkerIndex(task.GameID)
+	if s.RedisClient != nil {
+		data, err := json.Marshal(task)
+		if err == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			err = s.RedisClient.RPush(ctx, fmt.Sprintf("caisaara:moves:queue:%d", idx), data).Err()
+			cancel()
+			if err == nil {
+				return
+			}
+			slog.ErrorContext(ctx, "failed to push move to redis queue", "game_id", task.GameID, "error", err)
+		}
+	}
 	if s.moveQueues[idx] == nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = s.Repository.SaveMoveTx(
 			ctx,
-			task.gameID,
-			task.position,
-			task.status,
-			task.result,
-			task.endReason,
-			task.nextTurn,
-			task.whiteTimeMs,
-			task.blackTimeMs,
-			task.turnStartedAt,
-			task.move,
+			task.GameID,
+			task.Position,
+			task.Status,
+			task.Result,
+			task.EndReason,
+			task.NextTurn,
+			task.WhiteTimeMs,
+			task.BlackTimeMs,
+			task.TurnStartedAt,
+			task.Move,
+			task.ExpectedTurn,
 		)
 		cancel()
 		return
@@ -96,42 +124,74 @@ func (s *Service) enqueueMovePersist(task movePersistTask) {
 	s.moveQueues[idx] <- task
 }
 
-func (s *Service) startMoveWorker(queue <-chan movePersistTask) {
-	for task := range queue {
-		var lastErr error
-		for attempt := 0; attempt < 3; attempt++ {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			err := s.Repository.SaveMoveTx(
-				ctx,
-				task.gameID,
-				task.position,
-				task.status,
-				task.result,
-				task.endReason,
-				task.nextTurn,
-				task.whiteTimeMs,
-				task.blackTimeMs,
-				task.turnStartedAt,
-				task.move,
-			)
+func (s *Service) processMovePersist(task movePersistTask) {
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := s.Repository.SaveMoveTx(
+			ctx,
+			task.GameID,
+			task.Position,
+			task.Status,
+			task.Result,
+			task.EndReason,
+			task.NextTurn,
+			task.WhiteTimeMs,
+			task.BlackTimeMs,
+			task.TurnStartedAt,
+			task.Move,
+			task.ExpectedTurn,
+		)
+		cancel()
+		if err == nil {
+			lastErr = nil
+			break
+		}
+		lastErr = err
+		time.Sleep(50 * time.Millisecond)
+	}
+	if lastErr != nil {
+		slog.Error("save move transaction failed in worker after retries", "game_id", task.GameID, "error", lastErr)
+	}
+	if task.Status == StatusFinished {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_ = s.Repository.EnforceRetention(ctx, task.WhitePlayerID)
+		_ = s.Repository.EnforceRetention(ctx, task.BlackPlayerID)
+		s.notifyGameCompleted(ctx, task.Game)
+		s.notifyGameStateUpdated(ctx, task.Game)
+		cancel()
+	}
+}
+
+func (s *Service) startMoveWorker(workerIdx int, queue <-chan movePersistTask) {
+	queueKey := fmt.Sprintf("caisaara:moves:queue:%d", workerIdx)
+	for {
+		if s.RedisClient != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+			val, err := s.RedisClient.BLPop(ctx, 500*time.Millisecond, queueKey).Result()
 			cancel()
-			if err == nil {
-				lastErr = nil
-				break
+			if err == nil && len(val) >= 2 {
+				var task movePersistTask
+				if err := json.Unmarshal([]byte(val[1]), &task); err == nil {
+					s.processMovePersist(task)
+					continue
+				}
 			}
-			lastErr = err
-			time.Sleep(50 * time.Millisecond)
 		}
-		if lastErr != nil {
-			slog.Error("save move transaction failed in worker after retries", "game_id", task.gameID, "error", lastErr)
-		}
-		if task.status == StatusFinished {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			_ = s.Repository.EnforceRetention(ctx, task.whitePlayerID)
-			_ = s.Repository.EnforceRetention(ctx, task.blackPlayerID)
-			s.notifyGameCompleted(ctx, task.game)
-			s.notifyGameStateUpdated(ctx, task.game)
-			cancel()
+
+		select {
+		case task := <-queue:
+			s.processMovePersist(task)
+		default:
+			if s.RedisClient == nil {
+				task, ok := <-queue
+				if !ok {
+					return
+				}
+				s.processMovePersist(task)
+			} else {
+				time.Sleep(50 * time.Millisecond)
+			}
 		}
 	}
 }
@@ -274,7 +334,10 @@ func (s *Service) CheckAllTimeouts(ctx context.Context) ([]*Game, error) {
 	var timedOutGames []*Game
 	for i := range activeGames {
 		g := &activeGames[i]
+		mu := s.getGameLock(g.ID)
+		mu.Lock()
 		timedOut, err := s.CheckGameTimeout(ctx, g)
+		mu.Unlock()
 		if err != nil {
 			slog.ErrorContext(ctx, "check active game timeout failed", "game_id", g.ID, "error", err)
 			continue
@@ -288,6 +351,10 @@ func (s *Service) CheckAllTimeouts(ctx context.Context) ([]*Game, error) {
 }
 
 func (s *Service) ClaimTimeout(ctx context.Context, gameID string) (*Game, error) {
+	mu := s.getGameLock(gameID)
+	mu.Lock()
+	defer mu.Unlock()
+
 	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
 	if err != nil {
 		return nil, err
@@ -328,6 +395,10 @@ func (s *Service) MakeMove(
 	move string,
 	cachedState ...interface{},
 ) (*Game, error) {
+	mu := s.getGameLock(gameID)
+	mu.Lock()
+	defer mu.Unlock()
+
 	s.drawOffers.Delete(gameID)
 
 	var currentGame *Game
@@ -429,6 +500,8 @@ func (s *Service) MakeMove(
 		}
 	}
 
+	expectedTurn := chessGame.Turn()
+
 	if err := chessGame.MakeMove(move); err != nil {
 		slog.WarnContext(ctx, "invalid move execution", "game_id", gameID, "player_id", playerID, "move", move, "error", err)
 		return nil, errors.New("invalid move")
@@ -473,19 +546,20 @@ func (s *Service) MakeMove(
 	currentGame.LastMove = move
 
 	s.enqueueMovePersist(movePersistTask{
-		gameID:        gameID,
-		position:      position,
-		status:        status,
-		result:        result,
-		endReason:     endReason,
-		nextTurn:      nextTurn,
-		whiteTimeMs:   newWhiteTimeMs,
-		blackTimeMs:   newBlackTimeMs,
-		turnStartedAt: &now,
-		move:          gameMove,
-		whitePlayerID: currentGame.WhitePlayerID,
-		blackPlayerID: currentGame.BlackPlayerID,
-		game:          currentGame,
+		GameID:        gameID,
+		Position:      position,
+		Status:        status,
+		Result:        result,
+		EndReason:     endReason,
+		NextTurn:      nextTurn,
+		WhiteTimeMs:   newWhiteTimeMs,
+		BlackTimeMs:   newBlackTimeMs,
+		TurnStartedAt: &now,
+		Move:          gameMove,
+		WhitePlayerID: currentGame.WhitePlayerID,
+		BlackPlayerID: currentGame.BlackPlayerID,
+		Game:          currentGame,
+		ExpectedTurn:  expectedTurn,
 	})
 
 	slog.InfoContext(ctx, "move completed successfully", "game_id", gameID, "player_id", playerID, "move", move, "status", status)
@@ -498,6 +572,10 @@ func (s *Service) ResignGame(
 	gameID string,
 	playerID int64,
 ) (*Game, error) {
+	mu := s.getGameLock(gameID)
+	mu.Lock()
+	defer mu.Unlock()
+
 	s.drawOffers.Delete(gameID)
 
 	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
@@ -558,6 +636,10 @@ func (s *Service) DrawGame(
 	gameID string,
 	playerID int64,
 ) (*Game, error) {
+	mu := s.getGameLock(gameID)
+	mu.Lock()
+	defer mu.Unlock()
+
 	s.drawOffers.Delete(gameID)
 
 	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
@@ -749,6 +831,10 @@ func (s *Service) EndGameOnDisconnect(
 	gameID string,
 	disconnectedPlayerID int64,
 ) (*Game, error) {
+	mu := s.getGameLock(gameID)
+	mu.Lock()
+	defer mu.Unlock()
+
 	s.drawOffers.Delete(gameID)
 
 	currentGame, err := s.Repository.FindGameByID(ctx, gameID)

@@ -19,7 +19,7 @@ type GameRepository interface {
 	GetActiveGames(ctx context.Context) ([]Game, error)
 	UpdateGameState(ctx context.Context, gameID string, position string, status string, result string, endReason string, currentTurn string, whiteTimeMs int64, blackTimeMs int64, turnStartedAt *time.Time) error
 	AddMove(ctx context.Context, move *GameMove) error
-	SaveMoveTx(ctx context.Context, gameID string, position string, status string, result string, endReason string, currentTurn string, whiteTimeMs int64, blackTimeMs int64, turnStartedAt *time.Time, move *GameMove) error
+	SaveMoveTx(ctx context.Context, gameID string, position string, status string, result string, endReason string, currentTurn string, whiteTimeMs int64, blackTimeMs int64, turnStartedAt *time.Time, move *GameMove, expectedTurn ...string) error
 	GetMoves(ctx context.Context, gameID string) ([]GameMove, error)
 	GetPlayerGames(ctx context.Context, playerID int64) ([]Game, error)
 	EnforceRetention(ctx context.Context, playerID int64) error
@@ -421,6 +421,7 @@ func (r *Repository) SaveMoveTx(
 	blackTimeMs int64,
 	turnStartedAt *time.Time,
 	move *GameMove,
+	expectedTurn ...string,
 ) error {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
@@ -428,6 +429,18 @@ func (r *Repository) SaveMoveTx(
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+
+	expected := ""
+	if len(expectedTurn) > 0 && expectedTurn[0] != "" {
+		expected = expectedTurn[0]
+	} else {
+		switch currentTurn {
+		case "w":
+			expected = "b"
+		case "b":
+			expected = "w"
+		}
+	}
 
 	tag, err := tx.Exec(
 		ctx,
@@ -444,7 +457,9 @@ func (r *Repository) SaveMoveTx(
 				WHEN $2::text = 'finished' THEN NOW()
 				ELSE ended_at
 			END
-		WHERE id = $9`,
+		WHERE id = $9
+		  AND ($10 = '' OR current_turn = $10 OR ($10 = 'w' AND current_turn = 'White') OR ($10 = 'b' AND current_turn = 'Black'))
+		  AND status = 'active'`,
 		position,
 		status,
 		result,
@@ -454,13 +469,14 @@ func (r *Repository) SaveMoveTx(
 		blackTimeMs,
 		turnStartedAt,
 		gameID,
+		expected,
 	)
 	if err != nil {
 		slog.ErrorContext(ctx, "update game state in transaction failed", "game_id", gameID, "error", err)
 		return err
 	}
 	if tag.RowsAffected() == 0 {
-		return errors.New("game not found")
+		return errors.New("game not found or state changed")
 	}
 
 	if move != nil {
