@@ -15,29 +15,6 @@ const (
 	moveTimeMs = 500
 )
 
-var presetRatings = map[string]int{
-	LevelEasy:   400,
-	LevelMedium: 800,
-	LevelHard:   1350,
-	LevelExpert: 2100,
-}
-
-func ResolveRating(level string, customRating int) (int, error) {
-	if level == LevelCustom {
-		if customRating < MinRating || customRating > MaxRating {
-			return 0, ErrInvalidRating
-		}
-		return customRating, nil
-	}
-
-	rating, ok := presetRatings[level]
-	if !ok {
-		return 0, ErrInvalidLevel
-	}
-
-	return rating, nil
-}
-
 type EngineSettings struct {
 	LimitStrength bool
 	Elo           int

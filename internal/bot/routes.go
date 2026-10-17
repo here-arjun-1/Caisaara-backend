@@ -11,6 +11,8 @@ func RegisterRoutes(handler *Handler, r *gin.Engine, protected *gin.RouterGroup)
 
 	botGames.POST("", handler.CreateGame)
 	botGames.GET("/:gameID", handler.GetGame)
+	botGames.GET("", handler.ListGames)
+	botGames.GET("/bots", handler.ListBots)
 
 	r.GET("/ws/bot-games/:gameID", handler.Connect)
 }

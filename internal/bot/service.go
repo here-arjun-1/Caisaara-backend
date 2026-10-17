@@ -15,6 +15,7 @@ const (
 	MaxActiveGames = 5
 	ColorRandom    = "random"
 	botMoveTimeout = 10 * time.Second
+	historyLimit   = 50
 )
 
 type MoveEngine interface {
@@ -22,11 +23,13 @@ type MoveEngine interface {
 }
 
 type GameService interface {
-	CreateGame(ctx context.Context, playerID int64, level string, rating int, color string) (*Game, error)
+	CreateGame(ctx context.Context, playerID int64, botID string, rating int, color string) (*Game, error)
 	GetGame(ctx context.Context, gameID string, playerID int64) (*Game, error)
 	PlayMove(ctx context.Context, gameID string, playerID int64, move string) (*Game, error)
 	PlayBotMove(ctx context.Context, gameID string, playerID int64) (*Game, error)
 	Resign(ctx context.Context, gameID string, playerID int64) (*Game, error)
+	ListGames(ctx context.Context, playerID int64) ([]*Game, error)
+	ListBots(ctx context.Context, playerID int64) ([]BotInfo, error)
 }
 
 type Service struct {
@@ -44,11 +47,11 @@ func NewService(repository GameRepository, engine MoveEngine) GameService {
 func (s *Service) CreateGame(
 	ctx context.Context,
 	playerID int64,
-	level string,
+	botID string,
 	rating int,
 	color string,
 ) (*Game, error) {
-	botRating, err := ResolveRating(level, rating)
+	character, err := s.chooseBot(ctx, playerID, botID, rating)
 	if err != nil {
 		return nil, err
 	}
@@ -69,8 +72,9 @@ func (s *Service) CreateGame(
 	game := &Game{
 		PlayerID:    playerID,
 		PlayerColor: playerColor,
-		BotLevel:    level,
-		BotRating:   botRating,
+		BotID:       character.ID,
+		BotLevel:    character.Level,
+		BotRating:   character.Rating,
 		Position:    chess.NewGame().FEN(),
 		Moves:       []string{},
 		Status:      StatusActive,
@@ -80,7 +84,7 @@ func (s *Service) CreateGame(
 		return nil, err
 	}
 
-	slog.InfoContext(ctx, "bot game created", "game_id", game.ID, "player_id", playerID, "level", level, "rating", botRating)
+	slog.InfoContext(ctx, "bot game created", "game_id", game.ID, "player_id", playerID, "bot_id", character.ID, "rating", character.Rating)
 
 	return game, nil
 }
@@ -99,7 +103,31 @@ func (s *Service) GetGame(
 		return nil, ErrGameNotFound
 	}
 
+	addNextBot(game)
+
 	return game, nil
+}
+
+func (s *Service) ListGames(ctx context.Context, playerID int64) ([]*Game, error) {
+	return s.Repository.ListGames(ctx, playerID, historyLimit)
+}
+
+func (s *Service) ListBots(ctx context.Context, playerID int64) ([]BotInfo, error) {
+	beatenBots, err := s.Repository.FindBeatenBots(ctx, playerID)
+	if err != nil {
+		return nil, err
+	}
+
+	bots := make([]BotInfo, 0, len(characters))
+	for _, character := range characters {
+		bots = append(bots, BotInfo{
+			Character: character,
+			Unlocked:  IsUnlocked(character.ID, beatenBots),
+			Beaten:    beatenBots[character.ID],
+		})
+	}
+
+	return bots, nil
 }
 
 func (s *Service) PlayMove(
@@ -220,7 +248,50 @@ func (s *Service) saveMove(
 		return nil, err
 	}
 
+	addNextBot(game)
+
 	return game, nil
+}
+
+func (s *Service) chooseBot(
+	ctx context.Context,
+	playerID int64,
+	botID string,
+	customRating int,
+) (Character, error) {
+	if botID == "" {
+		if customRating < MinRating || customRating > MaxRating {
+			return Character{}, ErrInvalidRating
+		}
+		return Character{Level: LevelCustom, Rating: customRating}, nil
+	}
+
+	character, ok := FindCharacter(botID)
+	if !ok {
+		return Character{}, ErrInvalidBot
+	}
+
+	beatenBots, err := s.Repository.FindBeatenBots(ctx, playerID)
+	if err != nil {
+		return Character{}, err
+	}
+
+	if !IsUnlocked(botID, beatenBots) {
+		return Character{}, ErrBotLocked
+	}
+
+	return character, nil
+}
+
+func addNextBot(game *Game) {
+	if game.BotID == "" || !game.PlayerWon() {
+		return
+	}
+
+	next, ok := NextCharacter(game.BotID)
+	if ok {
+		game.NextBot = &next
+	}
 }
 
 func replayMoves(moves []string) (*chess.Game, error) {
