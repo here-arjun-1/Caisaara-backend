@@ -9,17 +9,17 @@ const (
 )
 
 const (
-	MinRating  = 1000
+	MinRating  = 400
 	MaxRating  = 3000
 	minUCIElo  = 1320
 	moveTimeMs = 500
 )
 
 var presetRatings = map[string]int{
-	LevelEasy:   1000,
-	LevelMedium: 1500,
-	LevelHard:   2000,
-	LevelExpert: 2500,
+	LevelEasy:   400,
+	LevelMedium: 800,
+	LevelHard:   1350,
+	LevelExpert: 2100,
 }
 
 func ResolveRating(level string, customRating int) (int, error) {
@@ -56,11 +56,12 @@ func SettingsForRating(rating int) EngineSettings {
 		}
 	}
 
-	step := (rating - MinRating) / 64
+	skill := (rating - MinRating) / 50
+	depth := (rating-MinRating)/200 + 1
 
 	return EngineSettings{
-		SkillLevel: step,
-		Depth:      step + 1,
+		SkillLevel: skill,
+		Depth:      depth,
 		MoveTimeMs: moveTimeMs,
 	}
 }
