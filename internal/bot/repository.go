@@ -16,6 +16,8 @@ type GameRepository interface {
 	FindGameByID(ctx context.Context, gameID string) (*Game, error)
 	CountActiveGames(ctx context.Context, playerID int64) (int, error)
 	UpdateGame(ctx context.Context, game *Game, previousMoves []string) error
+	FindBeatenBots(ctx context.Context, playerID int64) (map[string]bool, error)
+	ListGames(ctx context.Context, playerID int64, limit int) ([]*Game, error)
 }
 
 type Repository struct {
@@ -41,9 +43,10 @@ func (r *Repository) CreateGame(ctx context.Context, game *Game) error {
 			bot_rating,
 			position,
 			moves,
-			status
+			status,
+			bot_id
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''))
 		RETURNING created_at`,
 		game.ID,
 		game.PlayerID,
@@ -53,6 +56,7 @@ func (r *Repository) CreateGame(ctx context.Context, game *Game) error {
 		game.Position,
 		strings.Join(game.Moves, " "),
 		game.Status,
+		game.BotID,
 	).Scan(&game.CreatedAt)
 
 	if err != nil {
@@ -74,6 +78,7 @@ func (r *Repository) FindGameByID(ctx context.Context, gameID string) (*Game, er
 			id,
 			player_id,
 			player_color,
+			COALESCE(bot_id, ''),
 			bot_level,
 			bot_rating,
 			position,
@@ -107,6 +112,82 @@ func (r *Repository) CountActiveGames(ctx context.Context, playerID int64) (int,
 	}
 
 	return count, nil
+}
+
+func (r *Repository) FindBeatenBots(ctx context.Context, playerID int64) (map[string]bool, error) {
+	rows, err := r.DB.Query(ctx,
+		`SELECT bot_id FROM bot_progress WHERE player_id = $1`,
+		playerID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "find beaten bots failed", "player_id", playerID, "error", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	beatenBots := map[string]bool{}
+	for rows.Next() {
+		var botID string
+		if err := rows.Scan(&botID); err != nil {
+			slog.ErrorContext(ctx, "scan beaten bot row failed", "player_id", playerID, "error", err)
+			return nil, err
+		}
+		beatenBots[botID] = true
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "read beaten bots rows failed", "player_id", playerID, "error", err)
+		return nil, err
+	}
+
+	return beatenBots, nil
+}
+
+func (r *Repository) ListGames(ctx context.Context, playerID int64, limit int) ([]*Game, error) {
+	rows, err := r.DB.Query(
+		ctx,
+		`SELECT
+			id,
+			player_id,
+			player_color,
+			COALESCE(bot_id, ''),
+			bot_level,
+			bot_rating,
+			position,
+			moves,
+			status,
+			COALESCE(result, ''),
+			COALESCE(end_reason, ''),
+			created_at,
+			ended_at
+		FROM bot_games
+		WHERE player_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2`,
+		playerID,
+		limit,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "list bot games failed", "player_id", playerID, "error", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	games := []*Game{}
+	for rows.Next() {
+		game, err := scanGame(ctx, rows)
+		if err != nil {
+			return nil, err
+		}
+		games = append(games, game)
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "read bot games rows failed", "player_id", playerID, "error", err)
+		return nil, err
+	}
+
+	return games, nil
 }
 
 func (r *Repository) UpdateGame(ctx context.Context, game *Game, previousMoves []string) error {
@@ -148,6 +229,22 @@ func (r *Repository) UpdateGame(ctx context.Context, game *Game, previousMoves [
 		return ErrGameChanged
 	}
 
+	if game.BotID != "" && game.PlayerWon() {
+		_, err := tx.Exec(
+			ctx,
+			`INSERT INTO bot_progress (player_id, bot_id, game_id)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (player_id, bot_id) DO NOTHING`,
+			game.PlayerID,
+			game.BotID,
+			game.ID,
+		)
+		if err != nil {
+			slog.ErrorContext(ctx, "mark bot beaten failed", "game_id", game.ID, "bot_id", game.BotID, "error", err)
+			return err
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		slog.ErrorContext(ctx, "commit transaction failed for update bot game", "game_id", game.ID, "error", err)
 		return err
@@ -164,6 +261,7 @@ func scanGame(ctx context.Context, row pgx.Row) (*Game, error) {
 		&g.ID,
 		&g.PlayerID,
 		&g.PlayerColor,
+		&g.BotID,
 		&g.BotLevel,
 		&g.BotRating,
 		&g.Position,

@@ -32,6 +32,7 @@ type Game struct {
 	ID          string     `json:"id"`
 	PlayerID    int64      `json:"player_id"`
 	PlayerColor string     `json:"player_color"`
+	BotID       string     `json:"bot_id,omitempty"`
 	BotLevel    string     `json:"bot_level"`
 	BotRating   int        `json:"bot_rating"`
 	Position    string     `json:"position"`
@@ -41,6 +42,7 @@ type Game struct {
 	EndReason   string     `json:"end_reason,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	EndedAt     *time.Time `json:"ended_at,omitempty"`
+	NextBot     *Character `json:"next_bot,omitempty"`
 }
 
 func (g *Game) BotColor() string {
@@ -48,4 +50,11 @@ func (g *Game) BotColor() string {
 		return ColorBlack
 	}
 	return ColorWhite
+}
+
+func (g *Game) PlayerWon() bool {
+	if g.PlayerColor == ColorWhite {
+		return g.Result == ResultWhiteWin
+	}
+	return g.Result == ResultBlackWin
 }
