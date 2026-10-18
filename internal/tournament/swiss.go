@@ -1,12 +1,26 @@
 package tournament
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sort"
+	"time"
 )
 
 var ErrPairingFailed = errors.New("failed to generate valid Swiss pairings")
+
+const (
+	maxPairingIterations = 5000
+	maxPairingTimeout    = 2 * time.Second
+)
+
+type solverState struct {
+	iterations int
+	maxSteps   int
+	deadline   time.Time
+	ctx        context.Context
+}
 
 type SwissPlayer struct {
 	UserID            int64
@@ -31,9 +45,13 @@ type SwissPairingResult struct {
 	IsBye         bool
 }
 
-func GenerateSwissPairings(players []*SwissPlayer) ([]SwissPairingResult, error) {
+func GenerateSwissPairings(players []*SwissPlayer, ctx ...context.Context) ([]SwissPairingResult, error) {
 	if len(players) < 2 {
 		return nil, errors.New("at least 2 players required for pairings")
+	}
+
+	if len(ctx) > 0 && ctx[0] != nil && ctx[0].Err() != nil {
+		return nil, ctx[0].Err()
 	}
 
 	pool := make([]*SwissPlayer, len(players))
@@ -63,7 +81,7 @@ func GenerateSwissPairings(players []*SwissPlayer) ([]SwissPairingResult, error)
 
 	sortPlayers(pool)
 
-	matched, err := matchSwissPool(pool)
+	matched, err := matchSwissPool(pool, ctx...)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrPairingFailed, err)
 	}
@@ -116,29 +134,67 @@ func sortPlayers(players []*SwissPlayer) {
 	})
 }
 
-func matchSwissPool(players []*SwissPlayer) ([]SwissPairingResult, error) {
+func matchSwissPool(players []*SwissPlayer, ctx ...context.Context) ([]SwissPairingResult, error) {
 	n := len(players)
 	if n == 0 {
 		return []SwissPairingResult{}, nil
 	}
 
+	var c context.Context
+	if len(ctx) > 0 && ctx[0] != nil {
+		c = ctx[0]
+	}
+
 	var results []SwissPairingResult
 	used := make([]bool, n)
 
-	if solvePairings(players, used, 0, &results, true) {
+	stateStrict := &solverState{
+		maxSteps: maxPairingIterations,
+		deadline: time.Now().Add(maxPairingTimeout),
+		ctx:      c,
+	}
+
+	if solvePairings(players, used, 0, &results, true, stateStrict) {
 		return results, nil
 	}
 
 	results = nil
 	used = make([]bool, n)
-	if solvePairings(players, used, 0, &results, false) {
+
+	stateRelaxed := &solverState{
+		maxSteps: maxPairingIterations,
+		deadline: time.Now().Add(maxPairingTimeout),
+		ctx:      c,
+	}
+
+	if solvePairings(players, used, 0, &results, false, stateRelaxed) {
 		return results, nil
+	}
+
+	fallback := greedyPairSwissPool(players)
+	if len(fallback) == n/2 {
+		return fallback, nil
 	}
 
 	return nil, errors.New("unable to find valid non-repeat pairing")
 }
 
-func solvePairings(players []*SwissPlayer, used []bool, firstUnused int, results *[]SwissPairingResult, strictNoRepeat bool) bool {
+func solvePairings(players []*SwissPlayer, used []bool, firstUnused int, results *[]SwissPairingResult, strictNoRepeat bool, state *solverState) bool {
+	if state != nil {
+		if state.iterations >= state.maxSteps {
+			return false
+		}
+		if state.iterations%128 == 0 {
+			if !state.deadline.IsZero() && time.Now().After(state.deadline) {
+				return false
+			}
+			if state.ctx != nil && state.ctx.Err() != nil {
+				return false
+			}
+		}
+		state.iterations++
+	}
+
 	n := len(players)
 
 	for firstUnused < n && used[firstUnused] {
@@ -172,7 +228,7 @@ func solvePairings(players []*SwissPlayer, used []bool, firstUnused int, results
 			IsBye:         false,
 		})
 
-		if solvePairings(players, used, firstUnused+1, results, strictNoRepeat) {
+		if solvePairings(players, used, firstUnused+1, results, strictNoRepeat, state) {
 			return true
 		}
 
@@ -182,6 +238,59 @@ func solvePairings(players []*SwissPlayer, used []bool, firstUnused int, results
 
 	used[firstUnused] = false
 	return false
+}
+
+func greedyPairSwissPool(players []*SwissPlayer) []SwissPairingResult {
+	n := len(players)
+	used := make([]bool, n)
+	results := make([]SwissPairingResult, 0, n/2)
+
+	for i := 0; i < n; i++ {
+		if used[i] {
+			continue
+		}
+		p1 := players[i]
+		used[i] = true
+
+		bestIdx := -1
+		for j := i + 1; j < n; j++ {
+			if !used[j] && !p1.PreviousOpponents[players[j].UserID] && !players[j].PreviousOpponents[p1.UserID] {
+				bestIdx = j
+				break
+			}
+		}
+
+		if bestIdx == -1 {
+			for j := i + 1; j < n; j++ {
+				if !used[j] {
+					bestIdx = j
+					break
+				}
+			}
+		}
+
+		if bestIdx == -1 {
+			for j := 0; j < n; j++ {
+				if !used[j] && j != i {
+					bestIdx = j
+					break
+				}
+			}
+		}
+
+		if bestIdx != -1 {
+			p2 := players[bestIdx]
+			used[bestIdx] = true
+			white, black := assignColors(p1, p2)
+			results = append(results, SwissPairingResult{
+				WhitePlayerID: &white.UserID,
+				BlackPlayerID: &black.UserID,
+				IsBye:         false,
+			})
+		}
+	}
+
+	return results
 }
 
 func getPairingCandidates(players []*SwissPlayer, used []bool, firstUnused int) []int {
