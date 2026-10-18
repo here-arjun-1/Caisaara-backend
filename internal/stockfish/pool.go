@@ -31,7 +31,7 @@ func (p *Pool) GetProcess(ctx context.Context) (*Process, error) {
 			return process, nil
 		}
 
-		newProcess, err := StartProcess(p.path)
+		newProcess, err := StartProcess(ctx, p.path)
 		if err != nil {
 			p.processes <- nil
 			return nil, err
