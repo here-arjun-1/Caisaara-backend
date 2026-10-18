@@ -15,6 +15,7 @@ type Config struct {
 	RedisURL      string
 	JWTSecret     string
 	SMTP          SMTPConfig
+	S3            S3Config
 	StockfishPath string
 }
 
@@ -23,6 +24,12 @@ type SMTPConfig struct {
 	Port     string
 	Username string
 	Password string
+}
+
+type S3Config struct {
+	Region    string
+	Bucket    string
+	PublicURL string
 }
 
 func Load() (*Config, error) {
@@ -41,6 +48,11 @@ func Load() (*Config, error) {
 			Port:     getEnv("SMTP_PORT", "587"),
 			Username: os.Getenv("SMTP_USERNAME"),
 			Password: os.Getenv("SMTP_PASSWORD"),
+		},
+		S3: S3Config{
+			Region:    os.Getenv("AWS_REGION"),
+			Bucket:    os.Getenv("S3_BUCKET"),
+			PublicURL: strings.TrimSuffix(os.Getenv("S3_PUBLIC_URL"), "/"),
 		},
 	}
 
@@ -63,6 +75,15 @@ func (c *Config) validate() error {
 	}
 	if c.SMTP.Password == "" {
 		missing = append(missing, "SMTP_PASSWORD")
+	}
+	if c.S3.Region == "" {
+		missing = append(missing, "AWS_REGION")
+	}
+	if c.S3.Bucket == "" {
+		missing = append(missing, "S3_BUCKET")
+	}
+	if c.S3.PublicURL == "" {
+		missing = append(missing, "S3_PUBLIC_URL")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required env variables: %s", strings.Join(missing, ", "))
