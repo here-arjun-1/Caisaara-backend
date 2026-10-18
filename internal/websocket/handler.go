@@ -3,6 +3,7 @@ package websocket
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -16,6 +17,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/chat"
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
 	"github.com/here-arjun-1/Caisaara-backend/internal/invitation"
+	"github.com/here-arjun-1/Caisaara-backend/internal/tournament"
 )
 
 type InviteFinder interface {
@@ -31,6 +33,10 @@ type PasswordVersionGetter interface {
 	GetPasswordVersion(ctx context.Context, userID int64) (int, error)
 }
 
+type TournamentFinder interface {
+	FindByID(ctx context.Context, id int64) (*tournament.Tournament, error)
+}
+
 type disconnectTimerEntry struct {
 	timer          *time.Timer
 	disconnectedAt time.Time
@@ -43,6 +49,7 @@ type Handler struct {
 	InviteFinder       InviteFinder
 	WatchInviteService WatchInviteService
 	UserRepo           PasswordVersionGetter
+	TournamentFinder   TournamentFinder
 	disconnectTimers   sync.Map
 }
 
@@ -71,6 +78,14 @@ func (h *Handler) SetUserRepo(repo PasswordVersionGetter) {
 
 func (h *Handler) SetPasswordVersionGetter(getter PasswordVersionGetter) {
 	h.UserRepo = getter
+}
+
+func (h *Handler) SetTournamentFinder(finder TournamentFinder) {
+	h.TournamentFinder = finder
+}
+
+func (h *Handler) SetTournamentService(finder TournamentFinder) {
+	h.TournamentFinder = finder
 }
 
 func (h *Handler) validatePasswordVersion(ctx context.Context, claims *token.AccessTokenClaims) bool {
@@ -938,6 +953,12 @@ func sendError(ctx context.Context, client *Client, message string) {
 func (h *Handler) ConnectTournament(c *gin.Context) {
 	ctx := context.WithoutCancel(c.Request.Context())
 	tournamentID := c.Param("tournamentID")
+	id, err := strconv.ParseInt(tournamentID, 10, 64)
+	if err != nil || id <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tournament id"})
+		return
+	}
+
 	accessToken := c.Query("token")
 
 	if accessToken == "" {
@@ -956,13 +977,29 @@ func (h *Handler) ConnectTournament(c *gin.Context) {
 		return
 	}
 
+	if h.TournamentFinder == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "tournament service unavailable"})
+		return
+	}
+
+	_, err = h.TournamentFinder.FindByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, tournament.ErrTournamentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "tournament not found"})
+			return
+		}
+		slog.ErrorContext(ctx, "tournament lookup failed", "tournament_id", id, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		slog.ErrorContext(ctx, "tournament websocket upgrade failed", "tournament_id", tournamentID, "error", err)
 		return
 	}
 
-	roomKey := "tournament:" + tournamentID
+	roomKey := "tournament:" + strconv.FormatInt(id, 10)
 	room := h.Hub.GetOrCreateRoom(roomKey)
 
 	client := newClientFromClaims(conn, claims, roomKey)
