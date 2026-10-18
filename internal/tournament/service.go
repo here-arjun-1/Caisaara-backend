@@ -19,6 +19,7 @@ type Broadcaster interface {
 type Service interface {
 	CreateTournament(ctx context.Context, userID int64, req CreateTournamentRequest) (*Tournament, error)
 	ListPublicTournaments(ctx context.Context) ([]*TournamentWithPlayerCount, error)
+	FindByID(ctx context.Context, id int64) (*Tournament, error)
 	GetTournamentDetails(ctx context.Context, id int64) (*TournamentWithPlayerCount, error)
 	GetTournamentByInviteCode(ctx context.Context, code string) (*TournamentWithPlayerCount, error)
 	JoinTournament(ctx context.Context, tournamentID int64, userID int64, inviteCode string) (*TournamentPlayer, error)
@@ -145,6 +146,10 @@ func (s *TournamentService) CreateTournament(ctx context.Context, userID int64, 
 
 func (s *TournamentService) ListPublicTournaments(ctx context.Context) ([]*TournamentWithPlayerCount, error) {
 	return s.Repo.ListPublicTournaments(ctx)
+}
+
+func (s *TournamentService) FindByID(ctx context.Context, id int64) (*Tournament, error) {
+	return s.Repo.FindByID(ctx, id)
 }
 
 func (s *TournamentService) GetTournamentDetails(ctx context.Context, id int64) (*TournamentWithPlayerCount, error) {

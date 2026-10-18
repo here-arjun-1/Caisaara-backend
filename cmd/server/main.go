@@ -141,6 +141,7 @@ func run() error {
 	tournamentRepo := tournament.NewRepository(conn)
 	tournamentService := tournament.NewService(tournamentRepo, gameRepository, wsHandler)
 	tournamentHandler := tournament.NewHandler(tournamentService)
+	wsHandler.SetTournamentFinder(tournamentService)
 
 	nearbyRepository := nearby.NewRepository(conn)
 	nearbyService := nearby.NewService(nearbyRepository)
