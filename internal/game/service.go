@@ -22,6 +22,7 @@ type GameService interface {
 	SetGameStateUpdatedListener(listener func(ctx context.Context, g *Game))
 	CheckGameTimeout(ctx context.Context, currentGame *Game) (bool, error)
 	CheckAllTimeouts(ctx context.Context) ([]*Game, error)
+	CheckLiveTimeouts(ctx context.Context) ([]*Game, error)
 	ClaimTimeout(ctx context.Context, gameID string) (*Game, error)
 	StartTimeoutChecker(ctx context.Context, interval time.Duration)
 	EndGameOnDisconnect(ctx context.Context, gameID string, disconnectedPlayerID int64) (*Game, error)
@@ -266,7 +267,15 @@ func (s *Service) CheckGameTimeout(ctx context.Context, currentGame *Game) (bool
 }
 
 func (s *Service) CheckAllTimeouts(ctx context.Context) ([]*Game, error) {
-	activeGames, err := s.Repository.GetActiveGames(ctx)
+	return s.checkTimeouts(ctx, true)
+}
+
+func (s *Service) CheckLiveTimeouts(ctx context.Context) ([]*Game, error) {
+	return s.checkTimeouts(ctx, false)
+}
+
+func (s *Service) checkTimeouts(ctx context.Context, includeDaily bool) ([]*Game, error) {
+	activeGames, err := s.Repository.GetTimedOutGames(ctx, includeDaily, 100)
 	if err != nil {
 		return nil, err
 	}
@@ -307,15 +316,20 @@ func (s *Service) ClaimTimeout(ctx context.Context, gameID string) (*Game, error
 
 func (s *Service) StartTimeoutChecker(ctx context.Context, interval time.Duration) {
 	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
+		liveTicker := time.NewTicker(interval)
+		defer liveTicker.Stop()
+
+		dailyTicker := time.NewTicker(1 * time.Minute)
+		defer dailyTicker.Stop()
 
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
-				_, _ = s.CheckAllTimeouts(ctx)
+			case <-liveTicker.C:
+				_, _ = s.checkTimeouts(ctx, false)
+			case <-dailyTicker.C:
+				_, _ = s.checkTimeouts(ctx, true)
 			}
 		}
 	}()
