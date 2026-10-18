@@ -2,11 +2,13 @@ package stockfish
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 type Process struct {
@@ -15,7 +17,14 @@ type Process struct {
 	scanner *bufio.Scanner
 }
 
-func StartProcess(path string) (*Process, error) {
+func StartProcess(ctx context.Context, path string) (*Process, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	startupCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
 	cmd := exec.Command(path) //nolint:gosec // path comes from server config, not from users
 
 	stdin, err := cmd.StdinPipe()
@@ -42,7 +51,7 @@ func StartProcess(path string) (*Process, error) {
 		process.Close()
 		return nil, err
 	}
-	if _, err := process.WaitFor("uciok"); err != nil {
+	if _, err := process.WaitForWithContext(startupCtx, "uciok"); err != nil {
 		process.Close()
 		return nil, err
 	}
@@ -57,7 +66,36 @@ func (p *Process) Send(command string) error {
 	return nil
 }
 
-func (p *Process) WaitFor(prefix string) (string, error) {
+func (p *Process) WaitFor(prefix string, ctx ...context.Context) (string, error) {
+	if len(ctx) > 0 && ctx[0] != nil {
+		return p.WaitForWithContext(ctx[0], prefix)
+	}
+	return p.waitForLine(prefix)
+}
+
+func (p *Process) WaitForWithContext(ctx context.Context, prefix string) (string, error) {
+	type waitResult struct {
+		line string
+		err  error
+	}
+
+	resultCh := make(chan waitResult, 1)
+	go func() {
+		line, err := p.waitForLine(prefix)
+		resultCh <- waitResult{line: line, err: err}
+	}()
+
+	select {
+	case res := <-resultCh:
+		return res.line, res.err
+	case <-ctx.Done():
+		p.Kill()
+		<-resultCh
+		return "", ctx.Err()
+	}
+}
+
+func (p *Process) waitForLine(prefix string) (string, error) {
 	for p.scanner.Scan() {
 		line := p.scanner.Text()
 		if strings.HasPrefix(line, prefix) {
