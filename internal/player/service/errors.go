@@ -10,4 +10,6 @@ var (
 	ErrInvalidBio         = errors.New("bio must be at most 160 characters")
 	ErrInvalidAvatarURL   = errors.New("avatar_url must be an https URL")
 	ErrInvalidMode        = errors.New("mode must be one of bullet, blitz, rapid, daily")
+	ErrInvalidPhoto       = errors.New("photo must be a jpeg, png or webp image")
+	ErrPhotoTooLarge      = errors.New("photo can be at most 5000x5000 pixels")
 )
