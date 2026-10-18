@@ -30,6 +30,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
 	"github.com/here-arjun-1/Caisaara-backend/internal/rating"
 	"github.com/here-arjun-1/Caisaara-backend/internal/router"
+	"github.com/here-arjun-1/Caisaara-backend/internal/storage"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tilt"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tournament"
 	"github.com/here-arjun-1/Caisaara-backend/internal/websocket"
@@ -78,8 +79,13 @@ func run() error {
 		return fmt.Errorf("register validators: %w", err)
 	}
 
+	avatarStorage, err := storage.NewS3Storage(context.Background(), cfg.S3)
+	if err != nil {
+		return fmt.Errorf("setup s3 storage: %w", err)
+	}
+
 	authModule := auth.NewModule(conn, redisClient, taskDistributor, cfg.JWTSecret)
-	playerModule := player.NewModule(conn)
+	playerModule := player.NewModule(conn, avatarStorage)
 	communityModule := community.NewModule(conn)
 
 	gameRepository := game.NewRepository(conn)
