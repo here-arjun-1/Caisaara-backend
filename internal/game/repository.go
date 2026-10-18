@@ -17,6 +17,7 @@ type GameRepository interface {
 	CreateGameWithID(ctx context.Context, gameID string, whitePlayerID int64, blackPlayerID int64, timeControlMinutes int, incrementSeconds int, rated bool) (string, error)
 	FindGameByID(ctx context.Context, gameID string) (*Game, error)
 	GetActiveGames(ctx context.Context) ([]Game, error)
+	GetTimedOutGames(ctx context.Context, includeDaily bool, limit int) ([]Game, error)
 	UpdateGameState(ctx context.Context, gameID string, position string, status string, result string, endReason string, currentTurn string, whiteTimeMs int64, blackTimeMs int64, turnStartedAt *time.Time) error
 	AddMove(ctx context.Context, move *GameMove) error
 	SaveMoveTx(ctx context.Context, gameID string, position string, status string, result string, endReason string, currentTurn string, whiteTimeMs int64, blackTimeMs int64, turnStartedAt *time.Time, move *GameMove, expectedTurn ...string) error
@@ -247,9 +248,15 @@ func (r *Repository) FindGameByID(
 }
 
 func (r *Repository) GetActiveGames(ctx context.Context) ([]Game, error) {
-	rows, err := r.DB.Query(
-		ctx,
-		`SELECT
+	return r.GetTimedOutGames(ctx, true, 100)
+}
+
+func (r *Repository) GetTimedOutGames(ctx context.Context, includeDaily bool, limit int) ([]Game, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	query := `SELECT
 			g.id,
 			g.white_player_id,
 			g.black_player_id,
@@ -275,10 +282,37 @@ func (r *Repository) GetActiveGames(ctx context.Context) ([]Game, error) {
 		FROM games g
 		LEFT JOIN users uw ON uw.id = g.white_player_id
 		LEFT JOIN users ub ON ub.id = g.black_player_id
-		WHERE g.status = 'active'`,
-	)
+		WHERE g.status = 'active'
+		  AND (
+		    (
+		      COALESCE(g.time_control_mode, 'rapid') != 'daily'
+		      AND COALESCE(g.turn_started_at, g.started_at, g.created_at) + (
+		        CASE WHEN COALESCE(g.current_turn, 'w') IN ('w', 'White')
+		             THEN COALESCE(g.white_time_ms, 600000)
+		             ELSE COALESCE(g.black_time_ms, 600000)
+		        END * interval '1 millisecond'
+		      ) <= NOW()
+		    )`
+
+	if includeDaily {
+		query += `
+		    OR
+		    (
+		      COALESCE(g.time_control_mode, 'rapid') = 'daily'
+		      AND COALESCE(g.turn_started_at, g.started_at, g.created_at) + (
+		        COALESCE(g.daily_move_time_ms, 86400000) * interval '1 millisecond'
+		      ) <= NOW()
+		    )`
+	}
+
+	query += `
+		  )
+		ORDER BY COALESCE(g.turn_started_at, g.started_at, g.created_at) ASC
+		LIMIT $1`
+
+	rows, err := r.DB.Query(ctx, query, limit)
 	if err != nil {
-		slog.ErrorContext(ctx, "get active games query failed", "error", err)
+		slog.ErrorContext(ctx, "get timed out games query failed", "error", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -311,14 +345,14 @@ func (r *Repository) GetActiveGames(ctx context.Context) ([]Game, error) {
 			&g.EndedAt,
 		)
 		if err != nil {
-			slog.ErrorContext(ctx, "scan active game row failed", "error", err)
+			slog.ErrorContext(ctx, "scan timed out game row failed", "error", err)
 			return nil, err
 		}
 		games = append(games, g)
 	}
 
 	if err := rows.Err(); err != nil {
-		slog.ErrorContext(ctx, "get active games rows iteration error", "error", err)
+		slog.ErrorContext(ctx, "get timed out games rows iteration error", "error", err)
 		return nil, err
 	}
 
