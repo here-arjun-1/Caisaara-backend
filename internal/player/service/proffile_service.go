@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"net/url"
 	"strings"
 	"unicode/utf8"
 
@@ -126,14 +125,6 @@ func (h *ProfileService) UpdateMyProfile(ctx context.Context, userID int64, req 
 		p.Bio = emptyToNil(v)
 	}
 
-	if req.AvatarURL != nil {
-		v := strings.TrimSpace(*req.AvatarURL)
-		if v != "" && !isHTTPSURL(v) {
-			return nil, ErrInvalidAvatarURL
-		}
-		p.AvatarURL = emptyToNil(v)
-	}
-
 	if err := h.ProfileRepository.SaveProfile(ctx, p); err != nil {
 		slog.Error("save profile failed", "error", err)
 		return nil, ErrInternal
@@ -181,14 +172,6 @@ func isCountryCode(v string) bool {
 		}
 	}
 	return true
-}
-
-func isHTTPSURL(v string) bool {
-	if len(v) > 500 {
-		return false
-	}
-	u, err := url.Parse(v)
-	return err == nil && u.Scheme == "https" && u.Host != ""
 }
 
 func (h *ProfileService) GetModeStats(ctx context.Context, username string, mode string) (*dto.ModeStatsResponse, error) {
