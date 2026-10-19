@@ -25,6 +25,9 @@ CREATE TABLE IF NOT EXISTS user_puzzle_ratings (
     puzzles_failed INT NOT NULL DEFAULT 0,
     best_rating INT NOT NULL DEFAULT 1500,
     best_rating_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    current_streak INT NOT NULL DEFAULT 0,
+    max_streak INT NOT NULL DEFAULT 0,
+    last_played_date DATE,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -42,3 +45,18 @@ CREATE TABLE IF NOT EXISTS user_puzzle_attempts (
 CREATE INDEX IF NOT EXISTS idx_user_puzzle_attempts_user_id ON user_puzzle_attempts(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_puzzle_attempts_puzzle_id ON user_puzzle_attempts(puzzle_id);
 CREATE INDEX IF NOT EXISTS idx_user_puzzle_attempts_user_puzzle ON user_puzzle_attempts(user_id, puzzle_id);
+
+CREATE TABLE IF NOT EXISTS daily_puzzle_sessions (
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    puzzle_id VARCHAR(16) NOT NULL REFERENCES puzzles(id) ON DELETE CASCADE,
+    date DATE NOT NULL,
+    attempts_left INT NOT NULL DEFAULT 3,
+    hint_used BOOLEAN NOT NULL DEFAULT FALSE,
+    solution_viewed BOOLEAN NOT NULL DEFAULT FALSE,
+    solved BOOLEAN NOT NULL DEFAULT FALSE,
+    rating_earned INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, date)
+);
+

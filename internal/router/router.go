@@ -20,6 +20,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/metrics"
 	"github.com/here-arjun-1/Caisaara-backend/internal/nearby"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
+	"github.com/here-arjun-1/Caisaara-backend/internal/puzzle"
 	"github.com/here-arjun-1/Caisaara-backend/internal/response"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tilt"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tournament"
@@ -42,6 +43,7 @@ func New(
 	analysisHandler *analysis.Handler,
 	nearbyHandler *nearby.Handler,
 	friendsHandler *friends.Handler,
+	puzzleHandler *puzzle.Handler,
 	tournamentHandler ...*tournament.Handler,
 ) (*gin.Engine, error) {
 	r := gin.New()
@@ -137,6 +139,10 @@ func New(
 
 	if friendsHandler != nil {
 		friends.RegisterRoutes(friendsHandler, protected)
+	}
+
+	if puzzleHandler != nil {
+		puzzle.RegisterRoutes(puzzleHandler, r, middleware.JWTMiddleware(jwtSecret, authModule.UserRepository))
 	}
 
 	if len(tournamentHandler) > 0 && tournamentHandler[0] != nil {
