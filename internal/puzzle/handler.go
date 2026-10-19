@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
@@ -306,6 +307,89 @@ func (h *Handler) GetUserRushHistory(c *gin.Context) {
 	if err != nil {
 		slog.ErrorContext(ctx, "get user rush history failed", "user_id", userID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get rush history"})
+		return
+	}
+
+	c.JSON(http.StatusOK, res)
+}
+
+func (h *Handler) GetThemes(c *gin.Context) {
+	ctx := c.Request.Context()
+	res, err := h.Service.GetThemes(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "get puzzle themes failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get puzzle themes"})
+		return
+	}
+
+	c.JSON(http.StatusOK, res)
+}
+
+func (h *Handler) GetCustomPuzzle(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID, ok := middleware.GetUserID(c)
+	if !ok || userID <= 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	var themes []string
+	if t := strings.TrimSpace(c.Query("theme")); t != "" {
+		themes = append(themes, t)
+	}
+	if ts := strings.TrimSpace(c.Query("themes")); ts != "" {
+		for _, part := range strings.Split(ts, ",") {
+			part = strings.TrimSpace(part)
+			if part != "" {
+				themes = append(themes, part)
+			}
+		}
+	}
+
+	minRating, _ := strconv.Atoi(c.DefaultQuery("min_rating", "0"))
+	maxRating, _ := strconv.Atoi(c.DefaultQuery("max_rating", "0"))
+	excludeSolvedStr := c.DefaultQuery("exclude_solved", "true")
+	excludeSolved := excludeSolvedStr == "true" || excludeSolvedStr == "1"
+	reviewMistakesStr := c.DefaultQuery("review_mistakes", "false")
+	reviewMistakes := reviewMistakesStr == "true" || reviewMistakesStr == "1"
+
+	filter := CustomPuzzleFilter{
+		UserID:         userID,
+		Themes:         themes,
+		MinRating:      minRating,
+		MaxRating:      maxRating,
+		ExcludeSolved:  excludeSolved,
+		ReviewMistakes: reviewMistakes,
+	}
+
+	res, err := h.Service.GetCustomPuzzle(ctx, userID, filter)
+	if err != nil {
+		slog.ErrorContext(ctx, "get custom puzzle failed", "user_id", userID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get custom puzzle"})
+		return
+	}
+
+	c.JSON(http.StatusOK, res)
+}
+
+func (h *Handler) SubmitCustomAttempt(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID, ok := middleware.GetUserID(c)
+	if !ok || userID <= 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	var req SubmitCustomAttemptRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	res, err := h.Service.SubmitCustomAttempt(ctx, userID, req)
+	if err != nil {
+		slog.ErrorContext(ctx, "submit custom attempt failed", "user_id", userID, "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 

@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS puzzle_rush_sessions (
     passed_puzzle_ids TEXT[] NOT NULL DEFAULT '{}',
     status VARCHAR(16) NOT NULL DEFAULT 'active',
     time_limit_sec INT NOT NULL DEFAULT 180,
+    theme VARCHAR(32) NOT NULL DEFAULT '',
     moves_history JSONB NOT NULL DEFAULT '[]',
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     ended_at TIMESTAMPTZ,
