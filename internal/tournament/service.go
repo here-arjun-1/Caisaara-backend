@@ -106,6 +106,10 @@ func (s *TournamentService) CreateTournament(ctx context.Context, userID int64, 
 		return nil, ErrInvalidMinPlayers
 	}
 
+	if req.MinRating < 0 {
+		return nil, ErrInvalidMinRating
+	}
+
 	totalRounds := req.TotalRounds
 	if totalRounds <= 0 {
 		totalRounds = 5
@@ -135,6 +139,7 @@ func (s *TournamentService) CreateTournament(ctx context.Context, userID int64, 
 		StartAt:      startAt,
 		CreatedAt:    now,
 		UpdatedAt:    now,
+		MinRating:    req.MinRating,
 	}
 
 	if err := s.Repo.CreateTournament(ctx, tournament); err != nil {
