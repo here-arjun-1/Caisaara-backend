@@ -9,6 +9,7 @@ func RegisterRoutes(handler *Handler, protected *gin.RouterGroup, public ...*gin
 	protected.POST("/tournaments/:id/leave", handler.LeaveTournament)
 	protected.POST("/tournaments/invite/:code/join", handler.JoinTournamentByInviteCode)
 	protected.GET("/tournaments/:id/my-games", handler.GetMyGames)
+	protected.POST("/tournaments/:id/end", handler.EndTournament)
 
 	prefix := "/tournaments"
 	targetGroup := protected
