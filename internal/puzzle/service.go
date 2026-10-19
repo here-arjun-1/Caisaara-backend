@@ -24,6 +24,7 @@ type PuzzleService interface {
 	EndRush(ctx context.Context, userID int64, req EndRushRequest) (*RushSummary, error)
 	GetRushLeaderboard(ctx context.Context, mode string, limit int) (*RushLeaderboardResponse, error)
 	GetUserRushStats(ctx context.Context, userID int64) (*UserRushStatsResponse, error)
+	GetUserRushHistory(ctx context.Context, userID int64, mode string, limit, offset int) (*RushHistoryResponse, error)
 }
 
 type Service struct {
@@ -492,6 +493,7 @@ func (s *Service) StartRush(ctx context.Context, userID int64, req StartRushRequ
 		PassedPuzzleIDs: []string{},
 		Status:          "active",
 		TimeLimitSec:    timeLimitSec,
+		MovesHistory:    []RushPuzzleAttempt{},
 		StartedAt:       now,
 		CreatedAt:       now,
 		UpdatedAt:       now,
@@ -593,6 +595,19 @@ func (s *Service) SubmitRushMove(ctx context.Context, userID int64, req SubmitRu
 	if !isCorrect && strings.Contains(playedMove, " ") {
 		isCorrect = strings.EqualFold(playedMove, strings.Join(moves[1:], " "))
 	}
+
+	solutionMoves := []string{}
+	if len(moves) > 1 {
+		solutionMoves = moves[1:]
+	}
+
+	session.MovesHistory = append(session.MovesHistory, RushPuzzleAttempt{
+		PuzzleID:       puzzleRecord.ID,
+		Solved:         isCorrect,
+		AttemptedMoves: []string{playedMove},
+		SolutionMoves:  solutionMoves,
+		Rating:         puzzleRecord.Rating,
+	})
 
 	session.PassedPuzzleIDs = append(session.PassedPuzzleIDs, session.CurrentPuzzleID)
 
@@ -832,6 +847,19 @@ func (s *Service) GetUserRushStats(ctx context.Context, userID int64) (*UserRush
 		BestScoreSurvival: stats.BestScoreSurvival,
 		TotalRuns:         stats.TotalRuns,
 	}, nil
+}
+
+func (s *Service) GetUserRushHistory(ctx context.Context, userID int64, mode string, limit, offset int) (*RushHistoryResponse, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return s.repo.GetUserRushHistory(ctx, userID, mode, limit, offset)
 }
 
 func getRushRatingWindow(score int) (int, int) {

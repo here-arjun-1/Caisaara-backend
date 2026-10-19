@@ -282,3 +282,32 @@ func (h *Handler) GetUserRushStats(c *gin.Context) {
 
 	c.JSON(http.StatusOK, res)
 }
+
+func (h *Handler) GetUserRushHistory(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID, ok := middleware.GetUserID(c)
+	if !ok || userID <= 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	mode := c.Query("mode")
+	limit, err := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if err != nil || limit <= 0 {
+		limit = 20
+	}
+
+	offset, err := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+
+	res, err := h.Service.GetUserRushHistory(ctx, userID, mode, limit, offset)
+	if err != nil {
+		slog.ErrorContext(ctx, "get user rush history failed", "user_id", userID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get rush history"})
+		return
+	}
+
+	c.JSON(http.StatusOK, res)
+}
