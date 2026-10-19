@@ -12,6 +12,8 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("dummy_data"), bcrypt.DefaultCost)
+
 type LoginService struct {
 	UserRepository    UserRepository
 	SessionRepository SessionRepository
@@ -53,6 +55,7 @@ func (h *LoginService) Login(
 	}
 
 	if errors.Is(err, pgx.ErrNoRows) {
+		bcrypt.CompareHashAndPassword(dummyHash, []byte(req.Password))
 		return "", "", "", false, ErrInvalidCredentials
 	}
 	if err != nil {
