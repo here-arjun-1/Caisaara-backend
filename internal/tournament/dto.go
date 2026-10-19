@@ -15,6 +15,7 @@ type CreateTournamentRequest struct {
 	Visibility  string     `json:"visibility"`
 	TotalRounds int        `json:"total_rounds"`
 	StartAt     *time.Time `json:"start_at"`
+	MinRating   int        `json:"min_rating"`
 }
 
 type TournamentResponse struct {
@@ -35,6 +36,7 @@ type TournamentResponse struct {
 	StartAt      time.Time `json:"start_at"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+	MinRating    int       `json:"min_rating"`
 }
 
 type TournamentDetailsResponse struct {
@@ -56,6 +58,7 @@ type TournamentDetailsResponse struct {
 	StartAt      time.Time `json:"start_at"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+	MinRating    int       `json:"min_rating"`
 }
 
 type JoinTournamentRequest struct {
@@ -107,6 +110,7 @@ func ToTournamentResponse(t *Tournament) *TournamentResponse {
 		StartAt:      t.StartAt,
 		CreatedAt:    t.CreatedAt,
 		UpdatedAt:    t.UpdatedAt,
+		MinRating:    t.MinRating,
 	}
 }
 
@@ -136,6 +140,7 @@ func ToTournamentDetailsResponse(tw *TournamentWithPlayerCount) *TournamentDetai
 		StartAt:      tw.StartAt,
 		CreatedAt:    tw.CreatedAt,
 		UpdatedAt:    tw.UpdatedAt,
+		MinRating:    tw.MinRating,
 	}
 }
 

@@ -57,6 +57,7 @@ type Tournament struct {
 	StartAt      time.Time `json:"start_at" db:"start_at"`
 	CreatedAt    time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at" db:"updated_at"`
+	MinRating    int       `json:"min_rating" db:"min_rating"`
 }
 
 type TournamentPlayer struct {
