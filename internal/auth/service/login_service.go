@@ -55,7 +55,7 @@ func (h *LoginService) Login(
 	}
 
 	if errors.Is(err, pgx.ErrNoRows) {
-		bcrypt.CompareHashAndPassword(dummyHash, []byte(req.Password))
+		_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(req.Password))
 		return "", "", "", false, ErrInvalidCredentials
 	}
 	if err != nil {
