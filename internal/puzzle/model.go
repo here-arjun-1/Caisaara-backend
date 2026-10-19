@@ -143,20 +143,29 @@ type PuzzleHistoryResponse struct {
 	Attempts []PuzzleHistoryItem `json:"attempts"`
 }
 
+type RushPuzzleAttempt struct {
+	PuzzleID       string   `json:"puzzle_id"`
+	Solved         bool     `json:"solved"`
+	AttemptedMoves []string `json:"attempted_moves"`
+	SolutionMoves  []string `json:"solution_moves"`
+	Rating         int      `json:"rating"`
+}
+
 type PuzzleRushSession struct {
-	ID              string     `json:"id"`
-	UserID          int64      `json:"user_id"`
-	Mode            string     `json:"mode"`
-	Score           int        `json:"score"`
-	Strikes         int        `json:"strikes"`
-	CurrentPuzzleID string     `json:"current_puzzle_id"`
-	PassedPuzzleIDs []string   `json:"passed_puzzle_ids"`
-	Status          string     `json:"status"`
-	TimeLimitSec    int        `json:"time_limit_sec"`
-	StartedAt       time.Time  `json:"started_at"`
-	EndedAt         *time.Time `json:"ended_at,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	ID              string              `json:"id"`
+	UserID          int64               `json:"user_id"`
+	Mode            string              `json:"mode"`
+	Score           int                 `json:"score"`
+	Strikes         int                 `json:"strikes"`
+	CurrentPuzzleID string              `json:"current_puzzle_id"`
+	PassedPuzzleIDs []string            `json:"passed_puzzle_ids"`
+	Status          string              `json:"status"`
+	TimeLimitSec    int                 `json:"time_limit_sec"`
+	MovesHistory    []RushPuzzleAttempt `json:"moves_history"`
+	StartedAt       time.Time           `json:"started_at"`
+	EndedAt         *time.Time          `json:"ended_at,omitempty"`
+	CreatedAt       time.Time           `json:"created_at"`
+	UpdatedAt       time.Time           `json:"updated_at"`
 }
 
 type UserPuzzleRushStats struct {
@@ -239,4 +248,22 @@ type UserRushStatsResponse struct {
 	BestScore5Min     int `json:"best_score_5min"`
 	BestScoreSurvival int `json:"best_score_survival"`
 	TotalRuns         int `json:"total_runs"`
+}
+
+type RushHistoryItem struct {
+	SessionID         string              `json:"session_id"`
+	Mode              string              `json:"mode"`
+	Score             int                 `json:"score"`
+	Strikes           int                 `json:"strikes"`
+	Status            string              `json:"status"`
+	DurationSec       int                 `json:"duration_sec"`
+	TotalPuzzlesFaced int                 `json:"total_puzzles_faced"`
+	MovesHistory      []RushPuzzleAttempt `json:"moves_history"`
+	StartedAt         time.Time           `json:"started_at"`
+	EndedAt           *time.Time          `json:"ended_at,omitempty"`
+}
+
+type RushHistoryResponse struct {
+	Total int               `json:"total"`
+	Runs  []RushHistoryItem `json:"runs"`
 }

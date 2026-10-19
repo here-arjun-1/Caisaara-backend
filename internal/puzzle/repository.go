@@ -2,6 +2,7 @@ package puzzle
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -28,6 +29,7 @@ type PuzzleRepository interface {
 	GetOrCreateRushStats(ctx context.Context, userID int64) (*UserPuzzleRushStats, error)
 	UpdateRushStats(ctx context.Context, stats *UserPuzzleRushStats) error
 	GetRushLeaderboard(ctx context.Context, mode string, limit int) ([]RushLeaderboardEntry, error)
+	GetUserRushHistory(ctx context.Context, userID int64, mode string, limit, offset int) (*RushHistoryResponse, error)
 }
 
 type Repository struct {
@@ -81,6 +83,8 @@ func NewRepository(db *pgxpool.Pool) PuzzleRepository {
 			total_runs INT NOT NULL DEFAULT 0,
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);`,
+		`ALTER TABLE puzzle_rush_sessions ADD COLUMN IF NOT EXISTS moves_history JSONB NOT NULL DEFAULT '[]';`,
+		`CREATE INDEX IF NOT EXISTS idx_puzzle_rush_sessions_user_time ON puzzle_rush_sessions(user_id, started_at DESC);`,
 	}
 
 	for _, q := range queries {
@@ -505,16 +509,24 @@ func (r *Repository) GetUserHistory(ctx context.Context, userID int64, limit, of
 func (r *Repository) CreateRushSession(ctx context.Context, session *PuzzleRushSession) error {
 	query := `
 		INSERT INTO puzzle_rush_sessions (
-			id, user_id, mode, score, strikes, current_puzzle_id, passed_puzzle_ids, status, time_limit_sec, started_at, created_at, updated_at
+			id, user_id, mode, score, strikes, current_puzzle_id, passed_puzzle_ids, status, time_limit_sec, moves_history, started_at, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
 	`
 
 	if session.PassedPuzzleIDs == nil {
 		session.PassedPuzzleIDs = []string{}
 	}
+	if session.MovesHistory == nil {
+		session.MovesHistory = []RushPuzzleAttempt{}
+	}
 
-	_, err := r.DB.Exec(
+	movesJSON, err := json.Marshal(session.MovesHistory)
+	if err != nil {
+		movesJSON = []byte("[]")
+	}
+
+	_, err = r.DB.Exec(
 		ctx,
 		query,
 		session.ID,
@@ -526,6 +538,7 @@ func (r *Repository) CreateRushSession(ctx context.Context, session *PuzzleRushS
 		session.PassedPuzzleIDs,
 		session.Status,
 		session.TimeLimitSec,
+		movesJSON,
 		session.StartedAt,
 	)
 
@@ -534,12 +547,13 @@ func (r *Repository) CreateRushSession(ctx context.Context, session *PuzzleRushS
 
 func (r *Repository) GetRushSession(ctx context.Context, sessionID string) (*PuzzleRushSession, error) {
 	query := `
-		SELECT id, user_id, mode, score, strikes, current_puzzle_id, passed_puzzle_ids, status, time_limit_sec, started_at, ended_at, created_at, updated_at
+		SELECT id, user_id, mode, score, strikes, current_puzzle_id, passed_puzzle_ids, status, time_limit_sec, started_at, ended_at, created_at, updated_at, COALESCE(moves_history, '[]'::jsonb)
 		FROM puzzle_rush_sessions
 		WHERE id = $1::uuid
 	`
 
 	session := &PuzzleRushSession{}
+	var movesData []byte
 	err := r.DB.QueryRow(ctx, query, sessionID).Scan(
 		&session.ID,
 		&session.UserID,
@@ -554,6 +568,7 @@ func (r *Repository) GetRushSession(ctx context.Context, sessionID string) (*Puz
 		&session.EndedAt,
 		&session.CreatedAt,
 		&session.UpdatedAt,
+		&movesData,
 	)
 
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -565,6 +580,13 @@ func (r *Repository) GetRushSession(ctx context.Context, sessionID string) (*Puz
 
 	if session.PassedPuzzleIDs == nil {
 		session.PassedPuzzleIDs = []string{}
+	}
+
+	if len(movesData) > 0 {
+		_ = json.Unmarshal(movesData, &session.MovesHistory)
+	}
+	if session.MovesHistory == nil {
+		session.MovesHistory = []RushPuzzleAttempt{}
 	}
 
 	return session, nil
@@ -579,15 +601,24 @@ func (r *Repository) UpdateRushSession(ctx context.Context, session *PuzzleRushS
 			passed_puzzle_ids = $4,
 			status = $5,
 			ended_at = $6,
+			moves_history = $7,
 			updated_at = NOW()
-		WHERE id = $7::uuid
+		WHERE id = $8::uuid
 	`
 
 	if session.PassedPuzzleIDs == nil {
 		session.PassedPuzzleIDs = []string{}
 	}
+	if session.MovesHistory == nil {
+		session.MovesHistory = []RushPuzzleAttempt{}
+	}
 
-	_, err := r.DB.Exec(
+	movesJSON, err := json.Marshal(session.MovesHistory)
+	if err != nil {
+		movesJSON = []byte("[]")
+	}
+
+	_, err = r.DB.Exec(
 		ctx,
 		query,
 		session.Score,
@@ -596,6 +627,7 @@ func (r *Repository) UpdateRushSession(ctx context.Context, session *PuzzleRushS
 		session.PassedPuzzleIDs,
 		session.Status,
 		session.EndedAt,
+		movesJSON,
 		session.ID,
 	)
 
@@ -769,4 +801,83 @@ func (r *Repository) GetRushLeaderboard(ctx context.Context, mode string, limit 
 	}
 
 	return entries, nil
+}
+
+func (r *Repository) GetUserRushHistory(ctx context.Context, userID int64, mode string, limit, offset int) (*RushHistoryResponse, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	countQuery := `
+		SELECT COUNT(*)
+		FROM puzzle_rush_sessions
+		WHERE user_id = $1 AND ($2 = '' OR mode = $2)
+	`
+	var total int
+	if err := r.DB.QueryRow(ctx, countQuery, userID, mode).Scan(&total); err != nil {
+		return nil, err
+	}
+
+	query := `
+		SELECT id, mode, score, strikes, status, started_at, ended_at, COALESCE(moves_history, '[]'::jsonb)
+		FROM puzzle_rush_sessions
+		WHERE user_id = $1 AND ($2 = '' OR mode = $2)
+		ORDER BY started_at DESC
+		LIMIT $3 OFFSET $4
+	`
+
+	rows, err := r.DB.Query(ctx, query, userID, mode, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	runs := make([]RushHistoryItem, 0)
+	for rows.Next() {
+		var item RushHistoryItem
+		var movesData []byte
+		if err := rows.Scan(
+			&item.SessionID,
+			&item.Mode,
+			&item.Score,
+			&item.Strikes,
+			&item.Status,
+			&item.StartedAt,
+			&item.EndedAt,
+			&movesData,
+		); err != nil {
+			return nil, err
+		}
+
+		if len(movesData) > 0 {
+			_ = json.Unmarshal(movesData, &item.MovesHistory)
+		}
+		if item.MovesHistory == nil {
+			item.MovesHistory = []RushPuzzleAttempt{}
+		}
+		item.TotalPuzzlesFaced = len(item.MovesHistory)
+
+		ended := time.Now().UTC()
+		if item.EndedAt != nil {
+			ended = *item.EndedAt
+		}
+		item.DurationSec = int(ended.Sub(item.StartedAt).Seconds())
+		if item.DurationSec < 0 {
+			item.DurationSec = 0
+		}
+
+		runs = append(runs, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return &RushHistoryResponse{
+		Total: total,
+		Runs:  runs,
+	}, nil
 }

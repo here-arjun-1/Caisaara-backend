@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS puzzle_rush_sessions (
     passed_puzzle_ids TEXT[] NOT NULL DEFAULT '{}',
     status VARCHAR(16) NOT NULL DEFAULT 'active',
     time_limit_sec INT NOT NULL DEFAULT 180,
+    moves_history JSONB NOT NULL DEFAULT '[]',
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     ended_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -80,6 +81,7 @@ CREATE TABLE IF NOT EXISTS puzzle_rush_sessions (
 
 CREATE INDEX IF NOT EXISTS idx_puzzle_rush_sessions_user ON puzzle_rush_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_puzzle_rush_sessions_mode_score ON puzzle_rush_sessions(mode, score DESC);
+CREATE INDEX IF NOT EXISTS idx_puzzle_rush_sessions_user_time ON puzzle_rush_sessions(user_id, started_at DESC);
 
 CREATE TABLE IF NOT EXISTS user_puzzle_rush_stats (
     user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,

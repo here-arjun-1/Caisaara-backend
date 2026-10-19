@@ -23,6 +23,7 @@ func RegisterRoutes(handler *Handler, r *gin.Engine, authMiddleware gin.HandlerF
 			rush.POST("/end", handler.EndRush)
 			rush.GET("/leaderboard", handler.GetRushLeaderboard)
 			rush.GET("/stats", handler.GetUserRushStats)
+			rush.GET("/history", handler.GetUserRushHistory)
 		}
 	}
 }
