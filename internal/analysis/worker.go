@@ -139,6 +139,14 @@ func (p *AnalysisProcessor) ProcessTaskGameAnalysis(ctx context.Context, t *asyn
 	whiteEndLosses := []float64{}
 	blackEndLosses := []float64{}
 
+	whiteOpeningInacc, whiteOpeningMistake, whiteOpeningMiss, whiteOpeningBlunder := 0, 0, 0, 0
+	whiteMiddleInacc, whiteMiddleMistake, whiteMiddleMiss, whiteMiddleBlunder := 0, 0, 0, 0
+	whiteEndInacc, whiteEndMistake, whiteEndMiss, whiteEndBlunder := 0, 0, 0, 0
+
+	blackOpeningInacc, blackOpeningMistake, blackOpeningMiss, blackOpeningBlunder := 0, 0, 0, 0
+	blackMiddleInacc, blackMiddleMistake, blackMiddleMiss, blackMiddleBlunder := 0, 0, 0, 0
+	blackEndInacc, blackEndMistake, blackEndMiss, blackEndBlunder := 0, 0, 0, 0
+
 	for idx, moveRecord := range moves {
 		playerColor := "white"
 		if idx%2 != 0 {
@@ -208,10 +216,40 @@ func (p *AnalysisProcessor) ProcessTaskGameAnalysis(ctx context.Context, t *asyn
 			switch phase {
 			case PhaseOpening:
 				whiteOpeningLosses = append(whiteOpeningLosses, cplF)
+				switch classification {
+				case ClassificationInaccuracy:
+					whiteOpeningInacc++
+				case ClassificationMistake:
+					whiteOpeningMistake++
+				case ClassificationMiss:
+					whiteOpeningMiss++
+				case ClassificationBlunder:
+					whiteOpeningBlunder++
+				}
 			case PhaseMiddlegame:
 				whiteMiddleLosses = append(whiteMiddleLosses, cplF)
+				switch classification {
+				case ClassificationInaccuracy:
+					whiteMiddleInacc++
+				case ClassificationMistake:
+					whiteMiddleMistake++
+				case ClassificationMiss:
+					whiteMiddleMiss++
+				case ClassificationBlunder:
+					whiteMiddleBlunder++
+				}
 			case PhaseEndgame:
 				whiteEndLosses = append(whiteEndLosses, cplF)
+				switch classification {
+				case ClassificationInaccuracy:
+					whiteEndInacc++
+				case ClassificationMistake:
+					whiteEndMistake++
+				case ClassificationMiss:
+					whiteEndMiss++
+				case ClassificationBlunder:
+					whiteEndBlunder++
+				}
 			}
 
 			switch classification {
@@ -237,10 +275,40 @@ func (p *AnalysisProcessor) ProcessTaskGameAnalysis(ctx context.Context, t *asyn
 			switch phase {
 			case PhaseOpening:
 				blackOpeningLosses = append(blackOpeningLosses, cplF)
+				switch classification {
+				case ClassificationInaccuracy:
+					blackOpeningInacc++
+				case ClassificationMistake:
+					blackOpeningMistake++
+				case ClassificationMiss:
+					blackOpeningMiss++
+				case ClassificationBlunder:
+					blackOpeningBlunder++
+				}
 			case PhaseMiddlegame:
 				blackMiddleLosses = append(blackMiddleLosses, cplF)
+				switch classification {
+				case ClassificationInaccuracy:
+					blackMiddleInacc++
+				case ClassificationMistake:
+					blackMiddleMistake++
+				case ClassificationMiss:
+					blackMiddleMiss++
+				case ClassificationBlunder:
+					blackMiddleBlunder++
+				}
 			case PhaseEndgame:
 				blackEndLosses = append(blackEndLosses, cplF)
+				switch classification {
+				case ClassificationInaccuracy:
+					blackEndInacc++
+				case ClassificationMistake:
+					blackEndMistake++
+				case ClassificationMiss:
+					blackEndMiss++
+				case ClassificationBlunder:
+					blackEndBlunder++
+				}
 			}
 
 			switch classification {
@@ -298,6 +366,13 @@ func (p *AnalysisProcessor) ProcessTaskGameAnalysis(ctx context.Context, t *asyn
 	endWhite := CalculateAccuracyFormula(whiteEndLosses)
 	endBlack := CalculateAccuracyFormula(blackEndLosses)
 
+	openClassWhite, openSymWhite := ClassifyPhase(whiteOpeningLosses, whiteOpeningInacc, whiteOpeningMistake, whiteOpeningMiss, whiteOpeningBlunder)
+	openClassBlack, openSymBlack := ClassifyPhase(blackOpeningLosses, blackOpeningInacc, blackOpeningMistake, blackOpeningMiss, blackOpeningBlunder)
+	midClassWhite, midSymWhite := ClassifyPhase(whiteMiddleLosses, whiteMiddleInacc, whiteMiddleMistake, whiteMiddleMiss, whiteMiddleBlunder)
+	midClassBlack, midSymBlack := ClassifyPhase(blackMiddleLosses, blackMiddleInacc, blackMiddleMistake, blackMiddleMiss, blackMiddleBlunder)
+	endClassWhite, endSymWhite := ClassifyPhase(whiteEndLosses, whiteEndInacc, whiteEndMistake, whiteEndMiss, whiteEndBlunder)
+	endClassBlack, endSymBlack := ClassifyPhase(blackEndLosses, blackEndInacc, blackEndMistake, blackEndMiss, blackEndBlunder)
+
 	analysisRecord.AccuracyWhite = &accWhite
 	analysisRecord.AccuracyBlack = &accBlack
 	analysisRecord.OpeningAccuracyWhite = &openWhite
@@ -306,6 +381,19 @@ func (p *AnalysisProcessor) ProcessTaskGameAnalysis(ctx context.Context, t *asyn
 	analysisRecord.MiddlegameAccuracyBlack = &midBlack
 	analysisRecord.EndgameAccuracyWhite = &endWhite
 	analysisRecord.EndgameAccuracyBlack = &endBlack
+	analysisRecord.OpeningClassificationWhite = openClassWhite
+	analysisRecord.OpeningClassificationBlack = openClassBlack
+	analysisRecord.MiddlegameClassificationWhite = midClassWhite
+	analysisRecord.MiddlegameClassificationBlack = midClassBlack
+	analysisRecord.EndgameClassificationWhite = endClassWhite
+	analysisRecord.EndgameClassificationBlack = endClassBlack
+	analysisRecord.OpeningSymbolWhite = openSymWhite
+	analysisRecord.OpeningSymbolBlack = openSymBlack
+	analysisRecord.MiddlegameSymbolWhite = midSymWhite
+	analysisRecord.MiddlegameSymbolBlack = midSymBlack
+	analysisRecord.EndgameSymbolWhite = endSymWhite
+	analysisRecord.EndgameSymbolBlack = endSymBlack
+
 	analysisRecord.RatingWhite = CalculatePerformanceRating(accWhite)
 	analysisRecord.RatingBlack = CalculatePerformanceRating(accBlack)
 	analysisRecord.Status = StatusCompleted

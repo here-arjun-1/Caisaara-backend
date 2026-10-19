@@ -168,8 +168,8 @@ func (s *Service) startMoveWorker(workerIdx int, queue <-chan movePersistTask) {
 	queueKey := fmt.Sprintf("caisaara:moves:queue:%d", workerIdx)
 	for {
 		if s.RedisClient != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-			val, err := s.RedisClient.BLPop(ctx, 500*time.Millisecond, queueKey).Result()
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			val, err := s.RedisClient.BLPop(ctx, 1*time.Second, queueKey).Result()
 			cancel()
 			if err == nil && len(val) >= 2 {
 				var task movePersistTask

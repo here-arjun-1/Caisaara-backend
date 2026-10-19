@@ -19,8 +19,9 @@ type AnalysisService interface {
 }
 
 type GameAnalysisResponse struct {
-	Analysis     *GameAnalysis      `json:"analysis"`
+	Analysis     AnalysisMetadata   `json:"analysis"`
 	SummaryStats SummaryStatistics  `json:"summary_stats"`
+	Phases       []PhaseReviewItem  `json:"phases"`
 	EvalHistory  []EvalHistoryPoint `json:"eval_history"`
 }
 
@@ -129,11 +130,26 @@ func (s *Service) GetAnalysis(ctx context.Context, gameID string, userID int64) 
 		moves = []GameMoveAnalysis{}
 	}
 
-	stats, evalHistory := s.StatsService.CalculateStatistics(moves)
+	stats, phases, evalHistory := s.StatsService.CalculateStatistics(moves)
+
+	var metadata AnalysisMetadata
+	if analysisRecord != nil {
+		metadata = AnalysisMetadata{
+			ID:            analysisRecord.ID,
+			GameID:        analysisRecord.GameID,
+			Status:        analysisRecord.Status,
+			EngineVersion: analysisRecord.EngineVersion,
+			Depth:         analysisRecord.Depth,
+			ErrorMessage:  analysisRecord.ErrorMessage,
+			CreatedAt:     analysisRecord.CreatedAt,
+			UpdatedAt:     analysisRecord.UpdatedAt,
+		}
+	}
 
 	return &GameAnalysisResponse{
-		Analysis:     analysisRecord,
+		Analysis:     metadata,
 		SummaryStats: stats,
+		Phases:       phases,
 		EvalHistory:  evalHistory,
 	}, nil
 }
