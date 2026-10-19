@@ -22,7 +22,6 @@ type UpdateProfileData struct {
 	DisplayName *string `json:"display_name"`
 	Country     *string `json:"country"`
 	Bio         *string `json:"bio"`
-	AvatarURL   *string `json:"avatar_url"`
 }
 
 type PublicProfileResponse struct {
