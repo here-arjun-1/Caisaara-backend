@@ -21,6 +21,13 @@ type PuzzleRepository interface {
 	UpdateDailySession(ctx context.Context, session *DailyPuzzleSession) error
 	GetUserStats(ctx context.Context, userID int64) (*PuzzleStatsResponse, error)
 	GetUserHistory(ctx context.Context, userID int64, limit, offset int) (*PuzzleHistoryResponse, error)
+	CreateRushSession(ctx context.Context, session *PuzzleRushSession) error
+	GetRushSession(ctx context.Context, sessionID string) (*PuzzleRushSession, error)
+	UpdateRushSession(ctx context.Context, session *PuzzleRushSession) error
+	FindRushPuzzle(ctx context.Context, minRating, maxRating int, excludedIDs []string) (*Puzzle, error)
+	GetOrCreateRushStats(ctx context.Context, userID int64) (*UserPuzzleRushStats, error)
+	UpdateRushStats(ctx context.Context, stats *UserPuzzleRushStats) error
+	GetRushLeaderboard(ctx context.Context, mode string, limit int) ([]RushLeaderboardEntry, error)
 }
 
 type Repository struct {
@@ -51,6 +58,29 @@ func NewRepository(db *pgxpool.Pool) PuzzleRepository {
 		);`,
 		`ALTER TABLE daily_puzzle_sessions ADD COLUMN IF NOT EXISTS attempted_moves TEXT[] NOT NULL DEFAULT '{}';`,
 		`ALTER TABLE user_puzzle_attempts ADD COLUMN IF NOT EXISTS attempted_moves TEXT[] NOT NULL DEFAULT '{}';`,
+		`CREATE TABLE IF NOT EXISTS puzzle_rush_sessions (
+			id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+			user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			mode VARCHAR(16) NOT NULL,
+			score INT NOT NULL DEFAULT 0,
+			strikes INT NOT NULL DEFAULT 0,
+			current_puzzle_id VARCHAR(16) NOT NULL REFERENCES puzzles(id) ON DELETE CASCADE,
+			passed_puzzle_ids TEXT[] NOT NULL DEFAULT '{}',
+			status VARCHAR(16) NOT NULL DEFAULT 'active',
+			time_limit_sec INT NOT NULL DEFAULT 180,
+			started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			ended_at TIMESTAMPTZ,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);`,
+		`CREATE TABLE IF NOT EXISTS user_puzzle_rush_stats (
+			user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+			best_score_3min INT NOT NULL DEFAULT 0,
+			best_score_5min INT NOT NULL DEFAULT 0,
+			best_score_survival INT NOT NULL DEFAULT 0,
+			total_runs INT NOT NULL DEFAULT 0,
+			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		);`,
 	}
 
 	for _, q := range queries {
@@ -450,11 +480,12 @@ func (r *Repository) GetUserHistory(ctx context.Context, userID int64, limit, of
 		}
 
 		parts := strings.Fields(rawMoves)
-		if len(parts) > 1 {
+		switch {
+		case len(parts) > 1:
 			item.SolutionMoves = parts[1:]
-		} else if len(parts) == 1 {
+		case len(parts) == 1:
 			item.SolutionMoves = parts
-		} else {
+		default:
 			item.SolutionMoves = []string{}
 		}
 
@@ -469,4 +500,273 @@ func (r *Repository) GetUserHistory(ctx context.Context, userID int64, limit, of
 		Total:    total,
 		Attempts: items,
 	}, nil
+}
+
+func (r *Repository) CreateRushSession(ctx context.Context, session *PuzzleRushSession) error {
+	query := `
+		INSERT INTO puzzle_rush_sessions (
+			id, user_id, mode, score, strikes, current_puzzle_id, passed_puzzle_ids, status, time_limit_sec, started_at, created_at, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+	`
+
+	if session.PassedPuzzleIDs == nil {
+		session.PassedPuzzleIDs = []string{}
+	}
+
+	_, err := r.DB.Exec(
+		ctx,
+		query,
+		session.ID,
+		session.UserID,
+		session.Mode,
+		session.Score,
+		session.Strikes,
+		session.CurrentPuzzleID,
+		session.PassedPuzzleIDs,
+		session.Status,
+		session.TimeLimitSec,
+		session.StartedAt,
+	)
+
+	return err
+}
+
+func (r *Repository) GetRushSession(ctx context.Context, sessionID string) (*PuzzleRushSession, error) {
+	query := `
+		SELECT id, user_id, mode, score, strikes, current_puzzle_id, passed_puzzle_ids, status, time_limit_sec, started_at, ended_at, created_at, updated_at
+		FROM puzzle_rush_sessions
+		WHERE id = $1::uuid
+	`
+
+	session := &PuzzleRushSession{}
+	err := r.DB.QueryRow(ctx, query, sessionID).Scan(
+		&session.ID,
+		&session.UserID,
+		&session.Mode,
+		&session.Score,
+		&session.Strikes,
+		&session.CurrentPuzzleID,
+		&session.PassedPuzzleIDs,
+		&session.Status,
+		&session.TimeLimitSec,
+		&session.StartedAt,
+		&session.EndedAt,
+		&session.CreatedAt,
+		&session.UpdatedAt,
+	)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if session.PassedPuzzleIDs == nil {
+		session.PassedPuzzleIDs = []string{}
+	}
+
+	return session, nil
+}
+
+func (r *Repository) UpdateRushSession(ctx context.Context, session *PuzzleRushSession) error {
+	query := `
+		UPDATE puzzle_rush_sessions
+		SET score = $1,
+			strikes = $2,
+			current_puzzle_id = $3,
+			passed_puzzle_ids = $4,
+			status = $5,
+			ended_at = $6,
+			updated_at = NOW()
+		WHERE id = $7::uuid
+	`
+
+	if session.PassedPuzzleIDs == nil {
+		session.PassedPuzzleIDs = []string{}
+	}
+
+	_, err := r.DB.Exec(
+		ctx,
+		query,
+		session.Score,
+		session.Strikes,
+		session.CurrentPuzzleID,
+		session.PassedPuzzleIDs,
+		session.Status,
+		session.EndedAt,
+		session.ID,
+	)
+
+	return err
+}
+
+func (r *Repository) FindRushPuzzle(ctx context.Context, minRating, maxRating int, excludedIDs []string) (*Puzzle, error) {
+	if excludedIDs == nil {
+		excludedIDs = []string{}
+	}
+
+	query := `
+		SELECT id, fen, moves, rating, rating_deviation, popularity, nb_plays, themes, COALESCE(game_url, ''), COALESCE(opening_tags, ''), created_at
+		FROM puzzles
+		WHERE rating BETWEEN $1 AND $2
+		  AND NOT (id = ANY($3))
+		ORDER BY RANDOM()
+		LIMIT 1
+	`
+
+	p := &Puzzle{}
+	err := r.DB.QueryRow(ctx, query, minRating, maxRating, excludedIDs).Scan(
+		&p.ID,
+		&p.FEN,
+		&p.Moves,
+		&p.Rating,
+		&p.RatingDeviation,
+		&p.Popularity,
+		&p.NbPlays,
+		&p.Themes,
+		&p.GameURL,
+		&p.OpeningTags,
+		&p.CreatedAt,
+	)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		fallbackQuery := `
+			SELECT id, fen, moves, rating, rating_deviation, popularity, nb_plays, themes, COALESCE(game_url, ''), COALESCE(opening_tags, ''), created_at
+			FROM puzzles
+			WHERE rating BETWEEN $1 AND $2
+			ORDER BY RANDOM()
+			LIMIT 1
+		`
+		err = r.DB.QueryRow(ctx, fallbackQuery, minRating-150, maxRating+150).Scan(
+			&p.ID,
+			&p.FEN,
+			&p.Moves,
+			&p.Rating,
+			&p.RatingDeviation,
+			&p.Popularity,
+			&p.NbPlays,
+			&p.Themes,
+			&p.GameURL,
+			&p.OpeningTags,
+			&p.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+	} else if err != nil {
+		return nil, err
+	}
+
+	return p, nil
+}
+
+func (r *Repository) GetOrCreateRushStats(ctx context.Context, userID int64) (*UserPuzzleRushStats, error) {
+	query := `
+		SELECT user_id, best_score_3min, best_score_5min, best_score_survival, total_runs, updated_at
+		FROM user_puzzle_rush_stats
+		WHERE user_id = $1
+	`
+
+	s := &UserPuzzleRushStats{}
+	err := r.DB.QueryRow(ctx, query, userID).Scan(
+		&s.UserID,
+		&s.BestScore3Min,
+		&s.BestScore5Min,
+		&s.BestScoreSurvival,
+		&s.TotalRuns,
+		&s.UpdatedAt,
+	)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		insertQuery := `
+			INSERT INTO user_puzzle_rush_stats (user_id, best_score_3min, best_score_5min, best_score_survival, total_runs, updated_at)
+			VALUES ($1, 0, 0, 0, 0, NOW())
+			ON CONFLICT (user_id) DO UPDATE SET updated_at = NOW()
+			RETURNING user_id, best_score_3min, best_score_5min, best_score_survival, total_runs, updated_at
+		`
+		err = r.DB.QueryRow(ctx, insertQuery, userID).Scan(
+			&s.UserID,
+			&s.BestScore3Min,
+			&s.BestScore5Min,
+			&s.BestScoreSurvival,
+			&s.TotalRuns,
+			&s.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+	} else if err != nil {
+		return nil, err
+	}
+
+	return s, nil
+}
+
+func (r *Repository) UpdateRushStats(ctx context.Context, stats *UserPuzzleRushStats) error {
+	query := `
+		UPDATE user_puzzle_rush_stats
+		SET best_score_3min = $1,
+			best_score_5min = $2,
+			best_score_survival = $3,
+			total_runs = $4,
+			updated_at = NOW()
+		WHERE user_id = $5
+	`
+
+	_, err := r.DB.Exec(
+		ctx,
+		query,
+		stats.BestScore3Min,
+		stats.BestScore5Min,
+		stats.BestScoreSurvival,
+		stats.TotalRuns,
+		stats.UserID,
+	)
+
+	return err
+}
+
+func (r *Repository) GetRushLeaderboard(ctx context.Context, mode string, limit int) ([]RushLeaderboardEntry, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	query := `
+		SELECT s.user_id, u.username, MAX(s.score) AS high_score, s.mode, MAX(s.started_at) AS played_at
+		FROM puzzle_rush_sessions s
+		JOIN users u ON s.user_id = u.id
+		WHERE s.mode = $1 AND s.score > 0
+		GROUP BY s.user_id, u.username, s.mode
+		ORDER BY high_score DESC
+		LIMIT $2
+	`
+
+	rows, err := r.DB.Query(ctx, query, mode, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	entries := make([]RushLeaderboardEntry, 0)
+	for rows.Next() {
+		var e RushLeaderboardEntry
+		if err := rows.Scan(
+			&e.UserID,
+			&e.Username,
+			&e.Score,
+			&e.Mode,
+			&e.PlayedAt,
+		); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return entries, nil
 }

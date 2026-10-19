@@ -62,4 +62,33 @@ CREATE TABLE IF NOT EXISTS daily_puzzle_sessions (
     PRIMARY KEY (user_id, date)
 );
 
+CREATE TABLE IF NOT EXISTS puzzle_rush_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    mode VARCHAR(16) NOT NULL,
+    score INT NOT NULL DEFAULT 0,
+    strikes INT NOT NULL DEFAULT 0,
+    current_puzzle_id VARCHAR(16) NOT NULL REFERENCES puzzles(id) ON DELETE CASCADE,
+    passed_puzzle_ids TEXT[] NOT NULL DEFAULT '{}',
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    time_limit_sec INT NOT NULL DEFAULT 180,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    ended_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_puzzle_rush_sessions_user ON puzzle_rush_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_puzzle_rush_sessions_mode_score ON puzzle_rush_sessions(mode, score DESC);
+
+CREATE TABLE IF NOT EXISTS user_puzzle_rush_stats (
+    user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    best_score_3min INT NOT NULL DEFAULT 0,
+    best_score_5min INT NOT NULL DEFAULT 0,
+    best_score_survival INT NOT NULL DEFAULT 0,
+    total_runs INT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
 

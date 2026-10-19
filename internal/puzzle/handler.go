@@ -174,3 +174,111 @@ func (h *Handler) GetUserHistory(c *gin.Context) {
 
 	c.JSON(http.StatusOK, res)
 }
+
+func (h *Handler) StartRush(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID, ok := middleware.GetUserID(c)
+	if !ok || userID <= 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	var req StartRushRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	res, err := h.Service.StartRush(ctx, userID, req)
+	if err != nil {
+		slog.ErrorContext(ctx, "start rush failed", "user_id", userID, "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, res)
+}
+
+func (h *Handler) SubmitRushMove(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID, ok := middleware.GetUserID(c)
+	if !ok || userID <= 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	var req SubmitRushMoveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	res, err := h.Service.SubmitRushMove(ctx, userID, req)
+	if err != nil {
+		slog.ErrorContext(ctx, "submit rush move failed", "user_id", userID, "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, res)
+}
+
+func (h *Handler) EndRush(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID, ok := middleware.GetUserID(c)
+	if !ok || userID <= 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	var req EndRushRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		return
+	}
+
+	res, err := h.Service.EndRush(ctx, userID, req)
+	if err != nil {
+		slog.ErrorContext(ctx, "end rush failed", "user_id", userID, "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, res)
+}
+
+func (h *Handler) GetRushLeaderboard(c *gin.Context) {
+	ctx := c.Request.Context()
+	mode := c.DefaultQuery("mode", "3min")
+	limit, err := strconv.Atoi(c.DefaultQuery("limit", "50"))
+	if err != nil || limit <= 0 {
+		limit = 50
+	}
+
+	res, err := h.Service.GetRushLeaderboard(ctx, mode, limit)
+	if err != nil {
+		slog.ErrorContext(ctx, "get rush leaderboard failed", "mode", mode, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get leaderboard"})
+		return
+	}
+
+	c.JSON(http.StatusOK, res)
+}
+
+func (h *Handler) GetUserRushStats(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID, ok := middleware.GetUserID(c)
+	if !ok || userID <= 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	res, err := h.Service.GetUserRushStats(ctx, userID)
+	if err != nil {
+		slog.ErrorContext(ctx, "get user rush stats failed", "user_id", userID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get rush stats"})
+		return
+	}
+
+	c.JSON(http.StatusOK, res)
+}
