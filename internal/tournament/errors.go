@@ -21,4 +21,5 @@ var (
 	ErrNotCreator           = errors.New("only the tournament creator can start the tournament")
 	ErrNotEnoughPlayers     = errors.New("at least 2 players are required to start the tournament")
 	ErrInvalidMinRating     = errors.New("min_rating cannot be negative")
+	ErrRatingTooLow         = errors.New("your rating is below the minimum rating for this tournament")
 )
