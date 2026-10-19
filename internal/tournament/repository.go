@@ -38,6 +38,7 @@ type TournamentRepository interface {
 	UpdateTotalRounds(ctx context.Context, tournamentID int64, totalRounds int) error
 	GetRoundWinners(ctx context.Context, tournamentID int64, roundID int64) ([]int64, error)
 	DeleteOldTournaments(ctx context.Context, olderThan time.Duration) (int64, error)
+	GetPlayerRating(ctx context.Context, userID int64, mode string) (int, error)
 }
 
 type Repository struct {
@@ -105,8 +106,9 @@ func (r *Repository) CreateTournament(ctx context.Context, tournament *Tournamen
 			created_by,
 			start_at,
 			created_at,
-			updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+			updated_at,
+			min_rating
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 		RETURNING id, created_at, updated_at`,
 		tournament.Name,
 		tournament.Description,
@@ -123,6 +125,7 @@ func (r *Repository) CreateTournament(ctx context.Context, tournament *Tournamen
 		tournament.StartAt,
 		tournament.CreatedAt,
 		tournament.UpdatedAt,
+		tournament.MinRating,
 	).Scan(&tournament.ID, &tournament.CreatedAt, &tournament.UpdatedAt)
 
 	if err != nil {
@@ -152,7 +155,8 @@ func (r *Repository) FindByID(ctx context.Context, id int64) (*Tournament, error
 			created_by,
 			start_at,
 			created_at,
-			updated_at
+			updated_at,
+			min_rating
 		FROM tournaments
 		WHERE id = $1`,
 		id,
@@ -176,6 +180,7 @@ func (r *Repository) FindByID(ctx context.Context, id int64) (*Tournament, error
 		&t.StartAt,
 		&t.CreatedAt,
 		&t.UpdatedAt,
+		&t.MinRating,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -208,6 +213,7 @@ func (r *Repository) ListPublicTournaments(ctx context.Context) ([]*TournamentWi
 			t.start_at,
 			t.created_at,
 			t.updated_at,
+			t.min_rating,
 			COUNT(tp.id)::int AS players
 		FROM tournaments t
 		LEFT JOIN tournament_players tp ON t.id = tp.tournament_id
@@ -241,6 +247,7 @@ func (r *Repository) ListPublicTournaments(ctx context.Context) ([]*TournamentWi
 			&tw.StartAt,
 			&tw.CreatedAt,
 			&tw.UpdatedAt,
+			&tw.MinRating,
 			&tw.Players,
 		)
 		if err != nil {
@@ -273,6 +280,7 @@ func (r *Repository) FindByIDWithPlayerCount(ctx context.Context, id int64) (*To
 			t.start_at,
 			t.created_at,
 			t.updated_at,
+			t.min_rating,
 			COUNT(tp.id)::int AS players
 		FROM tournaments t
 		LEFT JOIN tournament_players tp ON t.id = tp.tournament_id
@@ -299,6 +307,7 @@ func (r *Repository) FindByIDWithPlayerCount(ctx context.Context, id int64) (*To
 		&tw.StartAt,
 		&tw.CreatedAt,
 		&tw.UpdatedAt,
+		&tw.MinRating,
 		&tw.Players,
 	)
 	if err != nil {
@@ -332,6 +341,7 @@ func (r *Repository) FindByInviteCode(ctx context.Context, code string) (*Tourna
 			t.start_at,
 			t.created_at,
 			t.updated_at,
+			t.min_rating,
 			COUNT(tp.id)::int AS players
 		FROM tournaments t
 		LEFT JOIN tournament_players tp ON t.id = tp.tournament_id
@@ -358,6 +368,7 @@ func (r *Repository) FindByInviteCode(ctx context.Context, code string) (*Tourna
 		&tw.StartAt,
 		&tw.CreatedAt,
 		&tw.UpdatedAt,
+		&tw.MinRating,
 		&tw.Players,
 	)
 	if err != nil {
@@ -387,6 +398,24 @@ func (r *Repository) IsPlayerJoined(ctx context.Context, tournamentID int64, use
 		return false, err
 	}
 	return exists, nil
+}
+
+func (r *Repository) GetPlayerRating(ctx context.Context, userID int64, mode string) (int, error) {
+	var rating int
+	err := r.DB.QueryRow(
+		ctx,
+		`SELECT COALESCE(pr.rating, u.rating, 1200)
+		FROM users u
+		LEFT JOIN player_ratings pr ON pr.user_id = u.id AND pr.mode = $2
+		WHERE u.id = $1`,
+		userID,
+		mode,
+	).Scan(&rating)
+	if err != nil {
+		slog.ErrorContext(ctx, "get player rating failed", "user_id", userID, "mode", mode, "error", err)
+		return 0, err
+	}
+	return rating, nil
 }
 
 func (r *Repository) AddPlayer(ctx context.Context, player *TournamentPlayer) error {
