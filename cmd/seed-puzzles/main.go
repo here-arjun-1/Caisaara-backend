@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/database"
+	"github.com/here-arjun-1/Caisaara-backend/migrations"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
 )
@@ -62,11 +63,34 @@ func run() error {
 	flag.IntVar(&maxRating, "max-rating", 3500, "maximum puzzle rating")
 	flag.IntVar(&batchSize, "batch-size", 1000, "batch size for insertion (1 to 5000)")
 	flag.IntVar(&limit, "limit", 0, "maximum puzzles to seed (0 = unlimited)")
+
+	cleanedArgs := make([]string, 0, len(os.Args))
+	for i := 0; i < len(os.Args); i++ {
+		arg := os.Args[i]
+		if i+1 < len(os.Args) && strings.HasPrefix(arg, "-") && strings.Contains(arg, "=") && strings.HasPrefix(os.Args[i+1], ".") {
+			arg += os.Args[i+1]
+			i++
+		}
+		cleanedArgs = append(cleanedArgs, arg)
+	}
+	os.Args = cleanedArgs
+
 	flag.Parse()
 
 	if filePath == "" {
 		flag.Usage()
 		return errors.New("-file argument is required")
+	}
+
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		if len(flag.Args()) > 0 && strings.HasPrefix(flag.Arg(0), ".") {
+			filePath += flag.Arg(0)
+		}
+	}
+	if _, err := os.Stat(filePath); os.IsNotExist(err) && !strings.HasSuffix(filePath, ".csv") {
+		if _, err2 := os.Stat(filePath + ".csv"); err2 == nil {
+			filePath += ".csv"
+		}
 	}
 
 	_ = godotenv.Load()
@@ -84,12 +108,31 @@ func run() error {
 	if batchSize < 1 || batchSize > 5000 {
 		batchSize = 1000
 	}
+	if limit > 0 && limit < batchSize {
+		batchSize = limit
+	}
+
+	if err := migrations.Run(dbURL); err != nil {
+		return fmt.Errorf("run migrations: %w", err)
+	}
 
 	pool, err := database.ConnectDB(dbURL)
 	if err != nil {
 		return fmt.Errorf("connect to database: %w", err)
 	}
 	defer pool.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var tableExists bool
+	_ = pool.QueryRow(ctx, "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'puzzles')").Scan(&tableExists)
+	if !tableExists {
+		_, _ = pool.Exec(ctx, "UPDATE schema_migrations SET version = 23 WHERE version >= 24")
+		if err := migrations.Run(dbURL); err != nil {
+			return fmt.Errorf("run migrations after reset: %w", err)
+		}
+	}
 
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -110,9 +153,6 @@ func run() error {
 	csvReader := csv.NewReader(bufio.NewReader(r))
 	csvReader.FieldsPerRecord = -1
 	csvReader.ReuseRecord = true
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	batch := make([]puzzleRecord, 0, batchSize)
 	totalLines := 0
@@ -249,6 +289,27 @@ func insertBatch(ctx context.Context, pool *pgxpool.Pool, batch []puzzleRecord) 
 
 	queryBuilder.WriteString(" ON CONFLICT (id) DO NOTHING")
 
-	_, err := pool.Exec(ctx, queryBuilder.String(), args...)
-	return err
+	query := queryBuilder.String()
+	maxRetries := 5
+	var lastErr error
+
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		execCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+		_, err := pool.Exec(execCtx, query, args...)
+		cancel()
+		if err == nil {
+			return nil
+		}
+
+		lastErr = err
+		slog.Warn("database batch insert error, retrying...", "attempt", attempt, "max", maxRetries, "error", err)
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(attempt*2) * time.Second):
+		}
+	}
+
+	return fmt.Errorf("failed after %d attempts: %w", maxRetries, lastErr)
 }
