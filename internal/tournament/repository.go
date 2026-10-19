@@ -29,6 +29,7 @@ type TournamentRepository interface {
 	AddPlayer(ctx context.Context, player *TournamentPlayer) error
 	RemovePlayer(ctx context.Context, tournamentID int64, userID int64) error
 	StartTournament(ctx context.Context, tournamentID int64) error
+	EndTournament(ctx context.Context, tournamentID int64) error
 	GetSwissPlayers(ctx context.Context, tournamentID int64) ([]*SwissPlayer, error)
 	SaveRoundPairings(ctx context.Context, tournamentID int64, roundNumber int, pairings []SwissPairingResult, gameRepo ...game.GameRepository) ([]*TournamentPairing, error)
 	UpdatePairingOnGameCompleted(ctx context.Context, gameID string, result string) (int64, bool, error)
@@ -495,13 +496,63 @@ func (r *Repository) StartTournament(ctx context.Context, tournamentID int64) er
 		ctx,
 		`INSERT INTO tournament_rounds (tournament_id, round_number, status, started_at)
 		VALUES ($1, 1, 'ongoing', NOW())
-		ON CONFLICT (tournament_id, round_number)
+		ON CONFLICT (tournament_id, round_number)qw
 		DO UPDATE SET status = 'ongoing', started_at = NOW()`,
 		tournamentID,
 	)
 	if err != nil {
 		slog.ErrorContext(ctx, "insert round 1 failed", "tournament_id", tournamentID, "error", err)
 		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+func (r *Repository) EndTournament(ctx context.Context, tournamentID int64) error {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "begin transaction failed for end tournament", "tournament_id", tournamentID, "error", err)
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	_, err = tx.Exec(
+		ctx,
+		`UPDATE tournament_pairings
+		SET status = 'completed', completed_at = NOW()
+		WHERE tournament_id = $1 AND status != 'completed'`,
+		tournamentID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "close unfinished pairings failed", "tournament_id", tournamentID, "error", err)
+		return err
+	}
+
+	_, err = tx.Exec(
+		ctx,
+		`UPDATE tournament_rounds
+		SET status = 'completed', completed_at = NOW()
+		WHERE tournament_id = $1 AND status != 'completed'`,
+		tournamentID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "close unfinished rounds failed", "tournament_id", tournamentID, "error", err)
+		return err
+	}
+
+	tag, err := tx.Exec(
+		ctx,
+		`UPDATE tournaments
+		SET status = 'completed', updated_at = NOW()
+		WHERE id = $1 AND status = 'ongoing'`,
+		tournamentID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "update tournament status to completed failed", "tournament_id", tournamentID, "error", err)
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotOngoing
 	}
 
 	return tx.Commit(ctx)
@@ -827,7 +878,7 @@ func (r *Repository) GetStandings(ctx context.Context, tournamentID int64) ([]*S
 		ctx,
 		`SELECT white_player_id, black_player_id
 		FROM tournament_pairings
-		WHERE tournament_id = $1 AND status = 'completed' AND is_bye = FALSE`,
+		WHERE tournament_id = $1 AND status = 'completed' AND is_bye = FALSE AND result IS NOT NULL`,
 		tournamentID,
 	)
 	if err == nil {
