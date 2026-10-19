@@ -3,6 +3,7 @@ package puzzle
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
@@ -140,6 +141,34 @@ func (h *Handler) GetUserStats(c *gin.Context) {
 	if err != nil {
 		slog.ErrorContext(ctx, "get user puzzle stats failed", "user_id", userID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get puzzle stats"})
+		return
+	}
+
+	c.JSON(http.StatusOK, res)
+}
+
+func (h *Handler) GetUserHistory(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID, ok := middleware.GetUserID(c)
+	if !ok || userID <= 0 {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		return
+	}
+
+	limit, err := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if err != nil || limit <= 0 {
+		limit = 20
+	}
+
+	offset, err := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	if err != nil || offset < 0 {
+		offset = 0
+	}
+
+	res, err := h.Service.GetUserHistory(ctx, userID, limit, offset)
+	if err != nil {
+		slog.ErrorContext(ctx, "get user puzzle history failed", "user_id", userID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get puzzle history"})
 		return
 	}
 

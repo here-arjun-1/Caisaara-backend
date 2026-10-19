@@ -41,18 +41,20 @@ type UserPuzzleAttempt struct {
 	UserRatingBefore int       `json:"user_rating_before"`
 	UserRatingAfter  int       `json:"user_rating_after"`
 	TimeTakenMs      int       `json:"time_taken_ms"`
+	AttemptedMoves   []string  `json:"attempted_moves"`
 	CreatedAt        time.Time `json:"created_at"`
 }
 
 type DailyPuzzleSession struct {
-	UserID         int64  `json:"user_id"`
-	PuzzleID       string `json:"puzzle_id"`
-	Date           string `json:"date"`
-	AttemptsLeft   int    `json:"attempts_left"`
-	HintUsed       bool   `json:"hint_used"`
-	SolutionViewed bool   `json:"solution_viewed"`
-	Solved         bool   `json:"solved"`
-	RatingEarned   int    `json:"rating_earned"`
+	UserID         int64    `json:"user_id"`
+	PuzzleID       string   `json:"puzzle_id"`
+	Date           string   `json:"date"`
+	AttemptsLeft   int      `json:"attempts_left"`
+	HintUsed       bool     `json:"hint_used"`
+	SolutionViewed bool     `json:"solution_viewed"`
+	Solved         bool     `json:"solved"`
+	RatingEarned   int      `json:"rating_earned"`
+	AttemptedMoves []string `json:"attempted_moves"`
 }
 
 type DailyPuzzleResponse struct {
@@ -67,6 +69,7 @@ type DailyPuzzleResponse struct {
 	Solved         bool     `json:"solved"`
 	CurrentStreak  int      `json:"current_streak"`
 	PlayerRating   int      `json:"player_rating"`
+	AttemptedMoves []string `json:"attempted_moves"`
 }
 
 type SubmitAttemptRequest struct {
@@ -76,15 +79,16 @@ type SubmitAttemptRequest struct {
 }
 
 type SubmitAttemptResponse struct {
-	Correct          bool   `json:"correct"`
-	Solved           bool   `json:"solved"`
-	NextMove         string `json:"next_move,omitempty"`
-	AttemptsLeft     int    `json:"attempts_left"`
-	RatingChange     int    `json:"rating_change"`
-	UserRatingBefore int    `json:"user_rating_before"`
-	UserRatingAfter  int    `json:"user_rating_after"`
-	CurrentStreak    int    `json:"current_streak"`
-	Message          string `json:"message"`
+	Correct          bool     `json:"correct"`
+	Solved           bool     `json:"solved"`
+	NextMove         string   `json:"next_move,omitempty"`
+	AttemptsLeft     int      `json:"attempts_left"`
+	RatingChange     int      `json:"rating_change"`
+	UserRatingBefore int      `json:"user_rating_before"`
+	UserRatingAfter  int      `json:"user_rating_after"`
+	CurrentStreak    int      `json:"current_streak"`
+	AttemptedMoves   []string `json:"attempted_moves"`
+	Message          string   `json:"message"`
 }
 
 type HintRequest struct {
@@ -119,4 +123,22 @@ type PuzzleStatsResponse struct {
 	WinRate       float64    `json:"win_rate"`
 	CurrentStreak int        `json:"current_streak"`
 	MaxStreak     int        `json:"max_streak"`
+}
+
+type PuzzleHistoryItem struct {
+	ID               int64     `json:"id"`
+	PuzzleID         string    `json:"puzzle_id"`
+	Solved           bool      `json:"solved"`
+	AttemptedMoves   []string  `json:"attempted_moves"`
+	SolutionMoves    []string  `json:"solution_moves"`
+	UserRatingBefore int       `json:"user_rating_before"`
+	UserRatingAfter  int       `json:"user_rating_after"`
+	RatingChange     int       `json:"rating_change"`
+	TimeTakenMs      int       `json:"time_taken_ms"`
+	CreatedAt        time.Time `json:"created_at"`
+}
+
+type PuzzleHistoryResponse struct {
+	Total    int64               `json:"total"`
+	Attempts []PuzzleHistoryItem `json:"attempts"`
 }

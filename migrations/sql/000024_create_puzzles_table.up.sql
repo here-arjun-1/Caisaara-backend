@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS user_puzzle_attempts (
     user_rating_before INT NOT NULL,
     user_rating_after INT NOT NULL,
     time_taken_ms INT NOT NULL DEFAULT 0,
+    attempted_moves TEXT[] NOT NULL DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -55,8 +56,10 @@ CREATE TABLE IF NOT EXISTS daily_puzzle_sessions (
     solution_viewed BOOLEAN NOT NULL DEFAULT FALSE,
     solved BOOLEAN NOT NULL DEFAULT FALSE,
     rating_earned INT NOT NULL DEFAULT 0,
+    attempted_moves TEXT[] NOT NULL DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, date)
 );
+
 
