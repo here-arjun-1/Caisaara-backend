@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -134,11 +135,11 @@ func run() error {
 		}
 	}
 
-	file, err := os.Open(filePath)
+	file, err := os.Open(filepath.Clean(filePath))
 	if err != nil {
 		return fmt.Errorf("open file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	var r io.Reader = file
 	if strings.HasSuffix(filePath, ".gz") {
@@ -146,7 +147,7 @@ func run() error {
 		if err != nil {
 			return fmt.Errorf("open gzip reader: %w", err)
 		}
-		defer gzReader.Close()
+		defer func() { _ = gzReader.Close() }()
 		r = gzReader
 	}
 

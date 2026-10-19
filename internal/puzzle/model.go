@@ -142,3 +142,101 @@ type PuzzleHistoryResponse struct {
 	Total    int64               `json:"total"`
 	Attempts []PuzzleHistoryItem `json:"attempts"`
 }
+
+type PuzzleRushSession struct {
+	ID              string     `json:"id"`
+	UserID          int64      `json:"user_id"`
+	Mode            string     `json:"mode"`
+	Score           int        `json:"score"`
+	Strikes         int        `json:"strikes"`
+	CurrentPuzzleID string     `json:"current_puzzle_id"`
+	PassedPuzzleIDs []string   `json:"passed_puzzle_ids"`
+	Status          string     `json:"status"`
+	TimeLimitSec    int        `json:"time_limit_sec"`
+	StartedAt       time.Time  `json:"started_at"`
+	EndedAt         *time.Time `json:"ended_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
+type UserPuzzleRushStats struct {
+	UserID            int64     `json:"user_id"`
+	BestScore3Min     int       `json:"best_score_3min"`
+	BestScore5Min     int       `json:"best_score_5min"`
+	BestScoreSurvival int       `json:"best_score_survival"`
+	TotalRuns         int       `json:"total_runs"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+type StartRushRequest struct {
+	Mode string `json:"mode" binding:"required"`
+}
+
+type RushPuzzleData struct {
+	PuzzleID    string   `json:"puzzle_id"`
+	FEN         string   `json:"fen"`
+	InitialMove string   `json:"initial_move"`
+	Rating      int      `json:"rating"`
+	Themes      []string `json:"themes"`
+}
+
+type StartRushResponse struct {
+	SessionID    string         `json:"session_id"`
+	Mode         string         `json:"mode"`
+	TimeLimitSec int            `json:"time_limit_sec"`
+	Score        int            `json:"score"`
+	Strikes      int            `json:"strikes"`
+	StrikesLeft  int            `json:"strikes_left"`
+	Puzzle       RushPuzzleData `json:"puzzle"`
+}
+
+type SubmitRushMoveRequest struct {
+	SessionID string `json:"session_id" binding:"required"`
+	PuzzleID  string `json:"puzzle_id" binding:"required"`
+	Move      string `json:"move" binding:"required"`
+}
+
+type RushSummary struct {
+	SessionID      string `json:"session_id"`
+	Mode           string `json:"mode"`
+	FinalScore     int    `json:"final_score"`
+	TotalStrikes   int    `json:"total_strikes"`
+	IsNewHighScore bool   `json:"is_new_high_score"`
+	BestScore      int    `json:"best_score"`
+	DurationSec    int    `json:"duration_sec"`
+}
+
+type SubmitRushMoveResponse struct {
+	Correct     bool            `json:"correct"`
+	Score       int             `json:"score"`
+	Strikes     int             `json:"strikes"`
+	StrikesLeft int             `json:"strikes_left"`
+	GameOver    bool            `json:"game_over"`
+	Reason      string          `json:"reason,omitempty"`
+	NextPuzzle  *RushPuzzleData `json:"next_puzzle,omitempty"`
+	Summary     *RushSummary    `json:"summary,omitempty"`
+}
+
+type EndRushRequest struct {
+	SessionID string `json:"session_id" binding:"required"`
+}
+
+type RushLeaderboardEntry struct {
+	UserID   int64     `json:"user_id"`
+	Username string    `json:"username"`
+	Score    int       `json:"score"`
+	Mode     string    `json:"mode"`
+	PlayedAt time.Time `json:"played_at"`
+}
+
+type RushLeaderboardResponse struct {
+	Mode    string                 `json:"mode"`
+	Entries []RushLeaderboardEntry `json:"entries"`
+}
+
+type UserRushStatsResponse struct {
+	BestScore3Min     int `json:"best_score_3min"`
+	BestScore5Min     int `json:"best_score_5min"`
+	BestScoreSurvival int `json:"best_score_survival"`
+	TotalRuns         int `json:"total_runs"`
+}

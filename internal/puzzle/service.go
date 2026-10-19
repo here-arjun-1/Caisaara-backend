@@ -7,6 +7,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type PuzzleService interface {
@@ -17,6 +19,11 @@ type PuzzleService interface {
 	GetNextPuzzle(ctx context.Context, userID int64, theme string) (*Puzzle, error)
 	GetUserStats(ctx context.Context, userID int64) (*PuzzleStatsResponse, error)
 	GetUserHistory(ctx context.Context, userID int64, limit, offset int) (*PuzzleHistoryResponse, error)
+	StartRush(ctx context.Context, userID int64, req StartRushRequest) (*StartRushResponse, error)
+	SubmitRushMove(ctx context.Context, userID int64, req SubmitRushMoveRequest) (*SubmitRushMoveResponse, error)
+	EndRush(ctx context.Context, userID int64, req EndRushRequest) (*RushSummary, error)
+	GetRushLeaderboard(ctx context.Context, mode string, limit int) (*RushLeaderboardResponse, error)
+	GetUserRushStats(ctx context.Context, userID int64) (*UserRushStatsResponse, error)
 }
 
 type Service struct {
@@ -245,7 +252,6 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 	beforeRating := ratingProfile.Rating
 
 	if session != nil && session.SolutionViewed {
-		ratingChange = 0
 		session.Solved = true
 		session.RatingEarned = 0
 		_ = s.repo.UpdateDailySession(ctx, session)
@@ -454,4 +460,393 @@ func calculateRatingChange(playerRating, puzzleRating int, solved bool, attempts
 		loss = 20
 	}
 	return -int(math.Round(loss))
+}
+
+func (s *Service) StartRush(ctx context.Context, userID int64, req StartRushRequest) (*StartRushResponse, error) {
+	var timeLimitSec int
+	switch req.Mode {
+	case "3min":
+		timeLimitSec = 180
+	case "5min":
+		timeLimitSec = 300
+	case "survival":
+		timeLimitSec = 0
+	default:
+		return nil, errors.New("invalid mode: must be 3min, 5min, or survival")
+	}
+
+	minRating, maxRating := getRushRatingWindow(0)
+	puzzle, err := s.repo.FindRushPuzzle(ctx, minRating, maxRating, []string{})
+	if err != nil {
+		return nil, fmt.Errorf("find initial rush puzzle: %w", err)
+	}
+
+	now := time.Now().UTC()
+	session := &PuzzleRushSession{
+		ID:              uuid.New().String(),
+		UserID:          userID,
+		Mode:            req.Mode,
+		Score:           0,
+		Strikes:         0,
+		CurrentPuzzleID: puzzle.ID,
+		PassedPuzzleIDs: []string{},
+		Status:          "active",
+		TimeLimitSec:    timeLimitSec,
+		StartedAt:       now,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+
+	if err := s.repo.CreateRushSession(ctx, session); err != nil {
+		return nil, fmt.Errorf("create rush session: %w", err)
+	}
+
+	moves := strings.Fields(puzzle.Moves)
+	initialMove := ""
+	if len(moves) > 0 {
+		initialMove = moves[0]
+	}
+
+	return &StartRushResponse{
+		SessionID:    session.ID,
+		Mode:         session.Mode,
+		TimeLimitSec: session.TimeLimitSec,
+		Score:        session.Score,
+		Strikes:      session.Strikes,
+		StrikesLeft:  3,
+		Puzzle: RushPuzzleData{
+			PuzzleID:    puzzle.ID,
+			FEN:         puzzle.FEN,
+			InitialMove: initialMove,
+			Rating:      puzzle.Rating,
+			Themes:      puzzle.Themes,
+		},
+	}, nil
+}
+
+func (s *Service) SubmitRushMove(ctx context.Context, userID int64, req SubmitRushMoveRequest) (*SubmitRushMoveResponse, error) {
+	session, err := s.repo.GetRushSession(ctx, req.SessionID)
+	if err != nil {
+		return nil, fmt.Errorf("get rush session: %w", err)
+	}
+	if session == nil {
+		return nil, errors.New("rush session not found")
+	}
+	if session.UserID != userID {
+		return nil, errors.New("unauthorized session access")
+	}
+
+	if session.Status != "active" {
+		return &SubmitRushMoveResponse{
+			Score:       session.Score,
+			Strikes:     session.Strikes,
+			StrikesLeft: 0,
+			GameOver:    true,
+			Reason:      session.Status,
+		}, nil
+	}
+
+	if session.TimeLimitSec > 0 {
+		elapsed := time.Since(session.StartedAt).Seconds()
+		if elapsed > float64(session.TimeLimitSec+2) {
+			session.Status = "time_expired"
+			now := time.Now().UTC()
+			session.EndedAt = &now
+			if err := s.repo.UpdateRushSession(ctx, session); err != nil {
+				return nil, fmt.Errorf("update rush session: %w", err)
+			}
+
+			summary, err := s.finalizeRushSession(ctx, session)
+			if err != nil {
+				return nil, fmt.Errorf("finalize rush session: %w", err)
+			}
+
+			return &SubmitRushMoveResponse{
+				Correct:     false,
+				Score:       session.Score,
+				Strikes:     session.Strikes,
+				StrikesLeft: 0,
+				GameOver:    true,
+				Reason:      "time_expired",
+				Summary:     summary,
+			}, nil
+		}
+	}
+
+	if session.CurrentPuzzleID != req.PuzzleID {
+		return nil, errors.New("puzzle id does not match current session puzzle")
+	}
+
+	puzzleRecord, err := s.repo.FindPuzzleByID(ctx, req.PuzzleID)
+	if err != nil {
+		return nil, fmt.Errorf("find puzzle: %w", err)
+	}
+
+	moves := strings.Fields(puzzleRecord.Moves)
+	if len(moves) < 2 {
+		return nil, errors.New("invalid puzzle moves sequence")
+	}
+
+	playedMove := strings.TrimSpace(req.Move)
+	correctMove := moves[1]
+	isCorrect := strings.EqualFold(playedMove, correctMove)
+	if !isCorrect && strings.Contains(playedMove, " ") {
+		isCorrect = strings.EqualFold(playedMove, strings.Join(moves[1:], " "))
+	}
+
+	session.PassedPuzzleIDs = append(session.PassedPuzzleIDs, session.CurrentPuzzleID)
+
+	if isCorrect {
+		session.Score++
+		minRating, maxRating := getRushRatingWindow(session.Score)
+		nextPuzzle, err := s.repo.FindRushPuzzle(ctx, minRating, maxRating, session.PassedPuzzleIDs)
+		if err != nil {
+			return nil, fmt.Errorf("find next rush puzzle: %w", err)
+		}
+
+		session.CurrentPuzzleID = nextPuzzle.ID
+		if err := s.repo.UpdateRushSession(ctx, session); err != nil {
+			return nil, fmt.Errorf("update rush session: %w", err)
+		}
+
+		nextMoves := strings.Fields(nextPuzzle.Moves)
+		initialMove := ""
+		if len(nextMoves) > 0 {
+			initialMove = nextMoves[0]
+		}
+
+		return &SubmitRushMoveResponse{
+			Correct:     true,
+			Score:       session.Score,
+			Strikes:     session.Strikes,
+			StrikesLeft: 3 - session.Strikes,
+			GameOver:    false,
+			NextPuzzle: &RushPuzzleData{
+				PuzzleID:    nextPuzzle.ID,
+				FEN:         nextPuzzle.FEN,
+				InitialMove: initialMove,
+				Rating:      nextPuzzle.Rating,
+				Themes:      nextPuzzle.Themes,
+			},
+		}, nil
+	}
+
+	session.Strikes++
+	if session.Strikes >= 3 {
+		session.Status = "strikes_out"
+		now := time.Now().UTC()
+		session.EndedAt = &now
+		if err := s.repo.UpdateRushSession(ctx, session); err != nil {
+			return nil, fmt.Errorf("update rush session: %w", err)
+		}
+
+		summary, err := s.finalizeRushSession(ctx, session)
+		if err != nil {
+			return nil, fmt.Errorf("finalize rush session: %w", err)
+		}
+
+		return &SubmitRushMoveResponse{
+			Correct:     false,
+			Score:       session.Score,
+			Strikes:     session.Strikes,
+			StrikesLeft: 0,
+			GameOver:    true,
+			Reason:      "max_strikes",
+			Summary:     summary,
+		}, nil
+	}
+
+	minRating, maxRating := getRushRatingWindow(session.Score)
+	nextPuzzle, err := s.repo.FindRushPuzzle(ctx, minRating, maxRating, session.PassedPuzzleIDs)
+	if err != nil {
+		return nil, fmt.Errorf("find next rush puzzle: %w", err)
+	}
+
+	session.CurrentPuzzleID = nextPuzzle.ID
+	if err := s.repo.UpdateRushSession(ctx, session); err != nil {
+		return nil, fmt.Errorf("update rush session: %w", err)
+	}
+
+	nextMoves := strings.Fields(nextPuzzle.Moves)
+	initialMove := ""
+	if len(nextMoves) > 0 {
+		initialMove = nextMoves[0]
+	}
+
+	return &SubmitRushMoveResponse{
+		Correct:     false,
+		Score:       session.Score,
+		Strikes:     session.Strikes,
+		StrikesLeft: 3 - session.Strikes,
+		GameOver:    false,
+		NextPuzzle: &RushPuzzleData{
+			PuzzleID:    nextPuzzle.ID,
+			FEN:         nextPuzzle.FEN,
+			InitialMove: initialMove,
+			Rating:      nextPuzzle.Rating,
+			Themes:      nextPuzzle.Themes,
+		},
+	}, nil
+}
+
+func (s *Service) EndRush(ctx context.Context, userID int64, req EndRushRequest) (*RushSummary, error) {
+	session, err := s.repo.GetRushSession(ctx, req.SessionID)
+	if err != nil {
+		return nil, fmt.Errorf("get rush session: %w", err)
+	}
+	if session == nil {
+		return nil, errors.New("rush session not found")
+	}
+	if session.UserID != userID {
+		return nil, errors.New("unauthorized session access")
+	}
+
+	if session.Status != "active" {
+		stats, err := s.repo.GetOrCreateRushStats(ctx, session.UserID)
+		if err != nil {
+			return nil, fmt.Errorf("get rush stats: %w", err)
+		}
+		bestScore := 0
+		switch session.Mode {
+		case "3min":
+			bestScore = stats.BestScore3Min
+		case "5min":
+			bestScore = stats.BestScore5Min
+		case "survival":
+			bestScore = stats.BestScoreSurvival
+		}
+		ended := time.Now().UTC()
+		if session.EndedAt != nil {
+			ended = *session.EndedAt
+		}
+		durationSec := int(ended.Sub(session.StartedAt).Seconds())
+		if durationSec < 0 {
+			durationSec = 0
+		}
+		return &RushSummary{
+			SessionID:      session.ID,
+			Mode:           session.Mode,
+			FinalScore:     session.Score,
+			TotalStrikes:   session.Strikes,
+			IsNewHighScore: false,
+			BestScore:      bestScore,
+			DurationSec:    durationSec,
+		}, nil
+	}
+
+	session.Status = "ended"
+	now := time.Now().UTC()
+	session.EndedAt = &now
+	if err := s.repo.UpdateRushSession(ctx, session); err != nil {
+		return nil, fmt.Errorf("update rush session: %w", err)
+	}
+
+	return s.finalizeRushSession(ctx, session)
+}
+
+func (s *Service) finalizeRushSession(ctx context.Context, session *PuzzleRushSession) (*RushSummary, error) {
+	stats, err := s.repo.GetOrCreateRushStats(ctx, session.UserID)
+	if err != nil {
+		return nil, fmt.Errorf("get rush stats: %w", err)
+	}
+
+	isNewHighScore := false
+	bestScore := 0
+
+	switch session.Mode {
+	case "3min":
+		if session.Score > stats.BestScore3Min {
+			stats.BestScore3Min = session.Score
+			isNewHighScore = true
+		}
+		bestScore = stats.BestScore3Min
+	case "5min":
+		if session.Score > stats.BestScore5Min {
+			stats.BestScore5Min = session.Score
+			isNewHighScore = true
+		}
+		bestScore = stats.BestScore5Min
+	case "survival":
+		if session.Score > stats.BestScoreSurvival {
+			stats.BestScoreSurvival = session.Score
+			isNewHighScore = true
+		}
+		bestScore = stats.BestScoreSurvival
+	}
+
+	stats.TotalRuns++
+	if err := s.repo.UpdateRushStats(ctx, stats); err != nil {
+		return nil, fmt.Errorf("update rush stats: %w", err)
+	}
+
+	ended := time.Now().UTC()
+	if session.EndedAt != nil {
+		ended = *session.EndedAt
+	}
+	durationSec := int(ended.Sub(session.StartedAt).Seconds())
+	if durationSec < 0 {
+		durationSec = 0
+	}
+
+	return &RushSummary{
+		SessionID:      session.ID,
+		Mode:           session.Mode,
+		FinalScore:     session.Score,
+		TotalStrikes:   session.Strikes,
+		IsNewHighScore: isNewHighScore,
+		BestScore:      bestScore,
+		DurationSec:    durationSec,
+	}, nil
+}
+
+func (s *Service) GetRushLeaderboard(ctx context.Context, mode string, limit int) (*RushLeaderboardResponse, error) {
+	switch mode {
+	case "3min", "5min", "survival":
+	default:
+		mode = "3min"
+	}
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+
+	entries, err := s.repo.GetRushLeaderboard(ctx, mode, limit)
+	if err != nil {
+		return nil, fmt.Errorf("get rush leaderboard: %w", err)
+	}
+
+	return &RushLeaderboardResponse{
+		Mode:    mode,
+		Entries: entries,
+	}, nil
+}
+
+func (s *Service) GetUserRushStats(ctx context.Context, userID int64) (*UserRushStatsResponse, error) {
+	stats, err := s.repo.GetOrCreateRushStats(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("get user rush stats: %w", err)
+	}
+
+	return &UserRushStatsResponse{
+		BestScore3Min:     stats.BestScore3Min,
+		BestScore5Min:     stats.BestScore5Min,
+		BestScoreSurvival: stats.BestScoreSurvival,
+		TotalRuns:         stats.TotalRuns,
+	}, nil
+}
+
+func getRushRatingWindow(score int) (int, int) {
+	switch {
+	case score < 5:
+		return 600, 1000
+	case score < 10:
+		return 1000, 1300
+	case score < 15:
+		return 1300, 1600
+	case score < 20:
+		return 1600, 1900
+	case score < 25:
+		return 1900, 2200
+	default:
+		return 2200, 2800
+	}
 }
