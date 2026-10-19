@@ -7,32 +7,26 @@ import (
 )
 
 type SummaryStatistics struct {
-	AccuracyWhite           float64 `json:"accuracy_white"`
-	AccuracyBlack           float64 `json:"accuracy_black"`
-	RatingWhite             int     `json:"rating_white"`
-	RatingBlack             int     `json:"rating_black"`
-	BrilliantWhite          int     `json:"brilliant_white"`
-	GreatWhite              int     `json:"great_white"`
-	BestWhite               int     `json:"best_white"`
-	GoodWhite               int     `json:"good_white"`
-	InaccuraciesWhite       int     `json:"inaccuracies_white"`
-	MistakesWhite           int     `json:"mistakes_white"`
-	MissesWhite             int     `json:"misses_white"`
-	BlundersWhite           int     `json:"blunders_white"`
-	BrilliantBlack          int     `json:"brilliant_black"`
-	GreatBlack              int     `json:"great_black"`
-	BestBlack               int     `json:"best_black"`
-	GoodBlack               int     `json:"good_black"`
-	InaccuraciesBlack       int     `json:"inaccuracies_black"`
-	MistakesBlack           int     `json:"mistakes_black"`
-	MissesBlack             int     `json:"misses_black"`
-	BlundersBlack           int     `json:"blunders_black"`
-	OpeningAccuracyWhite    float64 `json:"opening_accuracy_white"`
-	OpeningAccuracyBlack    float64 `json:"opening_accuracy_black"`
-	MiddlegameAccuracyWhite float64 `json:"middlegame_accuracy_white"`
-	MiddlegameAccuracyBlack float64 `json:"middlegame_accuracy_black"`
-	EndgameAccuracyWhite    float64 `json:"endgame_accuracy_white"`
-	EndgameAccuracyBlack    float64 `json:"endgame_accuracy_black"`
+	AccuracyWhite     float64 `json:"accuracy_white"`
+	AccuracyBlack     float64 `json:"accuracy_black"`
+	RatingWhite       int     `json:"rating_white"`
+	RatingBlack       int     `json:"rating_black"`
+	BrilliantWhite    int     `json:"brilliant_white"`
+	GreatWhite        int     `json:"great_white"`
+	BestWhite         int     `json:"best_white"`
+	GoodWhite         int     `json:"good_white"`
+	InaccuraciesWhite int     `json:"inaccuracies_white"`
+	MistakesWhite     int     `json:"mistakes_white"`
+	MissesWhite       int     `json:"misses_white"`
+	BlundersWhite     int     `json:"blunders_white"`
+	BrilliantBlack    int     `json:"brilliant_black"`
+	GreatBlack        int     `json:"great_black"`
+	BestBlack         int     `json:"best_black"`
+	GoodBlack         int     `json:"good_black"`
+	InaccuraciesBlack int     `json:"inaccuracies_black"`
+	MistakesBlack     int     `json:"mistakes_black"`
+	MissesBlack       int     `json:"misses_black"`
+	BlundersBlack     int     `json:"blunders_black"`
 }
 
 type EvalHistoryPoint struct {
@@ -47,7 +41,7 @@ func NewStatisticsService() *StatisticsService {
 	return &StatisticsService{}
 }
 
-func (s *StatisticsService) CalculateStatistics(moves []GameMoveAnalysis) (SummaryStatistics, []EvalHistoryPoint) {
+func (s *StatisticsService) CalculateStatistics(moves []GameMoveAnalysis) (SummaryStatistics, []PhaseReviewItem, []EvalHistoryPoint) {
 	var stats SummaryStatistics
 	evalHistory := make([]EvalHistoryPoint, 0, len(moves))
 
@@ -60,6 +54,14 @@ func (s *StatisticsService) CalculateStatistics(moves []GameMoveAnalysis) (Summa
 	blackMiddleLosses := []float64{}
 	whiteEndLosses := []float64{}
 	blackEndLosses := []float64{}
+
+	whiteOpeningInacc, whiteOpeningMistake, whiteOpeningMiss, whiteOpeningBlunder := 0, 0, 0, 0
+	whiteMiddleInacc, whiteMiddleMistake, whiteMiddleMiss, whiteMiddleBlunder := 0, 0, 0, 0
+	whiteEndInacc, whiteEndMistake, whiteEndMiss, whiteEndBlunder := 0, 0, 0, 0
+
+	blackOpeningInacc, blackOpeningMistake, blackOpeningMiss, blackOpeningBlunder := 0, 0, 0, 0
+	blackMiddleInacc, blackMiddleMistake, blackMiddleMiss, blackMiddleBlunder := 0, 0, 0, 0
+	blackEndInacc, blackEndMistake, blackEndMiss, blackEndBlunder := 0, 0, 0, 0
 
 	for _, m := range moves {
 		evalVal := 0
@@ -80,10 +82,40 @@ func (s *StatisticsService) CalculateStatistics(moves []GameMoveAnalysis) (Summa
 			switch m.Phase {
 			case PhaseOpening:
 				whiteOpeningLosses = append(whiteOpeningLosses, cpl)
+				switch m.Classification {
+				case ClassificationInaccuracy:
+					whiteOpeningInacc++
+				case ClassificationMistake:
+					whiteOpeningMistake++
+				case ClassificationMiss:
+					whiteOpeningMiss++
+				case ClassificationBlunder:
+					whiteOpeningBlunder++
+				}
 			case PhaseMiddlegame:
 				whiteMiddleLosses = append(whiteMiddleLosses, cpl)
+				switch m.Classification {
+				case ClassificationInaccuracy:
+					whiteMiddleInacc++
+				case ClassificationMistake:
+					whiteMiddleMistake++
+				case ClassificationMiss:
+					whiteMiddleMiss++
+				case ClassificationBlunder:
+					whiteMiddleBlunder++
+				}
 			case PhaseEndgame:
 				whiteEndLosses = append(whiteEndLosses, cpl)
+				switch m.Classification {
+				case ClassificationInaccuracy:
+					whiteEndInacc++
+				case ClassificationMistake:
+					whiteEndMistake++
+				case ClassificationMiss:
+					whiteEndMiss++
+				case ClassificationBlunder:
+					whiteEndBlunder++
+				}
 			}
 
 			switch m.Classification {
@@ -109,10 +141,40 @@ func (s *StatisticsService) CalculateStatistics(moves []GameMoveAnalysis) (Summa
 			switch m.Phase {
 			case PhaseOpening:
 				blackOpeningLosses = append(blackOpeningLosses, cpl)
+				switch m.Classification {
+				case ClassificationInaccuracy:
+					blackOpeningInacc++
+				case ClassificationMistake:
+					blackOpeningMistake++
+				case ClassificationMiss:
+					blackOpeningMiss++
+				case ClassificationBlunder:
+					blackOpeningBlunder++
+				}
 			case PhaseMiddlegame:
 				blackMiddleLosses = append(blackMiddleLosses, cpl)
+				switch m.Classification {
+				case ClassificationInaccuracy:
+					blackMiddleInacc++
+				case ClassificationMistake:
+					blackMiddleMistake++
+				case ClassificationMiss:
+					blackMiddleMiss++
+				case ClassificationBlunder:
+					blackMiddleBlunder++
+				}
 			case PhaseEndgame:
 				blackEndLosses = append(blackEndLosses, cpl)
+				switch m.Classification {
+				case ClassificationInaccuracy:
+					blackEndInacc++
+				case ClassificationMistake:
+					blackEndMistake++
+				case ClassificationMiss:
+					blackEndMiss++
+				case ClassificationBlunder:
+					blackEndBlunder++
+				}
 			}
 
 			switch m.Classification {
@@ -139,17 +201,78 @@ func (s *StatisticsService) CalculateStatistics(moves []GameMoveAnalysis) (Summa
 	stats.AccuracyWhite = CalculateAccuracyFormula(whiteLosses)
 	stats.AccuracyBlack = CalculateAccuracyFormula(blackLosses)
 
-	stats.OpeningAccuracyWhite = CalculateAccuracyFormula(whiteOpeningLosses)
-	stats.OpeningAccuracyBlack = CalculateAccuracyFormula(blackOpeningLosses)
-	stats.MiddlegameAccuracyWhite = CalculateAccuracyFormula(whiteMiddleLosses)
-	stats.MiddlegameAccuracyBlack = CalculateAccuracyFormula(blackMiddleLosses)
-	stats.EndgameAccuracyWhite = CalculateAccuracyFormula(whiteEndLosses)
-	stats.EndgameAccuracyBlack = CalculateAccuracyFormula(blackEndLosses)
-
 	stats.RatingWhite = CalculatePerformanceRating(stats.AccuracyWhite)
 	stats.RatingBlack = CalculatePerformanceRating(stats.AccuracyBlack)
 
-	return stats, evalHistory
+	openAccWhite := CalculateAccuracyFormula(whiteOpeningLosses)
+	openAccBlack := CalculateAccuracyFormula(blackOpeningLosses)
+	midAccWhite := CalculateAccuracyFormula(whiteMiddleLosses)
+	midAccBlack := CalculateAccuracyFormula(blackMiddleLosses)
+	endAccWhite := CalculateAccuracyFormula(whiteEndLosses)
+	endAccBlack := CalculateAccuracyFormula(blackEndLosses)
+
+	openClassWhite, openSymWhite := ClassifyPhase(whiteOpeningLosses, whiteOpeningInacc, whiteOpeningMistake, whiteOpeningMiss, whiteOpeningBlunder)
+	openClassBlack, openSymBlack := ClassifyPhase(blackOpeningLosses, blackOpeningInacc, blackOpeningMistake, blackOpeningMiss, blackOpeningBlunder)
+	midClassWhite, midSymWhite := ClassifyPhase(whiteMiddleLosses, whiteMiddleInacc, whiteMiddleMistake, whiteMiddleMiss, whiteMiddleBlunder)
+	midClassBlack, midSymBlack := ClassifyPhase(blackMiddleLosses, blackMiddleInacc, blackMiddleMistake, blackMiddleMiss, blackMiddleBlunder)
+	endClassWhite, endSymWhite := ClassifyPhase(whiteEndLosses, whiteEndInacc, whiteEndMistake, whiteEndMiss, whiteEndBlunder)
+	endClassBlack, endSymBlack := ClassifyPhase(blackEndLosses, blackEndInacc, blackEndMistake, blackEndMiss, blackEndBlunder)
+
+	var pOpenAccW, pOpenAccB *float64
+	if len(whiteOpeningLosses) > 0 {
+		pOpenAccW = &openAccWhite
+	}
+	if len(blackOpeningLosses) > 0 {
+		pOpenAccB = &openAccBlack
+	}
+
+	var pMidAccW, pMidAccB *float64
+	if len(whiteMiddleLosses) > 0 {
+		pMidAccW = &midAccWhite
+	}
+	if len(blackMiddleLosses) > 0 {
+		pMidAccB = &midAccBlack
+	}
+
+	var pEndAccW, pEndAccB *float64
+	if len(whiteEndLosses) > 0 {
+		pEndAccW = &endAccWhite
+	}
+	if len(blackEndLosses) > 0 {
+		pEndAccB = &endAccBlack
+	}
+
+	phases := []PhaseReviewItem{
+		{
+			Phase:               PhaseOpening,
+			AccuracyWhite:       pOpenAccW,
+			AccuracyBlack:       pOpenAccB,
+			ClassificationWhite: openClassWhite,
+			ClassificationBlack: openClassBlack,
+			SymbolWhite:         openSymWhite,
+			SymbolBlack:         openSymBlack,
+		},
+		{
+			Phase:               PhaseMiddlegame,
+			AccuracyWhite:       pMidAccW,
+			AccuracyBlack:       pMidAccB,
+			ClassificationWhite: midClassWhite,
+			ClassificationBlack: midClassBlack,
+			SymbolWhite:         midSymWhite,
+			SymbolBlack:         midSymBlack,
+		},
+		{
+			Phase:               PhaseEndgame,
+			AccuracyWhite:       pEndAccW,
+			AccuracyBlack:       pEndAccB,
+			ClassificationWhite: endClassWhite,
+			ClassificationBlack: endClassBlack,
+			SymbolWhite:         endSymWhite,
+			SymbolBlack:         endSymBlack,
+		},
+	}
+
+	return stats, phases, evalHistory
 }
 
 func CalculateAccuracyFormula(losses []float64) float64 {
@@ -175,6 +298,26 @@ func CalculatePerformanceRating(accuracy float64) int {
 		rating = 2800
 	}
 	return int(math.Round(rating))
+}
+
+func ClassifyPhase(losses []float64, inaccuracies, mistakes, misses, blunders int) (string, string) {
+	if len(losses) == 0 {
+		return "", "-"
+	}
+	acc := CalculateAccuracyFormula(losses)
+	if blunders > 0 && acc < 60.0 {
+		return ClassificationBlunder, "??"
+	}
+	if (mistakes > 0 || misses > 0) && acc < 70.0 {
+		return ClassificationMistake, "?"
+	}
+	if (inaccuracies > 0 || acc < 75.0) && acc < 80.0 {
+		return ClassificationInaccuracy, "?!"
+	}
+	if acc < 60.0 {
+		return ClassificationInaccuracy, "?!"
+	}
+	return ClassificationGood, "✔"
 }
 
 func DeterminePhase(fen string, moveNumber int) string {
