@@ -3,7 +3,6 @@ package game
 import (
 	"log/slog"
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
@@ -71,22 +70,10 @@ func (h *Handler) GetMoves(c *gin.Context) {
 }
 
 func (h *Handler) GetGameHistory(c *gin.Context) {
-	var playerID int64
-	if id, ok := middleware.GetUserID(c); ok {
-		playerID = id
-	}
-
-	if playerID == 0 {
-		if param := c.Query("player_id"); param != "" {
-			if parsed, err := strconv.ParseInt(param, 10, 64); err == nil {
-				playerID = parsed
-			}
-		}
-	}
-
-	if playerID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "player id required",
+	playerID, ok := middleware.GetUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "user not authenticated",
 		})
 		return
 	}
@@ -112,20 +99,10 @@ func (h *Handler) Resign(c *gin.Context) {
 	gameID := c.Param("gameID")
 	ctx := c.Request.Context()
 
-	var playerID int64
-	if id, ok := middleware.GetUserID(c); ok {
-		playerID = id
-	}
-	if playerID == 0 {
-		if param := c.Query("player_id"); param != "" {
-			if parsed, err := strconv.ParseInt(param, 10, 64); err == nil {
-				playerID = parsed
-			}
-		}
-	}
-	if playerID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "player id required",
+	playerID, ok := middleware.GetUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "user not authenticated",
 		})
 		return
 	}
@@ -150,20 +127,10 @@ func (h *Handler) OfferDraw(c *gin.Context) {
 	gameID := c.Param("gameID")
 	ctx := c.Request.Context()
 
-	var playerID int64
-	if id, ok := middleware.GetUserID(c); ok {
-		playerID = id
-	}
-	if playerID == 0 {
-		if param := c.Query("player_id"); param != "" {
-			if parsed, err := strconv.ParseInt(param, 10, 64); err == nil {
-				playerID = parsed
-			}
-		}
-	}
-	if playerID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "player id required",
+	playerID, ok := middleware.GetUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "user not authenticated",
 		})
 		return
 	}
@@ -188,20 +155,10 @@ func (h *Handler) AcceptDraw(c *gin.Context) {
 	gameID := c.Param("gameID")
 	ctx := c.Request.Context()
 
-	var playerID int64
-	if id, ok := middleware.GetUserID(c); ok {
-		playerID = id
-	}
-	if playerID == 0 {
-		if param := c.Query("player_id"); param != "" {
-			if parsed, err := strconv.ParseInt(param, 10, 64); err == nil {
-				playerID = parsed
-			}
-		}
-	}
-	if playerID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "player id required",
+	playerID, ok := middleware.GetUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "user not authenticated",
 		})
 		return
 	}
@@ -222,20 +179,10 @@ func (h *Handler) DeclineDraw(c *gin.Context) {
 	gameID := c.Param("gameID")
 	ctx := c.Request.Context()
 
-	var playerID int64
-	if id, ok := middleware.GetUserID(c); ok {
-		playerID = id
-	}
-	if playerID == 0 {
-		if param := c.Query("player_id"); param != "" {
-			if parsed, err := strconv.ParseInt(param, 10, 64); err == nil {
-				playerID = parsed
-			}
-		}
-	}
-	if playerID == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "player id required",
+	playerID, ok := middleware.GetUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "user not authenticated",
 		})
 		return
 	}
