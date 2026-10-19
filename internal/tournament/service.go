@@ -198,6 +198,19 @@ func (s *TournamentService) JoinTournament(ctx context.Context, tournamentID int
 		return nil, ErrAlreadyJoined
 	}
 
+	if t.MinRating > 0 {
+		tcMinutes, tcIncrement := parseTimeControl(t.TimeControl)
+		mode, _, _, _ := game.ResolveTimeControlMode(tcMinutes, tcIncrement)
+
+		rating, err := s.Repo.GetPlayerRating(ctx, userID, mode)
+		if err != nil {
+			return nil, err
+		}
+		if rating < t.MinRating {
+			return nil, ErrRatingTooLow
+		}
+	}
+
 	now := time.Now()
 	player := &TournamentPlayer{
 		TournamentID: tournamentID,

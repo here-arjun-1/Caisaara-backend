@@ -176,7 +176,8 @@ func (h *Handler) JoinTournament(c *gin.Context) {
 		if errors.Is(err, ErrNotRegistration) ||
 			errors.Is(err, ErrTournamentFull) ||
 			errors.Is(err, ErrAlreadyJoined) ||
-			errors.Is(err, ErrInvalidInviteCode) {
+			errors.Is(err, ErrInvalidInviteCode) ||
+			errors.Is(err, ErrRatingTooLow) {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
 			})
@@ -222,7 +223,8 @@ func (h *Handler) JoinTournamentByInviteCode(c *gin.Context) {
 		if errors.Is(err, ErrNotRegistration) ||
 			errors.Is(err, ErrTournamentFull) ||
 			errors.Is(err, ErrAlreadyJoined) ||
-			errors.Is(err, ErrInvalidInviteCode) {
+			errors.Is(err, ErrInvalidInviteCode) ||
+			errors.Is(err, ErrRatingTooLow) {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
 			})
