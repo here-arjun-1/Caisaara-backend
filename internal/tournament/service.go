@@ -26,6 +26,7 @@ type Service interface {
 	JoinTournamentByInviteCode(ctx context.Context, code string, userID int64) (*TournamentPlayer, error)
 	LeaveTournament(ctx context.Context, tournamentID int64, userID int64) error
 	StartTournament(ctx context.Context, tournamentID int64, userID int64) (*TournamentWithPlayerCount, error)
+	EndTournament(ctx context.Context, tournamentID int64, userID int64) (*int64, error)
 	GenerateRoundPairings(ctx context.Context, tournamentID int64, userID int64) ([]*TournamentPairing, error)
 	OnGameCompleted(ctx context.Context, gameID string, result string) error
 	GetStandings(ctx context.Context, tournamentID int64) (*TournamentStandingsResponse, error)
@@ -343,6 +344,45 @@ func (s *TournamentService) StartTournament(ctx context.Context, tournamentID in
 	}
 
 	return s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
+}
+
+func (s *TournamentService) EndTournament(ctx context.Context, tournamentID int64, userID int64) (*int64, error) {
+	t, err := s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
+	if err != nil {
+		return nil, err
+	}
+
+	if t.CreatedBy != userID {
+		return nil, ErrNotCreator
+	}
+
+	if t.Status != StatusOngoing {
+		return nil, ErrNotOngoing
+	}
+
+	if err := s.Repo.EndTournament(ctx, tournamentID); err != nil {
+		return nil, err
+	}
+
+	standings, err := s.Repo.GetStandings(ctx, tournamentID)
+	if err != nil {
+		return nil, err
+	}
+
+	var winnerID *int64
+	if len(standings) > 0 {
+		wID := standings[0].PlayerID
+		winnerID = &wID
+	}
+
+	if s.Broadcaster != nil {
+		s.Broadcaster.BroadcastTournamentEvent(tournamentID, map[string]interface{}{
+			"type":      "tournament_completed",
+			"winner_id": winnerID,
+		})
+	}
+
+	return winnerID, nil
 }
 
 func (s *TournamentService) generateNextPairings(ctx context.Context, tournamentID int64, t *TournamentWithPlayerCount, swissPlayers []*SwissPlayer) ([]SwissPairingResult, error) {
