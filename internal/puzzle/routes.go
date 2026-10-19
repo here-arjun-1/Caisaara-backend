@@ -16,6 +16,10 @@ func RegisterRoutes(handler *Handler, r *gin.Engine, authMiddleware gin.HandlerF
 		puzzles.GET("/stats", handler.GetUserStats)
 		puzzles.GET("/history", handler.GetUserHistory)
 
+		puzzles.GET("/themes", handler.GetThemes)
+		puzzles.GET("/custom", handler.GetCustomPuzzle)
+		puzzles.POST("/custom/attempt", handler.SubmitCustomAttempt)
+
 		rush := puzzles.Group("/rush")
 		{
 			rush.POST("/start", handler.StartRush)

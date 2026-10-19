@@ -25,11 +25,13 @@ type PuzzleRepository interface {
 	CreateRushSession(ctx context.Context, session *PuzzleRushSession) error
 	GetRushSession(ctx context.Context, sessionID string) (*PuzzleRushSession, error)
 	UpdateRushSession(ctx context.Context, session *PuzzleRushSession) error
-	FindRushPuzzle(ctx context.Context, minRating, maxRating int, excludedIDs []string) (*Puzzle, error)
+	FindRushPuzzle(ctx context.Context, minRating, maxRating int, excludedIDs []string, theme string) (*Puzzle, error)
 	GetOrCreateRushStats(ctx context.Context, userID int64) (*UserPuzzleRushStats, error)
 	UpdateRushStats(ctx context.Context, stats *UserPuzzleRushStats) error
 	GetRushLeaderboard(ctx context.Context, mode string, limit int) ([]RushLeaderboardEntry, error)
 	GetUserRushHistory(ctx context.Context, userID int64, mode string, limit, offset int) (*RushHistoryResponse, error)
+	GetThemes(ctx context.Context) ([]PuzzleThemeInfo, error)
+	FindCustomPuzzle(ctx context.Context, filter CustomPuzzleFilter) (*Puzzle, error)
 }
 
 type Repository struct {
@@ -83,6 +85,7 @@ func NewRepository(db *pgxpool.Pool) PuzzleRepository {
 			total_runs INT NOT NULL DEFAULT 0,
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 		);`,
+		`ALTER TABLE puzzle_rush_sessions ADD COLUMN IF NOT EXISTS theme VARCHAR(32) NOT NULL DEFAULT '';`,
 		`ALTER TABLE puzzle_rush_sessions ADD COLUMN IF NOT EXISTS moves_history JSONB NOT NULL DEFAULT '[]';`,
 		`CREATE INDEX IF NOT EXISTS idx_puzzle_rush_sessions_user_time ON puzzle_rush_sessions(user_id, started_at DESC);`,
 	}
@@ -509,9 +512,9 @@ func (r *Repository) GetUserHistory(ctx context.Context, userID int64, limit, of
 func (r *Repository) CreateRushSession(ctx context.Context, session *PuzzleRushSession) error {
 	query := `
 		INSERT INTO puzzle_rush_sessions (
-			id, user_id, mode, score, strikes, current_puzzle_id, passed_puzzle_ids, status, time_limit_sec, moves_history, started_at, created_at, updated_at
+			id, user_id, mode, score, strikes, current_puzzle_id, passed_puzzle_ids, status, time_limit_sec, theme, moves_history, started_at, created_at, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW(), NOW())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
 	`
 
 	if session.PassedPuzzleIDs == nil {
@@ -538,6 +541,7 @@ func (r *Repository) CreateRushSession(ctx context.Context, session *PuzzleRushS
 		session.PassedPuzzleIDs,
 		session.Status,
 		session.TimeLimitSec,
+		session.Theme,
 		movesJSON,
 		session.StartedAt,
 	)
@@ -547,7 +551,7 @@ func (r *Repository) CreateRushSession(ctx context.Context, session *PuzzleRushS
 
 func (r *Repository) GetRushSession(ctx context.Context, sessionID string) (*PuzzleRushSession, error) {
 	query := `
-		SELECT id, user_id, mode, score, strikes, current_puzzle_id, passed_puzzle_ids, status, time_limit_sec, started_at, ended_at, created_at, updated_at, COALESCE(moves_history, '[]'::jsonb)
+		SELECT id, user_id, mode, score, strikes, current_puzzle_id, passed_puzzle_ids, status, time_limit_sec, theme, started_at, ended_at, created_at, updated_at, COALESCE(moves_history, '[]'::jsonb)
 		FROM puzzle_rush_sessions
 		WHERE id = $1::uuid
 	`
@@ -564,6 +568,7 @@ func (r *Repository) GetRushSession(ctx context.Context, sessionID string) (*Puz
 		&session.PassedPuzzleIDs,
 		&session.Status,
 		&session.TimeLimitSec,
+		&session.Theme,
 		&session.StartedAt,
 		&session.EndedAt,
 		&session.CreatedAt,
@@ -634,7 +639,7 @@ func (r *Repository) UpdateRushSession(ctx context.Context, session *PuzzleRushS
 	return err
 }
 
-func (r *Repository) FindRushPuzzle(ctx context.Context, minRating, maxRating int, excludedIDs []string) (*Puzzle, error) {
+func (r *Repository) FindRushPuzzle(ctx context.Context, minRating, maxRating int, excludedIDs []string, theme string) (*Puzzle, error) {
 	if excludedIDs == nil {
 		excludedIDs = []string{}
 	}
@@ -644,12 +649,13 @@ func (r *Repository) FindRushPuzzle(ctx context.Context, minRating, maxRating in
 		FROM puzzles
 		WHERE rating BETWEEN $1 AND $2
 		  AND NOT (id = ANY($3))
+		  AND ($4 = '' OR $4 = ANY(themes))
 		ORDER BY RANDOM()
 		LIMIT 1
 	`
 
 	p := &Puzzle{}
-	err := r.DB.QueryRow(ctx, query, minRating, maxRating, excludedIDs).Scan(
+	err := r.DB.QueryRow(ctx, query, minRating, maxRating, excludedIDs, theme).Scan(
 		&p.ID,
 		&p.FEN,
 		&p.Moves,
@@ -668,10 +674,11 @@ func (r *Repository) FindRushPuzzle(ctx context.Context, minRating, maxRating in
 			SELECT id, fen, moves, rating, rating_deviation, popularity, nb_plays, themes, COALESCE(game_url, ''), COALESCE(opening_tags, ''), created_at
 			FROM puzzles
 			WHERE rating BETWEEN $1 AND $2
+			  AND ($3 = '' OR $3 = ANY(themes))
 			ORDER BY RANDOM()
 			LIMIT 1
 		`
-		err = r.DB.QueryRow(ctx, fallbackQuery, minRating-150, maxRating+150).Scan(
+		err = r.DB.QueryRow(ctx, fallbackQuery, minRating-150, maxRating+150, theme).Scan(
 			&p.ID,
 			&p.FEN,
 			&p.Moves,
@@ -822,7 +829,7 @@ func (r *Repository) GetUserRushHistory(ctx context.Context, userID int64, mode 
 	}
 
 	query := `
-		SELECT id, mode, score, strikes, status, started_at, ended_at, COALESCE(moves_history, '[]'::jsonb)
+		SELECT id, mode, theme, score, strikes, status, started_at, ended_at, COALESCE(moves_history, '[]'::jsonb)
 		FROM puzzle_rush_sessions
 		WHERE user_id = $1 AND ($2 = '' OR mode = $2)
 		ORDER BY started_at DESC
@@ -842,6 +849,7 @@ func (r *Repository) GetUserRushHistory(ctx context.Context, userID int64, mode 
 		if err := rows.Scan(
 			&item.SessionID,
 			&item.Mode,
+			&item.Theme,
 			&item.Score,
 			&item.Strikes,
 			&item.Status,
@@ -880,4 +888,198 @@ func (r *Repository) GetUserRushHistory(ctx context.Context, userID int64, mode 
 		Total: total,
 		Runs:  runs,
 	}, nil
+}
+
+func (r *Repository) GetThemes(ctx context.Context) ([]PuzzleThemeInfo, error) {
+	query := `
+		SELECT unnest(themes) AS theme, COUNT(*) AS count
+		FROM puzzles
+		GROUP BY theme
+		HAVING COUNT(*) >= 50
+		ORDER BY count DESC
+	`
+
+	rows, err := r.DB.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	themes := make([]PuzzleThemeInfo, 0)
+	for rows.Next() {
+		var t PuzzleThemeInfo
+		if err := rows.Scan(&t.ID, &t.Count); err != nil {
+			return nil, err
+		}
+		t.Name = formatThemeName(t.ID)
+		themes = append(themes, t)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return themes, nil
+}
+
+func (r *Repository) FindCustomPuzzle(ctx context.Context, filter CustomPuzzleFilter) (*Puzzle, error) {
+	if filter.Themes == nil {
+		filter.Themes = []string{}
+	}
+
+	if filter.ReviewMistakes {
+		query := `
+			SELECT p.id, p.fen, p.moves, p.rating, p.rating_deviation, p.popularity, p.nb_plays, p.themes, COALESCE(p.game_url, ''), COALESCE(p.opening_tags, ''), p.created_at
+			FROM puzzles p
+			JOIN user_puzzle_attempts a ON p.id = a.puzzle_id
+			WHERE a.user_id = $1
+			  AND a.solved = false
+			  AND ($2::INT <= 0 OR p.rating >= $2)
+			  AND ($3::INT <= 0 OR p.rating <= $3)
+			  AND ($4::TEXT[] IS NULL OR cardinality($4) = 0 OR p.themes && $4)
+			ORDER BY RANDOM()
+			LIMIT 1
+		`
+		p := &Puzzle{}
+		err := r.DB.QueryRow(ctx, query, filter.UserID, filter.MinRating, filter.MaxRating, filter.Themes).Scan(
+			&p.ID,
+			&p.FEN,
+			&p.Moves,
+			&p.Rating,
+			&p.RatingDeviation,
+			&p.Popularity,
+			&p.NbPlays,
+			&p.Themes,
+			&p.GameURL,
+			&p.OpeningTags,
+			&p.CreatedAt,
+		)
+		if err == nil {
+			return p, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, err
+		}
+	}
+
+	query := `
+		SELECT id, fen, moves, rating, rating_deviation, popularity, nb_plays, themes, COALESCE(game_url, ''), COALESCE(opening_tags, ''), created_at
+		FROM puzzles
+		WHERE ($1::INT <= 0 OR rating >= $1)
+		  AND ($2::INT <= 0 OR rating <= $2)
+		  AND ($3::TEXT[] IS NULL OR cardinality($3) = 0 OR themes && $3)
+		  AND (
+		    NOT $4::BOOLEAN OR id NOT IN (
+		      SELECT puzzle_id FROM user_puzzle_attempts WHERE user_id = $5 AND solved = true
+		    )
+		  )
+		ORDER BY RANDOM()
+		LIMIT 1
+	`
+
+	p := &Puzzle{}
+	err := r.DB.QueryRow(ctx, query, filter.MinRating, filter.MaxRating, filter.Themes, filter.ExcludeSolved, filter.UserID).Scan(
+		&p.ID,
+		&p.FEN,
+		&p.Moves,
+		&p.Rating,
+		&p.RatingDeviation,
+		&p.Popularity,
+		&p.NbPlays,
+		&p.Themes,
+		&p.GameURL,
+		&p.OpeningTags,
+		&p.CreatedAt,
+	)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		fallbackQuery := `
+			SELECT id, fen, moves, rating, rating_deviation, popularity, nb_plays, themes, COALESCE(game_url, ''), COALESCE(opening_tags, ''), created_at
+			FROM puzzles
+			WHERE ($1::TEXT[] IS NULL OR cardinality($1) = 0 OR themes && $1)
+			ORDER BY RANDOM()
+			LIMIT 1
+		`
+		err = r.DB.QueryRow(ctx, fallbackQuery, filter.Themes).Scan(
+			&p.ID,
+			&p.FEN,
+			&p.Moves,
+			&p.Rating,
+			&p.RatingDeviation,
+			&p.Popularity,
+			&p.NbPlays,
+			&p.Themes,
+			&p.GameURL,
+			&p.OpeningTags,
+			&p.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+	} else if err != nil {
+		return nil, err
+	}
+
+	return p, nil
+}
+
+func formatThemeName(theme string) string {
+	names := map[string]string{
+		"fork":              "Fork",
+		"pin":               "Pin",
+		"skewer":            "Skewer",
+		"discoveredAttack":  "Discovered Attack",
+		"doubleCheck":       "Double Check",
+		"attraction":        "Attraction",
+		"deflection":        "Deflection",
+		"clearance":         "Clearance",
+		"interference":      "Interference",
+		"xRayAttack":        "X-Ray Attack",
+		"hangingPiece":      "Hanging Piece",
+		"trappedPiece":      "Trapped Piece",
+		"mate":              "Checkmate",
+		"mateIn1":           "Mate in 1",
+		"mateIn2":           "Mate in 2",
+		"mateIn3":           "Mate in 3",
+		"mateIn4":           "Mate in 4",
+		"mateIn5":           "Mate in 5",
+		"backRankMate":      "Back-Rank Mate",
+		"smotheredMate":     "Smothered Mate",
+		"anastasiaMate":     "Anastasia's Mate",
+		"arabianMate":       "Arabian Mate",
+		"bodenMate":         "Boden's Mate",
+		"hookMate":          "Hook Mate",
+		"dovetailMate":      "Dovetail Mate",
+		"opening":           "Opening",
+		"middlegame":        "Middlegame",
+		"endgame":           "Endgame",
+		"pawnEndgame":       "Pawn Endgame",
+		"knightEndgame":     "Knight Endgame",
+		"bishopEndgame":     "Bishop Endgame",
+		"rookEndgame":       "Rook Endgame",
+		"queenEndgame":      "Queen Endgame",
+		"queenRookEndgame":  "Queen and Rook Endgame",
+		"crushing":          "Crushing Advantage",
+		"advantage":         "Advantage",
+		"equality":          "Equality",
+		"zugzwang":          "Zugzwang",
+		"defensiveMove":     "Defensive Move",
+		"quietMove":         "Quiet Move",
+		"sacrifice":         "Sacrifice",
+		"intermezzo":        "Zwischenzug / In-Between",
+		"promotion":         "Pawn Promotion",
+		"underPromotion":    "Underpromotion",
+		"capturingDefender": "Capturing the Defender",
+		"exposedKing":       "Exposed King",
+		"kingsideAttack":    "Kingside Attack",
+		"queensideAttack":   "Queenside Attack",
+		"short":             "Short Tactic",
+		"long":              "Long Combination",
+		"veryLong":          "Very Long Combination",
+		"oneMove":           "One-Move Tactic",
+	}
+	if name, ok := names[theme]; ok {
+		return name
+	}
+	return theme
 }

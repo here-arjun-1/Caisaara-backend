@@ -161,6 +161,7 @@ type PuzzleRushSession struct {
 	PassedPuzzleIDs []string            `json:"passed_puzzle_ids"`
 	Status          string              `json:"status"`
 	TimeLimitSec    int                 `json:"time_limit_sec"`
+	Theme           string              `json:"theme,omitempty"`
 	MovesHistory    []RushPuzzleAttempt `json:"moves_history"`
 	StartedAt       time.Time           `json:"started_at"`
 	EndedAt         *time.Time          `json:"ended_at,omitempty"`
@@ -178,7 +179,8 @@ type UserPuzzleRushStats struct {
 }
 
 type StartRushRequest struct {
-	Mode string `json:"mode" binding:"required"`
+	Mode  string `json:"mode" binding:"required"`
+	Theme string `json:"theme,omitempty"`
 }
 
 type RushPuzzleData struct {
@@ -193,6 +195,7 @@ type StartRushResponse struct {
 	SessionID    string         `json:"session_id"`
 	Mode         string         `json:"mode"`
 	TimeLimitSec int            `json:"time_limit_sec"`
+	Theme        string         `json:"theme,omitempty"`
 	Score        int            `json:"score"`
 	Strikes      int            `json:"strikes"`
 	StrikesLeft  int            `json:"strikes_left"`
@@ -253,6 +256,7 @@ type UserRushStatsResponse struct {
 type RushHistoryItem struct {
 	SessionID         string              `json:"session_id"`
 	Mode              string              `json:"mode"`
+	Theme             string              `json:"theme,omitempty"`
 	Score             int                 `json:"score"`
 	Strikes           int                 `json:"strikes"`
 	Status            string              `json:"status"`
@@ -266,4 +270,50 @@ type RushHistoryItem struct {
 type RushHistoryResponse struct {
 	Total int               `json:"total"`
 	Runs  []RushHistoryItem `json:"runs"`
+}
+
+type PuzzleThemeInfo struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+type ThemesResponse struct {
+	Themes []PuzzleThemeInfo `json:"themes"`
+}
+
+type CustomPuzzleFilter struct {
+	UserID         int64
+	Themes         []string
+	MinRating      int
+	MaxRating      int
+	ExcludeSolved  bool
+	ReviewMistakes bool
+}
+
+type CustomPuzzleResponse struct {
+	PuzzleID    string   `json:"puzzle_id"`
+	FEN         string   `json:"fen"`
+	InitialMove string   `json:"initial_move"`
+	Rating      int      `json:"rating"`
+	Themes      []string `json:"themes"`
+}
+
+type SubmitCustomAttemptRequest struct {
+	PuzzleID    string `json:"puzzle_id" binding:"required"`
+	Move        string `json:"move" binding:"required"`
+	TimeTakenMs int    `json:"time_taken_ms"`
+	Rated       bool   `json:"rated"`
+}
+
+type SubmitCustomAttemptResponse struct {
+	Correct          bool     `json:"correct"`
+	Solved           bool     `json:"solved"`
+	PuzzleID         string   `json:"puzzle_id"`
+	AttemptedMoves   []string `json:"attempted_moves"`
+	SolutionMoves    []string `json:"solution_moves"`
+	RatingChange     int      `json:"rating_change"`
+	UserRatingBefore int      `json:"user_rating_before"`
+	UserRatingAfter  int      `json:"user_rating_after"`
+	Rated            bool     `json:"rated"`
 }
