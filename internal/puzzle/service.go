@@ -16,6 +16,7 @@ type PuzzleService interface {
 	GetSolution(ctx context.Context, userID int64, req SolutionRequest) (*SolutionResponse, error)
 	GetNextPuzzle(ctx context.Context, userID int64, theme string) (*Puzzle, error)
 	GetUserStats(ctx context.Context, userID int64) (*PuzzleStatsResponse, error)
+	GetUserHistory(ctx context.Context, userID int64, limit, offset int) (*PuzzleHistoryResponse, error)
 }
 
 type Service struct {
@@ -73,6 +74,7 @@ func (s *Service) GetDailyPuzzle(ctx context.Context, userID int64) (*DailyPuzzl
 			SolutionViewed: false,
 			Solved:         false,
 			RatingEarned:   0,
+			AttemptedMoves: []string{},
 		}
 
 		if err := s.repo.CreateDailySession(ctx, session); err != nil {
@@ -98,6 +100,7 @@ func (s *Service) GetDailyPuzzle(ctx context.Context, userID int64) (*DailyPuzzl
 		Solved:         session.Solved,
 		CurrentStreak:  ratingProfile.CurrentStreak,
 		PlayerRating:   ratingProfile.Rating,
+		AttemptedMoves: session.AttemptedMoves,
 	}, nil
 }
 
@@ -124,6 +127,7 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 				UserRatingBefore: ratingProfile.Rating,
 				UserRatingAfter:  ratingProfile.Rating,
 				CurrentStreak:    ratingProfile.CurrentStreak,
+				AttemptedMoves:   session.AttemptedMoves,
 				Message:          "Puzzle already solved for today.",
 			}, nil
 		}
@@ -137,6 +141,7 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 				UserRatingBefore: ratingProfile.Rating,
 				UserRatingAfter:  ratingProfile.Rating,
 				CurrentStreak:    ratingProfile.CurrentStreak,
+				AttemptedMoves:   session.AttemptedMoves,
 				Message:          "No attempts remaining. You can view the solution.",
 			}, nil
 		}
@@ -153,6 +158,12 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 	}
 
 	playedMove := strings.TrimSpace(req.Move)
+	recordedMoves := []string{playedMove}
+	if session != nil {
+		session.AttemptedMoves = append(session.AttemptedMoves, playedMove)
+		recordedMoves = session.AttemptedMoves
+	}
+
 	correctMove := moves[1]
 	isCorrect := strings.EqualFold(playedMove, correctMove)
 
@@ -191,6 +202,7 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 				UserRatingBefore: beforeRating,
 				UserRatingAfter:  ratingProfile.Rating,
 				TimeTakenMs:      req.TimeTakenMs,
+				AttemptedMoves:   recordedMoves,
 			}
 			_ = s.repo.RecordAttempt(ctx, attempt)
 
@@ -202,6 +214,7 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 				UserRatingBefore: beforeRating,
 				UserRatingAfter:  ratingProfile.Rating,
 				CurrentStreak:    ratingProfile.CurrentStreak,
+				AttemptedMoves:   session.AttemptedMoves,
 				Message:          "No attempts remaining. You can view the solution.",
 			}, nil
 		}
@@ -214,6 +227,7 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 			UserRatingBefore: ratingProfile.Rating,
 			UserRatingAfter:  ratingProfile.Rating,
 			CurrentStreak:    ratingProfile.CurrentStreak,
+			AttemptedMoves:   session.AttemptedMoves,
 			Message:          fmt.Sprintf("Incorrect move. %d attempts remaining.", attemptsLeft),
 		}, nil
 	}
@@ -243,6 +257,7 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 			UserRatingBefore: beforeRating,
 			UserRatingAfter:  beforeRating,
 			TimeTakenMs:      req.TimeTakenMs,
+			AttemptedMoves:   recordedMoves,
 		}
 		_ = s.repo.RecordAttempt(ctx, attempt)
 
@@ -255,6 +270,7 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 			UserRatingBefore: beforeRating,
 			UserRatingAfter:  beforeRating,
 			CurrentStreak:    ratingProfile.CurrentStreak,
+			AttemptedMoves:   session.AttemptedMoves,
 			Message:          "Correct move! However, no rating points are awarded because the solution was viewed.",
 		}, nil
 	}
@@ -291,6 +307,7 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 		UserRatingBefore: beforeRating,
 		UserRatingAfter:  ratingProfile.Rating,
 		TimeTakenMs:      req.TimeTakenMs,
+		AttemptedMoves:   recordedMoves,
 	}
 	_ = s.repo.RecordAttempt(ctx, attempt)
 
@@ -303,6 +320,7 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 		UserRatingBefore: beforeRating,
 		UserRatingAfter:  ratingProfile.Rating,
 		CurrentStreak:    ratingProfile.CurrentStreak,
+		AttemptedMoves:   session.AttemptedMoves,
 		Message:          "Puzzle solved successfully!",
 	}, nil
 }
@@ -392,6 +410,19 @@ func (s *Service) GetUserStats(ctx context.Context, userID int64) (*PuzzleStatsR
 	return s.repo.GetUserStats(ctx, userID)
 }
 
+func (s *Service) GetUserHistory(ctx context.Context, userID int64, limit, offset int) (*PuzzleHistoryResponse, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	return s.repo.GetUserHistory(ctx, userID, limit, offset)
+}
+
 func calculateRatingChange(playerRating, puzzleRating int, solved bool, attemptsLeft int) int {
 	diff := float64(puzzleRating - playerRating)
 	expected := 1.0 / (1.0 + math.Pow(10, -diff/400.0))
@@ -399,9 +430,10 @@ func calculateRatingChange(playerRating, puzzleRating int, solved bool, attempts
 	if solved {
 		k := 32.0
 		gain := k * (1.0 - expected)
-		if attemptsLeft == 2 {
+		switch attemptsLeft {
+		case 2:
 			gain *= 0.8
-		} else if attemptsLeft == 1 {
+		case 1:
 			gain *= 0.6
 		}
 		if gain < 5 {

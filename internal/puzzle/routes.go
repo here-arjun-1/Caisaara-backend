@@ -14,5 +14,6 @@ func RegisterRoutes(handler *Handler, r *gin.Engine, authMiddleware gin.HandlerF
 		puzzles.POST("/daily/solution", handler.GetSolution)
 		puzzles.GET("/next", handler.GetNextPuzzle)
 		puzzles.GET("/stats", handler.GetUserStats)
+		puzzles.GET("/history", handler.GetUserHistory)
 	}
 }

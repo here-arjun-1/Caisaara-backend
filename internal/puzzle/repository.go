@@ -3,6 +3,7 @@ package puzzle
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -19,6 +20,7 @@ type PuzzleRepository interface {
 	CreateDailySession(ctx context.Context, session *DailyPuzzleSession) error
 	UpdateDailySession(ctx context.Context, session *DailyPuzzleSession) error
 	GetUserStats(ctx context.Context, userID int64) (*PuzzleStatsResponse, error)
+	GetUserHistory(ctx context.Context, userID int64, limit, offset int) (*PuzzleHistoryResponse, error)
 }
 
 type Repository struct {
@@ -42,10 +44,13 @@ func NewRepository(db *pgxpool.Pool) PuzzleRepository {
 			solution_viewed BOOLEAN NOT NULL DEFAULT FALSE,
 			solved BOOLEAN NOT NULL DEFAULT FALSE,
 			rating_earned INT NOT NULL DEFAULT 0,
+			attempted_moves TEXT[] NOT NULL DEFAULT '{}',
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			PRIMARY KEY (user_id, date)
 		);`,
+		`ALTER TABLE daily_puzzle_sessions ADD COLUMN IF NOT EXISTS attempted_moves TEXT[] NOT NULL DEFAULT '{}';`,
+		`ALTER TABLE user_puzzle_attempts ADD COLUMN IF NOT EXISTS attempted_moves TEXT[] NOT NULL DEFAULT '{}';`,
 	}
 
 	for _, q := range queries {
@@ -251,11 +256,15 @@ func (r *Repository) UpdateUserRating(ctx context.Context, rating *UserPuzzleRat
 func (r *Repository) RecordAttempt(ctx context.Context, attempt *UserPuzzleAttempt) error {
 	query := `
 		INSERT INTO user_puzzle_attempts (
-			user_id, puzzle_id, solved, user_rating_before, user_rating_after, time_taken_ms, created_at
+			user_id, puzzle_id, solved, user_rating_before, user_rating_after, time_taken_ms, attempted_moves, created_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, NOW())
+		VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
 		RETURNING id, created_at
 	`
+
+	if attempt.AttemptedMoves == nil {
+		attempt.AttemptedMoves = []string{}
+	}
 
 	return r.DB.QueryRow(
 		ctx,
@@ -266,12 +275,13 @@ func (r *Repository) RecordAttempt(ctx context.Context, attempt *UserPuzzleAttem
 		attempt.UserRatingBefore,
 		attempt.UserRatingAfter,
 		attempt.TimeTakenMs,
+		attempt.AttemptedMoves,
 	).Scan(&attempt.ID, &attempt.CreatedAt)
 }
 
 func (r *Repository) GetDailySession(ctx context.Context, userID int64, date string) (*DailyPuzzleSession, error) {
 	query := `
-		SELECT user_id, puzzle_id, TO_CHAR(date, 'YYYY-MM-DD'), attempts_left, hint_used, solution_viewed, solved, rating_earned
+		SELECT user_id, puzzle_id, TO_CHAR(date, 'YYYY-MM-DD'), attempts_left, hint_used, solution_viewed, solved, rating_earned, COALESCE(attempted_moves, '{}')
 		FROM daily_puzzle_sessions
 		WHERE user_id = $1 AND date = $2::date
 	`
@@ -286,6 +296,7 @@ func (r *Repository) GetDailySession(ctx context.Context, userID int64, date str
 		&session.SolutionViewed,
 		&session.Solved,
 		&session.RatingEarned,
+		&session.AttemptedMoves,
 	)
 
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -295,17 +306,25 @@ func (r *Repository) GetDailySession(ctx context.Context, userID int64, date str
 		return nil, err
 	}
 
+	if session.AttemptedMoves == nil {
+		session.AttemptedMoves = []string{}
+	}
+
 	return session, nil
 }
 
 func (r *Repository) CreateDailySession(ctx context.Context, session *DailyPuzzleSession) error {
 	query := `
 		INSERT INTO daily_puzzle_sessions (
-			user_id, puzzle_id, date, attempts_left, hint_used, solution_viewed, solved, rating_earned, created_at, updated_at
+			user_id, puzzle_id, date, attempts_left, hint_used, solution_viewed, solved, rating_earned, attempted_moves, created_at, updated_at
 		)
-		VALUES ($1, $2, $3::date, $4, $5, $6, $7, $8, NOW(), NOW())
+		VALUES ($1, $2, $3::date, $4, $5, $6, $7, $8, $9, NOW(), NOW())
 		ON CONFLICT (user_id, date) DO NOTHING
 	`
+
+	if session.AttemptedMoves == nil {
+		session.AttemptedMoves = []string{}
+	}
 
 	_, err := r.DB.Exec(
 		ctx,
@@ -318,6 +337,7 @@ func (r *Repository) CreateDailySession(ctx context.Context, session *DailyPuzzl
 		session.SolutionViewed,
 		session.Solved,
 		session.RatingEarned,
+		session.AttemptedMoves,
 	)
 
 	return err
@@ -331,9 +351,14 @@ func (r *Repository) UpdateDailySession(ctx context.Context, session *DailyPuzzl
 			solution_viewed = $3,
 			solved = $4,
 			rating_earned = $5,
+			attempted_moves = $6,
 			updated_at = NOW()
-		WHERE user_id = $6 AND date = $7::date
+		WHERE user_id = $7 AND date = $8::date
 	`
+
+	if session.AttemptedMoves == nil {
+		session.AttemptedMoves = []string{}
+	}
 
 	_, err := r.DB.Exec(
 		ctx,
@@ -343,6 +368,7 @@ func (r *Repository) UpdateDailySession(ctx context.Context, session *DailyPuzzl
 		session.SolutionViewed,
 		session.Solved,
 		session.RatingEarned,
+		session.AttemptedMoves,
 		session.UserID,
 		session.Date,
 	)
@@ -374,4 +400,73 @@ func (r *Repository) GetUserStats(ctx context.Context, userID int64) (*PuzzleSta
 	}
 
 	return stats, nil
+}
+
+func (r *Repository) GetUserHistory(ctx context.Context, userID int64, limit, offset int) (*PuzzleHistoryResponse, error) {
+	var total int64
+	countQuery := `SELECT COUNT(*) FROM user_puzzle_attempts WHERE user_id = $1`
+	if err := r.DB.QueryRow(ctx, countQuery, userID).Scan(&total); err != nil {
+		return nil, err
+	}
+
+	query := `
+		SELECT a.id, a.puzzle_id, a.solved, COALESCE(a.attempted_moves, '{}'), COALESCE(p.moves, ''),
+		       a.user_rating_before, a.user_rating_after, (a.user_rating_after - a.user_rating_before) AS rating_change,
+		       a.time_taken_ms, a.created_at
+		FROM user_puzzle_attempts a
+		LEFT JOIN puzzles p ON a.puzzle_id = p.id
+		WHERE a.user_id = $1
+		ORDER BY a.created_at DESC
+		LIMIT $2 OFFSET $3
+	`
+
+	rows, err := r.DB.Query(ctx, query, userID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]PuzzleHistoryItem, 0)
+	for rows.Next() {
+		var item PuzzleHistoryItem
+		var rawMoves string
+		if err := rows.Scan(
+			&item.ID,
+			&item.PuzzleID,
+			&item.Solved,
+			&item.AttemptedMoves,
+			&rawMoves,
+			&item.UserRatingBefore,
+			&item.UserRatingAfter,
+			&item.RatingChange,
+			&item.TimeTakenMs,
+			&item.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+
+		if item.AttemptedMoves == nil {
+			item.AttemptedMoves = []string{}
+		}
+
+		parts := strings.Fields(rawMoves)
+		if len(parts) > 1 {
+			item.SolutionMoves = parts[1:]
+		} else if len(parts) == 1 {
+			item.SolutionMoves = parts
+		} else {
+			item.SolutionMoves = []string{}
+		}
+
+		items = append(items, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return &PuzzleHistoryResponse{
+		Total:    total,
+		Attempts: items,
+	}, nil
 }
