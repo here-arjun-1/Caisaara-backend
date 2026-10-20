@@ -303,19 +303,18 @@ func (h *Handler) BanMember(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
 		return
 	}
-
 	targetID, ok := getTargetID(c)
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
 		return
 	}
-
 	clubID := c.Param("clubID")
-	err := h.Service.BanMember(c.Request.Context(), clubID, userID, targetID)
-	if err != nil {
+	if err := h.Service.BanMember(c.Request.Context(), clubID, userID, targetID); err != nil {
 		handleError(c, err)
 		return
 	}
+
+	h.Hub.DisconnectUserFromRoom("club:"+clubID, targetID)
 
 	c.JSON(http.StatusOK, gin.H{"message": "player banned from club"})
 }
@@ -328,7 +327,7 @@ func (h *Handler) UnblockMember(c *gin.Context) {
 	}
 	targetID, ok := getTargetID(c)
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user if"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
 		return
 	}
 	if err := h.Service.UnblockMember(c.Request.Context(), c.Param("clubID"), userID, targetID); err != nil {
@@ -352,4 +351,20 @@ func (h *Handler) GetBlockedList(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, blocked)
+}
+
+func (h *Handler) GetMyClubs(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
+
+	clubs, err := h.Service.GetMyClubs(c.Request.Context(), userID)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, clubs)
 }

@@ -24,6 +24,11 @@ type Club struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
+type MyClub struct {
+	Club
+	Role string `json:"role"`
+}
+
 type Member struct {
 	UserID   int64     `json:"user_id"`
 	Username string    `json:"username"`

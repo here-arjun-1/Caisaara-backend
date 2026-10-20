@@ -34,6 +34,7 @@ type ClubService interface {
 	BanMember(ctx context.Context, clubID string, userID int64, targetID int64) error
 	UnblockMember(ctx context.Context, clubID string, userID int64, targetID int64) error
 	GetBlockedList(ctx context.Context, clubID string, userID int64) ([]BlockedUser, error)
+	GetMyClubs(ctx context.Context, userID int64) ([]MyClub, error)
 }
 
 type Service struct {
@@ -328,4 +329,8 @@ func (s *Service) GetBlockedList(ctx context.Context, clubID string, userID int6
 	}
 
 	return s.Repository.ListBlocked(ctx, clubID)
+}
+
+func (s *Service) GetMyClubs(ctx context.Context, userID int64) ([]MyClub, error) {
+	return s.Repository.ListMyClubs(ctx, userID)
 }
