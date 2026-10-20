@@ -17,9 +17,15 @@ const (
 	kickBlockDuration = 7 * 24 * time.Hour
 )
 
+var likeEscaper = strings.NewReplacer(
+	`\`, `\\`,
+	`%`, `\%`,
+	`_`, `\_`,
+)
+
 type ClubService interface {
 	CreateClub(ctx context.Context, ownerID int64, name string, description string) (*Club, error)
-	ListClubs(ctx context.Context, limit int, offset int) ([]Club, error)
+	ListClubs(ctx context.Context, search string, limit int, offset int) ([]Club, error)
 	GetClub(ctx context.Context, clubID string) (*Club, error)
 	JoinClub(ctx context.Context, clubID string, userID int64) error
 	LeaveClub(ctx context.Context, clubID string, userID int64) error
@@ -75,7 +81,7 @@ func (s *Service) CreateClub(ctx context.Context, ownerID int64, name string, de
 	return club, nil
 }
 
-func (s *Service) ListClubs(ctx context.Context, limit int, offset int) ([]Club, error) {
+func (s *Service) ListClubs(ctx context.Context, search string, limit int, offset int) ([]Club, error) {
 	if limit <= 0 {
 		limit = defaultClubsLimit
 	}
@@ -86,7 +92,12 @@ func (s *Service) ListClubs(ctx context.Context, limit int, offset int) ([]Club,
 		offset = 0
 	}
 
-	return s.Repository.ListClubs(ctx, limit, offset)
+	search = strings.TrimSpace(search)
+	if utf8.RuneCountInString(search) > MaxNameLength {
+		return []Club{}, nil
+	}
+
+	return s.Repository.ListClubs(ctx, likeEscaper.Replace(search), limit, offset)
 }
 
 func (s *Service) GetClub(ctx context.Context, clubID string) (*Club, error) {

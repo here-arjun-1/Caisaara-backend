@@ -73,8 +73,9 @@ func (h *Handler) CreateClub(c *gin.Context) {
 func (h *Handler) ListClubs(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
+	search := c.Query("search")
 
-	clubs, err := h.Service.ListClubs(c.Request.Context(), limit, offset)
+	clubs, err := h.Service.ListClubs(c.Request.Context(), search, limit, offset)
 	if err != nil {
 		handleError(c, err)
 		return

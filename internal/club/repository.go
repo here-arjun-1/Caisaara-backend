@@ -15,7 +15,7 @@ import (
 type ClubRepository interface {
 	CreateClub(ctx context.Context, club *Club) error
 	FindClubByID(ctx context.Context, clubID string) (*Club, error)
-	ListClubs(ctx context.Context, limit int, offset int) ([]Club, error)
+	ListClubs(ctx context.Context, search string, limit int, offset int) ([]Club, error)
 	AddMember(ctx context.Context, clubID string, userID int64) error
 	RemoveMember(ctx context.Context, clubID string, userID int64) error
 	GetMemberRole(ctx context.Context, clubID string, userID int64) (string, error)
@@ -134,7 +134,7 @@ func (r *Repository) FindClubByID(ctx context.Context, clubID string) (*Club, er
 	return &club, nil
 }
 
-func (r *Repository) ListClubs(ctx context.Context, limit int, offset int) ([]Club, error) {
+func (r *Repository) ListClubs(ctx context.Context, search string, limit int, offset int) ([]Club, error) {
 	rows, err := r.DB.Query(
 		ctx,
 		`SELECT
@@ -145,8 +145,10 @@ func (r *Repository) ListClubs(ctx context.Context, limit int, offset int) ([]Cl
 			(SELECT COUNT(*) FROM club_members WHERE club_id = c.id) AS member_count,
 			c.created_at
 		FROM clubs c
+		WHERE $1::text = '' OR c.name ILIKE '%' || $1 || '%'
 		ORDER BY c.created_at DESC
-		LIMIT $1 OFFSET $2`,
+		LIMIT $2 OFFSET $3`,
+		search,
 		limit,
 		offset,
 	)
