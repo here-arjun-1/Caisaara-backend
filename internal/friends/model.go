@@ -8,6 +8,14 @@ const (
 	StatusRejected = "rejected"
 )
 
+const (
+	FriendshipNone            = "none"
+	FriendshipSelf            = "self"
+	FriendshipFriends         = "friends"
+	FriendshipRequestSent     = "request_sent"
+	FriendshipRequestReceived = "request_received"
+)
+
 type FriendRequest struct {
 	ID             int64     `json:"id"`
 	SenderID       int64     `json:"sender_id"`
@@ -29,4 +37,15 @@ type SentRequest struct {
 	ReceiverUsername string    `json:"receiver_username"`
 	ReceiverRating   int       `json:"receiver_rating"`
 	CreatedAt        time.Time `json:"created_at"`
+}
+
+type FriendshipStatus struct {
+	Status    string `json:"status"`
+	RequestID *int64 `json:"request_id,omitempty"`
+}
+
+type PairRequest struct {
+	ID       int64
+	SenderID int64
+	Status   string
 }
