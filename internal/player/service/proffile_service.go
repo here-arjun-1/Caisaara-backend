@@ -17,6 +17,9 @@ import (
 const (
 	defaultRating    = 1200
 	recentGamesLimit = 10
+	searchLimit      = 10
+	minSearchLength  = 2
+	maxSearchLength  = 50
 )
 
 var ratedModes = []string{
@@ -25,6 +28,12 @@ var ratedModes = []string{
 	game.ModeRapid,
 }
 
+var likeEscaper = strings.NewReplacer(
+	"\\", "\\\\",
+	"%", "\\%",
+	"_", "\\_",
+)
+
 type ProfileRepository interface {
 	FindByUserID(ctx context.Context, userID int64) (*model.Profile, error)
 	FindByUsername(ctx context.Context, username string) (*model.Profile, error)
@@ -32,6 +41,7 @@ type ProfileRepository interface {
 	FindModeRatings(ctx context.Context, userID int64) ([]model.ModeRating, error)
 	FindModeGameStats(ctx context.Context, userID int64, mode string) (*model.ModeGameStats, error)
 	FindRecentGamesByMode(ctx context.Context, userID int64, mode string, limit int) ([]model.RecentGame, error)
+	SearchByUsername(ctx context.Context, prefix string, limit int) ([]model.Profile, error)
 }
 
 type ProfileService struct {
@@ -89,6 +99,33 @@ func (h *ProfileService) GetPublicProfile(ctx context.Context, username string) 
 		Ratings:     toModeRatings(p),
 		JoinedAt:    p.CreatedAt,
 	}, nil
+}
+
+func (h *ProfileService) SearchPlayers(ctx context.Context, query string) ([]dto.PlayerSearchResult, error) {
+	query = strings.ToLower(strings.TrimSpace(query))
+
+	length := utf8.RuneCountInString(query)
+	if length < minSearchLength || length > maxSearchLength {
+		return nil, ErrInvalidSearchQuery
+	}
+
+	profiles, err := h.ProfileRepository.SearchByUsername(ctx, likeEscaper.Replace(query), searchLimit)
+	if err != nil {
+		slog.Error("search players failed", "error", err)
+		return nil, ErrInternal
+	}
+
+	results := make([]dto.PlayerSearchResult, 0, len(profiles))
+	for _, p := range profiles {
+		results = append(results, dto.PlayerSearchResult{
+			Username:    p.Username,
+			DisplayName: p.DisplayName,
+			AvatarURL:   p.AvatarURL,
+			Rating:      p.Rating,
+		})
+	}
+
+	return results, nil
 }
 
 func (h *ProfileService) UpdateMyProfile(ctx context.Context, userID int64, req dto.UpdateProfileData) (*dto.MyProfileResponse, error) {
