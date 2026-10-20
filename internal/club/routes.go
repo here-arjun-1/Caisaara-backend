@@ -30,6 +30,10 @@ func RegisterRoutes(handler *Handler, r *gin.Engine, protected *gin.RouterGroup)
 	clubs.DELETE("/:clubID/admins/:userID", membershipLimiter.Limit, handler.RemoveAdmin)
 	clubs.POST("/:clubID/transfer/:userID", membershipLimiter.Limit, handler.TransferLeadership)
 
+	clubs.GET("/:clubID/bans", readLimiter.Limit, handler.GetBlockedList)
+	clubs.POST("/:clubID/bans/:userID", membershipLimiter.Limit, handler.BanMember)
+	clubs.DELETE("/:clubID/bans/:userID", membershipLimiter.Limit, handler.UnblockMember)
+
 	clubs.GET("/:clubID/messages", readLimiter.Limit, handler.GetMessages)
 	clubs.POST("/:clubID/messages", handler.SendMessage)
 
