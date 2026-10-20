@@ -17,6 +17,7 @@ func RegisterRoutes(handler *Handler, r *gin.Engine, protected *gin.RouterGroup)
 
 	clubs.GET("", readLimiter.Limit, handler.ListClubs)
 	clubs.POST("", createLimiter.Limit, handler.CreateClub)
+	clubs.GET("/mine", readLimiter.Limit, handler.GetMyClubs)
 	clubs.GET("/:clubID", readLimiter.Limit, handler.GetClub)
 
 	clubs.POST("/:clubID/join", membershipLimiter.Limit, handler.JoinClub)

@@ -29,6 +29,7 @@ type ClubRepository interface {
 	IsBlocked(ctx context.Context, clubID string, userID int64) (bool, *time.Time, error)
 	RemoveBlock(ctx context.Context, clubID string, userID int64) error
 	ListBlocked(ctx context.Context, clubID string) ([]BlockedUser, error)
+	ListMyClubs(ctx context.Context, userID int64) ([]MyClub, error)
 }
 
 type Repository struct {
@@ -541,4 +542,49 @@ func (r *Repository) ListBlocked(ctx context.Context, clubID string) ([]BlockedU
 	}
 
 	return blocked, rows.Err()
+}
+
+func (r *Repository) ListMyClubs(ctx context.Context, userID int64) ([]MyClub, error) {
+	rows, err := r.DB.Query(
+		ctx,
+		`SELECT
+			c.id,
+			c.name,
+			c.description,
+			c.owner_id,
+			(SELECT COUNT(*) FROM club_members WHERE club_id = c.id) AS member_count,
+			c.created_at,
+			m.role
+		FROM club_members m
+		JOIN clubs c ON c.id = m.club_id
+		WHERE m.user_id = $1
+		ORDER BY m.joined_at DESC`,
+		userID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "list my clubs failed", "user_id", userID, "error", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	clubs := []MyClub{}
+	for rows.Next() {
+		var club MyClub
+		err := rows.Scan(
+			&club.ID,
+			&club.Name,
+			&club.Description,
+			&club.OwnerID,
+			&club.MemberCount,
+			&club.CreatedAt,
+			&club.Role,
+		)
+		if err != nil {
+			slog.ErrorContext(ctx, "scan my club failed", "user_id", userID, "error", err)
+			return nil, err
+		}
+		clubs = append(clubs, club)
+	}
+
+	return clubs, rows.Err()
 }
