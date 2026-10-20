@@ -225,7 +225,7 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 				UserRatingBefore: beforeRating,
 				UserRatingAfter:  ratingProfile.Rating,
 				CurrentStreak:    ratingProfile.CurrentStreak,
-				AttemptedMoves:   session.AttemptedMoves,
+				AttemptedMoves:   recordedMoves,
 				Message:          "No attempts remaining. You can view the solution.",
 			}, nil
 		}
@@ -238,7 +238,7 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 			UserRatingBefore: ratingProfile.Rating,
 			UserRatingAfter:  ratingProfile.Rating,
 			CurrentStreak:    ratingProfile.CurrentStreak,
-			AttemptedMoves:   session.AttemptedMoves,
+			AttemptedMoves:   recordedMoves,
 			Message:          fmt.Sprintf("Incorrect move. %d attempts remaining.", attemptsLeft),
 		}, nil
 	}
@@ -280,7 +280,7 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 			UserRatingBefore: beforeRating,
 			UserRatingAfter:  beforeRating,
 			CurrentStreak:    ratingProfile.CurrentStreak,
-			AttemptedMoves:   session.AttemptedMoves,
+			AttemptedMoves:   recordedMoves,
 			Message:          "Correct move! However, no rating points are awarded because the solution was viewed.",
 		}, nil
 	}
@@ -330,7 +330,7 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 		UserRatingBefore: beforeRating,
 		UserRatingAfter:  ratingProfile.Rating,
 		CurrentStreak:    ratingProfile.CurrentStreak,
-		AttemptedMoves:   session.AttemptedMoves,
+		AttemptedMoves:   recordedMoves,
 		Message:          "Puzzle solved successfully!",
 	}, nil
 }

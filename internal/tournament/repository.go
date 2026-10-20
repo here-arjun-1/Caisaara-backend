@@ -496,7 +496,7 @@ func (r *Repository) StartTournament(ctx context.Context, tournamentID int64) er
 		ctx,
 		`INSERT INTO tournament_rounds (tournament_id, round_number, status, started_at)
 		VALUES ($1, 1, 'ongoing', NOW())
-		ON CONFLICT (tournament_id, round_number)qw
+		ON CONFLICT (tournament_id, round_number)
 		DO UPDATE SET status = 'ongoing', started_at = NOW()`,
 		tournamentID,
 	)

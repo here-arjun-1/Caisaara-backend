@@ -35,14 +35,11 @@ services:
       - .env
     environment:
       PORT: "8050"
-      dbURL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       REDIS_URL: redis:6379
       GIN_MODE: release
     ports:
       - "8050:8050"
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
