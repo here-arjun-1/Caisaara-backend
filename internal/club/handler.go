@@ -186,9 +186,14 @@ func (h *Handler) SendMessage(c *gin.Context) {
 
 func handleError(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, ErrClubNotFound):
+	case errors.Is(err, ErrClubNotFound),
+		errors.Is(err, ErrNotBlocked),
+		errors.Is(err, ErrUserNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-	case errors.Is(err, ErrNotMember):
+	case errors.Is(err, ErrNotMember),
+		errors.Is(err, ErrNotAllowed),
+		errors.Is(err, ErrKickedRecently),
+		errors.Is(err, ErrBannedFromClub):
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 	case errors.Is(err, ErrClubNameTaken), errors.Is(err, ErrAlreadyMember):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
@@ -290,4 +295,61 @@ func (h *Handler) TransferLeadership(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "leadership transferred"})
+}
+
+func (h *Handler) BanMember(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
+
+	targetID, ok := getTargetID(c)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
+		return
+	}
+
+	clubID := c.Param("clubID")
+	err := h.Service.BanMember(c.Request.Context(), clubID, userID, targetID)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "player banned from club"})
+}
+
+func (h *Handler) UnblockMember(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
+	targetID, ok := getTargetID(c)
+	if !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user if"})
+		return
+	}
+	if err := h.Service.UnblockMember(c.Request.Context(), c.Param("clubID"), userID, targetID); err != nil {
+		handleError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "player unblocked"})
+}
+
+func (h *Handler) GetBlockedList(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
+
+	blocked, err := h.Service.GetBlockedList(c.Request.Context(), c.Param("clubID"), userID)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, blocked)
 }
