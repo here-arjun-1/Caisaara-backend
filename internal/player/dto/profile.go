@@ -64,3 +64,10 @@ type ModeStatsResponse struct {
 	WinPercent   int                  `json:"win_percent"`
 	RecentGames  []RecentGameResponse `json:"recent_games"`
 }
+
+type PlayerSearchResult struct {
+	Username    string  `json:"username"`
+	DisplayName *string `json:"display_name"`
+	AvatarURL   *string `json:"avatar_url"`
+	Rating      *int    `json:"rating"`
+}

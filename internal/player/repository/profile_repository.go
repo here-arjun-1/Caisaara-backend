@@ -248,3 +248,42 @@ func (r *ProfileRepository) FindRecentGamesByMode(ctx context.Context, userID in
 
 	return games, rows.Err()
 }
+
+func (r *ProfileRepository) SearchByUsername(ctx context.Context, prefix string, limit int) ([]model.Profile, error) {
+	rows, err := r.DB.Query(
+		ctx,
+		`SELECT
+			u.username,
+			u.rating,
+			p.display_name,
+			p.avatar_url
+		FROM users u
+		LEFT JOIN player_profiles p ON p.user_id = u.id
+		WHERE u.username LIKE $1 || '%'
+		ORDER BY u.username
+		LIMIT $2`,
+		prefix,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var profiles []model.Profile
+	for rows.Next() {
+		var p model.Profile
+		err := rows.Scan(
+			&p.Username,
+			&p.Rating,
+			&p.DisplayName,
+			&p.AvatarURL,
+		)
+		if err != nil {
+			return nil, err
+		}
+		profiles = append(profiles, p)
+	}
+
+	return profiles, rows.Err()
+}
