@@ -12,4 +12,5 @@ var (
 	ErrInvalidPhoto       = errors.New("photo must be a jpeg, png or webp image")
 	ErrPhotoTooLarge      = errors.New("photo can be at most 5000x5000 pixels")
 	ErrInvalidAvatarID    = errors.New("avatar_id must be one of king, queen, rook, bishop, knight, pawn")
+	ErrInvalidSearchQuery = errors.New("search query must be 2 to 50 characters")
 )

@@ -17,6 +17,7 @@ type ProfileService interface {
 	GetPublicProfile(ctx context.Context, username string) (*dto.PublicProfileResponse, error)
 	UpdateMyProfile(ctx context.Context, userID int64, req dto.UpdateProfileData) (*dto.MyProfileResponse, error)
 	GetModeStats(ctx context.Context, username string, mode string) (*dto.ModeStatsResponse, error)
+	SearchPlayers(ctx context.Context, query string) ([]dto.PlayerSearchResult, error)
 }
 
 type ProfileHandler struct {
@@ -94,6 +95,16 @@ func (h *ProfileHandler) GetPublicProfile(c *gin.Context) {
 	}
 
 	response.Success(c, http.StatusOK, "profile fetched successfully", profile)
+}
+
+func (h *ProfileHandler) SearchPlayers(c *gin.Context) {
+	players, err := h.ProfileService.SearchPlayers(c.Request.Context(), c.Query("q"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "players fetched successfully", gin.H{"players": players})
 }
 
 func writeError(c *gin.Context, err error) {

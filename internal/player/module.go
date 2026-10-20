@@ -35,6 +35,7 @@ func (m *Module) RegisterRoutes(r *gin.Engine, protected *gin.RouterGroup) {
 	avatarUploadLimiter := middleware.NewTokenBucketLimiter(5, time.Minute)
 	avatarUpdateLimiter := middleware.NewTokenBucketLimiter(10, time.Minute)
 	avatarListLimiter := middleware.NewTokenBucketLimiter(60, time.Minute)
+	searchLimiter := middleware.NewTokenBucketLimiter(60, time.Minute)
 
 	r.GET("/players/:username", publicProfileLimiter.Limit, m.profileHandler.GetPublicProfile)
 	r.GET("/players/:username/stats/:mode", publicProfileLimiter.Limit, m.profileHandler.GetModeStats)
@@ -45,4 +46,5 @@ func (m *Module) RegisterRoutes(r *gin.Engine, protected *gin.RouterGroup) {
 	protected.POST("/profile/avatar", avatarUploadLimiter.Limit, middleware.RequireRegisteredUser(), m.avatarHandler.UploadPhoto)
 	protected.PUT("/profile/avatar/default", avatarUpdateLimiter.Limit, middleware.RequireRegisteredUser(), m.avatarHandler.ChooseDefault)
 	protected.DELETE("/profile/avatar", avatarUpdateLimiter.Limit, middleware.RequireRegisteredUser(), m.avatarHandler.RemoveAvatar)
+	protected.GET("/players/search", searchLimiter.Limit, middleware.RequireRegisteredUser(), m.profileHandler.SearchPlayers)
 }
