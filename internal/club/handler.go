@@ -263,10 +263,14 @@ func (h *Handler) KickMember(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid user id"})
 		return
 	}
-	if err := h.Service.KickMember(c.Request.Context(), c.Param("clubID"), userID, targetID); err != nil {
+	clubID := c.Param("clubID")
+	if err := h.Service.KickMember(c.Request.Context(), clubID, userID, targetID); err != nil {
 		handleError(c, err)
 		return
 	}
+
+	h.Hub.DisconnectUserFromRoom("club:"+clubID, targetID)
+
 	c.JSON(http.StatusOK, gin.H{"message": "member removed from club"})
 }
 
