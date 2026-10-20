@@ -47,3 +47,11 @@ type Message struct {
 	Message   string    `json:"message"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+type BlockedUser struct {
+	UserID       int64      `json:"user_id"`
+	Username     string     `json:"username"`
+	BlockedBy    *int64     `json:"blocked_by"`
+	BlockedUntil *time.Time `json:"blocked_until"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
