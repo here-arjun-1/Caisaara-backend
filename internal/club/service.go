@@ -2,7 +2,9 @@ package club
 
 import (
 	"context"
+	"errors"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/chat"
@@ -12,6 +14,7 @@ const (
 	defaultClubsLimit = 20
 	maxClubsLimit     = 50
 	messageHistory    = 50
+	kickBlockDuration = 7 * 24 * time.Hour
 )
 
 type ClubService interface {
@@ -28,6 +31,9 @@ type ClubService interface {
 	RemoveAdmin(ctx context.Context, clubID string, leaderID int64, targetID int64) error
 	KickMember(ctx context.Context, clubID string, userID int64, targetID int64) error
 	TransferLeadership(ctx context.Context, clubID string, leaderID int64, targetID int64) error
+	BanMember(ctx context.Context, clubID string, userID int64, targetID int64) error
+	UnblockMember(ctx context.Context, clubID string, userID int64, targetID int64) error
+	GetBlockedList(ctx context.Context, clubID string, userID int64) ([]BlockedUser, error)
 }
 
 type Service struct {
@@ -89,6 +95,17 @@ func (s *Service) GetClub(ctx context.Context, clubID string) (*Club, error) {
 func (s *Service) JoinClub(ctx context.Context, clubID string, userID int64) error {
 	if _, err := s.Repository.FindClubByID(ctx, clubID); err != nil {
 		return err
+	}
+
+	blocked, blockedUntil, err := s.Repository.IsBlocked(ctx, clubID, userID)
+	if err != nil {
+		return err
+	}
+	if blocked && blockedUntil == nil {
+		return ErrBannedFromClub
+	}
+	if blocked {
+		return ErrKickedRecently
 	}
 
 	return s.Repository.AddMember(ctx, clubID, userID)
@@ -241,7 +258,9 @@ func (s *Service) KickMember(ctx context.Context, clubID string, userID int64, t
 	if !canKick {
 		return ErrNotAllowed
 	}
-	return s.Repository.RemoveMember(ctx, clubID, targetID)
+
+	blockedUntil := time.Now().Add(kickBlockDuration)
+	return s.Repository.BlockUser(ctx, clubID, targetID, userID, &blockedUntil)
 }
 
 func (s *Service) TransferLeadership(ctx context.Context, clubID string, leaderID int64, targetID int64) error {
@@ -263,4 +282,50 @@ func (s *Service) TransferLeadership(ctx context.Context, clubID string, leaderI
 		return ErrTargetNotAdmin
 	}
 	return s.Repository.TransferOwnership(ctx, clubID, leaderID, targetID)
+}
+
+func (s *Service) BanMember(ctx context.Context, clubID string, userID int64, targetID int64) error {
+	if userID == targetID {
+		return ErrNotAllowed
+	}
+	myRole, err := s.getRole(ctx, clubID, userID)
+	if err != nil {
+		return err
+	}
+
+	targetRole, err := s.Repository.GetMemberRole(ctx, clubID, targetID)
+	if err != nil && !errors.Is(err, ErrNotMember) {
+		return err
+	}
+
+	canBan := myRole == RoleOwner || (myRole == RoleAdmin && (targetRole == RoleMember || targetRole == ""))
+	if !canBan {
+		return ErrNotAllowed
+	}
+
+	return s.Repository.BlockUser(ctx, clubID, targetID, userID, nil)
+}
+
+func (s *Service) UnblockMember(ctx context.Context, clubID string, userID int64, targetID int64) error {
+	myRole, err := s.getRole(ctx, clubID, userID)
+	if err != nil {
+		return err
+	}
+	if myRole != RoleOwner && myRole != RoleAdmin {
+		return ErrNotAllowed
+	}
+
+	return s.Repository.RemoveBlock(ctx, clubID, targetID)
+}
+
+func (s *Service) GetBlockedList(ctx context.Context, clubID string, userID int64) ([]BlockedUser, error) {
+	myRole, err := s.getRole(ctx, clubID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if myRole != RoleOwner && myRole != RoleAdmin {
+		return nil, ErrNotAllowed
+	}
+
+	return s.Repository.ListBlocked(ctx, clubID)
 }

@@ -461,6 +461,10 @@ func (r *Repository) BlockUser(ctx context.Context, clubID string, userID int64,
 		blockedUntil,
 	)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			return ErrUserNotFound
+		}
 		slog.ErrorContext(ctx, "save club ban failed", "club_id", clubID, "user_id", userID, "error", err)
 		return err
 	}
