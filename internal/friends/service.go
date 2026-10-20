@@ -1,6 +1,9 @@
 package friends
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 type Service struct {
 	Repository *Repository
@@ -12,17 +15,15 @@ func NewService(repository *Repository) *Service {
 	}
 }
 
-func (s *Service) SendRequest(ctx context.Context, senderID int64, receiverID int64) (int64, error) {
-	if senderID == receiverID {
-		return 0, ErrCannotAddYourself
-	}
-
-	exists, err := s.Repository.UserExists(ctx, receiverID)
+func (s *Service) SendRequest(ctx context.Context, senderID int64, receiverUsername string) (int64, error) {
+	receiverUsername = strings.ToLower(strings.TrimSpace(receiverUsername))
+	receiverID, err := s.Repository.FindUserIDByUsername(ctx, receiverUsername)
 	if err != nil {
 		return 0, err
 	}
-	if !exists {
-		return 0, ErrUserNotFound
+
+	if senderID == receiverID {
+		return 0, ErrCannotAddYourself
 	}
 
 	return s.Repository.CreateRequest(ctx, senderID, receiverID)
@@ -82,4 +83,30 @@ func (s *Service) RemoveFriend(ctx context.Context, userID int64, friendID int64
 		return ErrNotFriends
 	}
 	return nil
+}
+
+func (s *Service) GetFriendshipStatus(ctx context.Context, userID int64, username string) (*FriendshipStatus, error) {
+	username = strings.ToLower(strings.TrimSpace(username))
+
+	otherID, err := s.Repository.FindUserIDByUsername(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+	if userID == otherID {
+		return &FriendshipStatus{Status: FriendshipSelf}, nil
+	}
+	req, err := s.Repository.FindPairRequest(ctx, userID, otherID)
+	if err != nil {
+		return nil, err
+	}
+	if req == nil || req.Status == StatusRejected {
+		return &FriendshipStatus{Status: FriendshipNone}, nil
+	}
+	if req.Status == StatusAccepted {
+		return &FriendshipStatus{Status: FriendshipFriends}, nil
+	}
+	if req.SenderID == userID {
+		return &FriendshipStatus{Status: FriendshipRequestSent, RequestID: &req.ID}, nil
+	}
+	return &FriendshipStatus{Status: FriendshipRequestReceived, RequestID: &req.ID}, nil
 }

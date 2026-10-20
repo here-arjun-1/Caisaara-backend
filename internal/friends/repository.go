@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -17,19 +18,6 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	return &Repository{
 		DB: db,
 	}
-}
-
-func (r *Repository) UserExists(ctx context.Context, userID int64) (bool, error) {
-	var exists bool
-	err := r.DB.QueryRow(ctx,
-		`SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)`,
-		userID,
-	).Scan(&exists)
-	if err != nil {
-		slog.ErrorContext(ctx, "check user exists failed", "user_id", userID, "error", err)
-		return false, err
-	}
-	return exists, nil
 }
 
 func (r *Repository) CreateRequest(ctx context.Context, senderID int64, receiverID int64) (int64, error) {
@@ -194,4 +182,36 @@ func (r *Repository) FindSentRequests(ctx context.Context, userID int64) ([]Sent
 	}
 
 	return requests, nil
+}
+
+func (r *Repository) FindUserIDByUsername(ctx context.Context, username string) (int64, error) {
+	var userID int64
+	err := r.DB.QueryRow(ctx, `SELECT id FROM users WHERE username = $1`, username).Scan(&userID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrUserNotFound
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "find user id by username failed", "username", username, "error", err)
+		return 0, err
+	}
+	return userID, nil
+}
+
+func (r *Repository) FindPairRequest(ctx context.Context, userID int64, otherID int64) (*PairRequest, error) {
+	var request PairRequest
+	err := r.DB.QueryRow(ctx,
+		`SELECT id, sender_id, status
+		FROM friend_requests
+		WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)`,
+		userID, otherID,
+	).Scan(&request.ID, &request.SenderID, &request.Status)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "find pair friend request failed", "user_id", userID, "other_id", otherID, "error", err)
+		return nil, err
+	}
+	return &request, nil
 }

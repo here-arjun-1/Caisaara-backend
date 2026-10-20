@@ -12,7 +12,7 @@ import (
 )
 
 type SendRequestBody struct {
-	UserID int64 `json:"user_id" binding:"required"`
+	Username string `json:"username" binding:"required"`
 }
 
 type Handler struct {
@@ -54,7 +54,7 @@ func (h *Handler) SendRequest(c *gin.Context) {
 		return
 	}
 
-	requestID, err := h.Service.SendRequest(c.Request.Context(), userID, req.UserID)
+	requestID, err := h.Service.SendRequest(c.Request.Context(), userID, req.Username)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -211,4 +211,20 @@ func (h *Handler) GetSentRequests(c *gin.Context) {
 	}
 
 	response.Success(c, http.StatusOK, "sent friend requests fetched", gin.H{"requests": requests})
+}
+
+func (h *Handler) GetFriendshipStatus(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	status, err := h.Service.GetFriendshipStatus(c.Request.Context(), userID, c.Param("username"))
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "friendship status fetched", status)
 }
