@@ -15,4 +15,5 @@ var (
 	ErrOwnerCannotLeave   = errors.New("give leadership to an admin before leaving the club")
 	ErrNotAllowed         = errors.New("you are not allowed to do this")
 	ErrTargetNotAdmin     = errors.New("leadership can only be given to an admin")
+	ErrNotBlocked         = errors.New("player is not blocked")
 )

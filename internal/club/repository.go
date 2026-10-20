@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -24,6 +25,10 @@ type ClubRepository interface {
 	GetLeaderboard(ctx context.Context, clubID string) ([]LeaderboardEntry, error)
 	UpdateMemberRole(ctx context.Context, clubID string, userID int64, role string) error
 	TransferOwnership(ctx context.Context, clubID string, oldOwnerID int64, newOwnerID int64) error
+	BlockUser(ctx context.Context, clubID string, userID int64, blockedBy int64, blockedUntil *time.Time) error
+	IsBlocked(ctx context.Context, clubID string, userID int64) (bool, *time.Time, error)
+	RemoveBlock(ctx context.Context, clubID string, userID int64) error
+	ListBlocked(ctx context.Context, clubID string) ([]BlockedUser, error)
 }
 
 type Repository struct {
@@ -426,4 +431,110 @@ func (r *Repository) TransferOwnership(ctx context.Context, clubID string, oldOw
 	}
 
 	return nil
+}
+
+func (r *Repository) BlockUser(ctx context.Context, clubID string, userID int64, blockedBy int64, blockedUntil *time.Time) error {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "begin block user tx failed", "error", err)
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	_, err = tx.Exec(ctx, `DELETE FROM club_members WHERE club_id = $1 AND user_id = $2`, clubID, userID)
+	if err != nil {
+		slog.ErrorContext(ctx, "remove member before block failed", "club_id", clubID, "user_id", userID, "error", err)
+		return err
+	}
+
+	_, err = tx.Exec(
+		ctx,
+		`INSERT INTO club_bans (club_id, user_id, banned_by, banned_until)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (club_id, user_id)
+		DO UPDATE SET banned_by = EXCLUDED.banned_by, banned_until = EXCLUDED.banned_until, created_at = NOW()`,
+		clubID,
+		userID,
+		blockedBy,
+		blockedUntil,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "save club ban failed", "club_id", clubID, "user_id", userID, "error", err)
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "commit block user tx failed", "club_id", clubID, "error", err)
+		return err
+	}
+
+	return nil
+}
+
+func (r *Repository) IsBlocked(ctx context.Context, clubID string, userID int64) (bool, *time.Time, error) {
+	var blockedUntil *time.Time
+	err := r.DB.QueryRow(
+		ctx,
+		`SELECT banned_until FROM club_bans
+		WHERE club_id = $1 AND user_id = $2
+		AND (banned_until IS NULL OR banned_until > NOW())`,
+		clubID,
+		userID,
+	).Scan(&blockedUntil)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil, nil
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "check club ban failed", "club_id", clubID, "user_id", userID, "error", err)
+		return false, nil, err
+	}
+
+	return true, blockedUntil, nil
+}
+
+func (r *Repository) RemoveBlock(ctx context.Context, clubID string, userID int64) error {
+	tag, err := r.DB.Exec(ctx, `DELETE FROM club_bans WHERE club_id = $1 AND user_id = $2`, clubID, userID)
+	if err != nil {
+		slog.ErrorContext(ctx, "remove club ban failed", "club_id", clubID, "user_id", userID, "error", err)
+		return err
+	}
+
+	if tag.RowsAffected() == 0 {
+		return ErrNotBlocked
+	}
+
+	return nil
+}
+
+func (r *Repository) ListBlocked(ctx context.Context, clubID string) ([]BlockedUser, error) {
+	rows, err := r.DB.Query(
+		ctx,
+		`SELECT b.user_id, u.username, b.banned_by, b.banned_until, b.created_at
+		FROM club_bans b
+		JOIN users u ON u.id = b.user_id
+		WHERE b.club_id = $1
+		AND (b.banned_until IS NULL OR b.banned_until > NOW())
+		ORDER BY b.created_at DESC`,
+		clubID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "list club bans failed", "club_id", clubID, "error", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	blocked := []BlockedUser{}
+	for rows.Next() {
+		var b BlockedUser
+		if err := rows.Scan(&b.UserID, &b.Username, &b.BlockedBy, &b.BlockedUntil, &b.CreatedAt); err != nil {
+			slog.ErrorContext(ctx, "scan club ban failed", "club_id", clubID, "error", err)
+			return nil, err
+		}
+		blocked = append(blocked, b)
+	}
+
+	return blocked, rows.Err()
 }
