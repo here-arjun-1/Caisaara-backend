@@ -111,7 +111,15 @@ func (h *Handler) GetTournamentDetails(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, ToTournamentDetailsResponse(tw))
+	res := ToTournamentDetailsResponse(tw)
+
+	userID, ok := middleware.GetUserID(c)
+	if ok && userID == tw.CreatedBy && tw.InviteCode != nil {
+		res.InviteCode = *tw.InviteCode
+		res.InviteLink = "/tournaments/invite/" + *tw.InviteCode
+	}
+
+	c.JSON(http.StatusOK, res)
 }
 
 func (h *Handler) GetTournamentByInviteCode(c *gin.Context) {
