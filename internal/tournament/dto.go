@@ -124,7 +124,7 @@ func ToTournamentResponse(t *Tournament) *TournamentResponse {
 func ToTournamentDetailsResponse(tw *TournamentWithPlayerCount) *TournamentDetailsResponse {
 	inviteCode := ""
 	inviteLink := ""
-	if tw.InviteCode != nil && *tw.InviteCode != "" {
+	if tw.Visibility != VisibilityPrivate && tw.InviteCode != nil && *tw.InviteCode != "" {
 		inviteCode = *tw.InviteCode
 		inviteLink = "/tournaments/invite/" + inviteCode
 	}
