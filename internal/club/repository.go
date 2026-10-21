@@ -22,7 +22,7 @@ type ClubRepository interface {
 	ListMembers(ctx context.Context, clubID string) ([]Member, error)
 	CreateMessage(ctx context.Context, msg *Message) error
 	GetRecentMessages(ctx context.Context, clubID string, limit int) ([]Message, error)
-	GetLeaderboard(ctx context.Context, clubID string) ([]LeaderboardEntry, error)
+	GetLeaderboard(ctx context.Context, clubID string, mode string) ([]LeaderboardEntry, error)
 	UpdateMemberRole(ctx context.Context, clubID string, userID int64, role string) error
 	TransferOwnership(ctx context.Context, clubID string, oldOwnerID int64, newOwnerID int64) error
 	BlockUser(ctx context.Context, clubID string, userID int64, blockedBy int64, blockedUntil *time.Time) error
@@ -30,6 +30,8 @@ type ClubRepository interface {
 	RemoveBlock(ctx context.Context, clubID string, userID int64) error
 	ListBlocked(ctx context.Context, clubID string) ([]BlockedUser, error)
 	ListMyClubs(ctx context.Context, userID int64) ([]MyClub, error)
+	FindClubByShareCode(ctx context.Context, shareCode string) (*Club, error)
+	DeleteClub(ctx context.Context, clubID string) error
 }
 
 type Repository struct {
@@ -56,18 +58,19 @@ func (r *Repository) CreateClub(ctx context.Context, club *Club) error {
 
 	err = tx.QueryRow(
 		ctx,
-		`INSERT INTO clubs (id, name, description, owner_id)
-		VALUES ($1, $2, $3, $4)
+		`INSERT INTO clubs (id, name, description, owner_id, share_code)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING created_at`,
 		club.ID,
 		club.Name,
 		club.Description,
 		club.OwnerID,
+		club.ShareCode,
 	).Scan(&club.CreatedAt)
 
 	if err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == "clubs_name_key" {
 			return ErrClubNameTaken
 		}
 
@@ -109,6 +112,7 @@ func (r *Repository) FindClubByID(ctx context.Context, clubID string) (*Club, er
 			c.name,
 			c.description,
 			c.owner_id,
+			c.share_code,
 			(SELECT COUNT(*) FROM club_members WHERE club_id = c.id) AS member_count,
 			c.created_at
 		FROM clubs c
@@ -119,6 +123,7 @@ func (r *Repository) FindClubByID(ctx context.Context, clubID string) (*Club, er
 		&club.Name,
 		&club.Description,
 		&club.OwnerID,
+		&club.ShareCode,
 		&club.MemberCount,
 		&club.CreatedAt,
 	)
@@ -142,6 +147,7 @@ func (r *Repository) ListClubs(ctx context.Context, search string, limit int, of
 			c.name,
 			c.description,
 			c.owner_id,
+			c.share_code,
 			(SELECT COUNT(*) FROM club_members WHERE club_id = c.id) AS member_count,
 			c.created_at
 		FROM clubs c
@@ -166,6 +172,7 @@ func (r *Repository) ListClubs(ctx context.Context, search string, limit int, of
 			&club.Name,
 			&club.Description,
 			&club.OwnerID,
+			&club.ShareCode,
 			&club.MemberCount,
 			&club.CreatedAt,
 		)
@@ -326,19 +333,21 @@ func (r *Repository) GetRecentMessages(ctx context.Context, clubID string, limit
 	return messages, rows.Err()
 }
 
-func (r *Repository) GetLeaderboard(ctx context.Context, clubID string) ([]LeaderboardEntry, error) {
+func (r *Repository) GetLeaderboard(ctx context.Context, clubID string, mode string) ([]LeaderboardEntry, error) {
 	rows, err := r.DB.Query(
 		ctx,
 		`SELECT
-			RANK() OVER (ORDER BY u.rating DESC) AS rank,
+			RANK() OVER (ORDER BY COALESCE(pr.rating, u.rating) DESC) AS rank,
 			u.id,
 			u.username,
-			u.rating
+			COALESCE(pr.rating, u.rating) AS rating
 		FROM club_members m
 		JOIN users u ON u.id = m.user_id
+		LEFT JOIN player_ratings pr ON pr.user_id = m.user_id AND pr.mode = $2
 		WHERE m.club_id = $1
-		ORDER BY u.rating DESC, u.username`,
+		ORDER BY rating DESC, u.username`,
 		clubID,
+		mode,
 	)
 	if err != nil {
 		slog.ErrorContext(ctx, "get club leaderboard failed", "club_id", clubID, "error", err)
@@ -554,6 +563,7 @@ func (r *Repository) ListMyClubs(ctx context.Context, userID int64) ([]MyClub, e
 			c.name,
 			c.description,
 			c.owner_id,
+			c.share_code,
 			(SELECT COUNT(*) FROM club_members WHERE club_id = c.id) AS member_count,
 			c.created_at,
 			m.role
@@ -577,6 +587,7 @@ func (r *Repository) ListMyClubs(ctx context.Context, userID int64) ([]MyClub, e
 			&club.Name,
 			&club.Description,
 			&club.OwnerID,
+			&club.ShareCode,
 			&club.MemberCount,
 			&club.CreatedAt,
 			&club.Role,
@@ -589,4 +600,54 @@ func (r *Repository) ListMyClubs(ctx context.Context, userID int64) ([]MyClub, e
 	}
 
 	return clubs, rows.Err()
+}
+
+func (r *Repository) FindClubByShareCode(ctx context.Context, shareCode string) (*Club, error) {
+	var club Club
+	err := r.DB.QueryRow(
+		ctx,
+		`SELECT
+			c.id,
+			c.name,
+			c.description,
+			c.owner_id,
+			c.share_code,
+			(SELECT COUNT(*) FROM club_members WHERE club_id = c.id) AS member_count,
+			c.created_at
+		FROM clubs c
+		WHERE c.share_code = $1`,
+		shareCode,
+	).Scan(
+		&club.ID,
+		&club.Name,
+		&club.Description,
+		&club.OwnerID,
+		&club.ShareCode,
+		&club.MemberCount,
+		&club.CreatedAt,
+	)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrClubNotFound
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "find club by share code failed", "error", err)
+		return nil, err
+	}
+
+	return &club, nil
+}
+
+func (r *Repository) DeleteClub(ctx context.Context, clubID string) error {
+	tag, err := r.DB.Exec(ctx, `DELETE FROM clubs WHERE id = $1`, clubID)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete club failed", "club_id", clubID, "error", err)
+		return err
+	}
+
+	if tag.RowsAffected() == 0 {
+		return ErrClubNotFound
+	}
+
+	return nil
 }

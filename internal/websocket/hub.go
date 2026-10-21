@@ -86,6 +86,24 @@ func (h *Hub) DisconnectUser(userID int64) {
 	}
 }
 
+func (h *Hub) CloseRoom(roomID string) {
+	room := h.GetRoom(roomID)
+	if room == nil {
+		return
+	}
+
+	room.Mutex.RLock()
+	var clients []*Client
+	for _, client := range room.Clients {
+		clients = append(clients, client)
+	}
+	room.Mutex.RUnlock()
+
+	for _, client := range clients {
+		client.Close()
+	}
+}
+
 func (h *Hub) DisconnectUserFromRoom(roomID string, userID int64) {
 	room := h.GetRoom(roomID)
 	if room == nil {

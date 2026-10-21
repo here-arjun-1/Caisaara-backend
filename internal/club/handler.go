@@ -116,10 +116,13 @@ func (h *Handler) LeaveClub(c *gin.Context) {
 		return
 	}
 
-	if err := h.Service.LeaveClub(c.Request.Context(), c.Param("clubID"), userID); err != nil {
+	clubID := c.Param("clubID")
+	if err := h.Service.LeaveClub(c.Request.Context(), clubID, userID); err != nil {
 		handleError(c, err)
 		return
 	}
+
+	h.Hub.DisconnectUserFromRoom("club:"+clubID, userID)
 
 	c.JSON(http.StatusOK, gin.H{"message": "left club"})
 }
@@ -135,7 +138,7 @@ func (h *Handler) GetMembers(c *gin.Context) {
 }
 
 func (h *Handler) GetLeaderboard(c *gin.Context) {
-	entries, err := h.Service.GetLeaderboard(c.Request.Context(), c.Param("clubID"))
+	entries, err := h.Service.GetLeaderboard(c.Request.Context(), c.Param("clubID"), c.Query("mode"))
 	if err != nil {
 		handleError(c, err)
 		return
@@ -205,7 +208,8 @@ func handleError(c *gin.Context, err error) {
 		errors.Is(err, ErrOwnerCannotLeave),
 		errors.Is(err, ErrEmptyMessage),
 		errors.Is(err, ErrMessageTooLong),
-		errors.Is(err, ErrTargetNotAdmin):
+		errors.Is(err, ErrTargetNotAdmin),
+		errors.Is(err, ErrInvalidMode):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:
 		slog.ErrorContext(c.Request.Context(), "club request failed", "path", c.FullPath(), "error", err)
@@ -368,4 +372,38 @@ func (h *Handler) GetMyClubs(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, clubs)
+}
+
+func (h *Handler) JoinClubByCode(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
+
+	club, err := h.Service.JoinClubByCode(c.Request.Context(), c.Param("code"), userID)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, club)
+}
+
+func (h *Handler) DeleteClub(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
+
+	clubID := c.Param("clubID")
+	if err := h.Service.DeleteClub(c.Request.Context(), clubID, userID); err != nil {
+		handleError(c, err)
+		return
+	}
+
+	h.Hub.CloseRoom("club:" + clubID)
+
+	c.JSON(http.StatusOK, gin.H{"message": "club deleted"})
 }
