@@ -295,14 +295,17 @@ func (s *TournamentService) StartTournament(ctx context.Context, tournamentID in
 			return nil, err
 		}
 
-		_ = s.Repo.UpdateTotalRounds(ctx, tournamentID, totalRounds)
+		if err := s.Repo.UpdateTotalRounds(ctx, tournamentID, totalRounds); err != nil {
+			return nil, err
+		}
 
 		if err := s.Repo.StartTournament(ctx, tournamentID); err != nil {
 			return nil, err
 		}
 
-		if r1Pairings, ok := schedule[1]; ok {
-			_, _ = s.Repo.SaveRoundPairings(ctx, tournamentID, 1, r1Pairings, s.GameRepo)
+		if _, err := s.Repo.SaveRoundPairings(ctx, tournamentID, 1, schedule[1], s.GameRepo); err != nil {
+			_ = s.Repo.UndoStartTournament(ctx, tournamentID)
+			return nil, err
 		}
 	case FormatKnockout:
 		swissPlayers, err := s.Repo.GetSwissPlayers(ctx, tournamentID)
@@ -315,24 +318,36 @@ func (s *TournamentService) StartTournament(ctx context.Context, tournamentID in
 			return nil, err
 		}
 
-		_ = s.Repo.UpdateTotalRounds(ctx, tournamentID, totalRounds)
+		if err := s.Repo.UpdateTotalRounds(ctx, tournamentID, totalRounds); err != nil {
+			return nil, err
+		}
 
 		if err := s.Repo.StartTournament(ctx, tournamentID); err != nil {
 			return nil, err
 		}
 
-		_, _ = s.Repo.SaveRoundPairings(ctx, tournamentID, 1, pairings, s.GameRepo)
+		if _, err := s.Repo.SaveRoundPairings(ctx, tournamentID, 1, pairings, s.GameRepo); err != nil {
+			_ = s.Repo.UndoStartTournament(ctx, tournamentID)
+			return nil, err
+		}
 	default:
+		swissPlayers, err := s.Repo.GetSwissPlayers(ctx, tournamentID)
+		if err != nil || len(swissPlayers) < 2 {
+			return nil, ErrNotEnoughPlayers
+		}
+
+		pairingsResult, err := GenerateSwissPairings(swissPlayers)
+		if err != nil {
+			return nil, err
+		}
+
 		if err := s.Repo.StartTournament(ctx, tournamentID); err != nil {
 			return nil, err
 		}
 
-		swissPlayers, err := s.Repo.GetSwissPlayers(ctx, tournamentID)
-		if err == nil && len(swissPlayers) >= 2 {
-			pairingsResult, err := GenerateSwissPairings(swissPlayers)
-			if err == nil {
-				_, _ = s.Repo.SaveRoundPairings(ctx, tournamentID, 1, pairingsResult, s.GameRepo)
-			}
+		if _, err := s.Repo.SaveRoundPairings(ctx, tournamentID, 1, pairingsResult, s.GameRepo); err != nil {
+			_ = s.Repo.UndoStartTournament(ctx, tournamentID)
+			return nil, err
 		}
 	}
 
