@@ -178,10 +178,13 @@ func (r *ProfileRepository) FindModeGameStats(ctx context.Context, userID int64,
 				WHERE (white_player_id = $1 AND result = 'black_win')
 				   OR (black_player_id = $1 AND result = 'white_win')
 			),
-			COUNT(*) FILTER (WHERE result = 'draw')
+			COUNT(*) FILTER (WHERE result = 'draw'),
+			COALESCE(AVG(EXTRACT(EPOCH FROM (ended_at - started_at))) FILTER (
+				WHERE ended_at IS NOT NULL AND started_at IS NOT NULL AND ended_at >= started_at
+			), 0)
 		FROM games
 		WHERE (white_player_id = $1 OR black_player_id = $1)
-		  AND time_control_mode = $2
+		  AND ($2 = '' OR time_control_mode = $2)
 		  AND rated = true
 		  AND status = 'finished'`,
 		userID,
@@ -190,6 +193,7 @@ func (r *ProfileRepository) FindModeGameStats(ctx context.Context, userID int64,
 		&s.Wins,
 		&s.Losses,
 		&s.Draws,
+		&s.AverageGameTimeSeconds,
 	)
 
 	if err != nil {
@@ -247,6 +251,76 @@ func (r *ProfileRepository) FindRecentGamesByMode(ctx context.Context, userID in
 	}
 
 	return games, rows.Err()
+}
+
+func (r *ProfileRepository) FindRatingHistory(ctx context.Context, userID int64, mode string, limit int) ([]model.RatingHistoryPoint, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+
+	rows, err := r.DB.Query(
+		ctx,
+		`WITH recent_games AS (
+			SELECT
+				g.id::text AS game_id,
+				g.ended_at AS ended_at,
+				CASE
+					WHEN g.white_player_id = $1 THEN COALESCE(g.white_rating_after, 1200)
+					ELSE COALESCE(g.black_rating_after, 1200)
+				END AS rating,
+				CASE
+					WHEN g.white_player_id = $1 THEN (COALESCE(g.white_rating_after, 1200) - COALESCE(g.white_rating_before, 1200))
+					ELSE (COALESCE(g.black_rating_after, 1200) - COALESCE(g.black_rating_before, 1200))
+				END AS rating_change,
+				opp.username AS opponent_username,
+				CASE
+					WHEN g.result = 'draw' THEN 'draw'
+					WHEN (g.white_player_id = $1 AND g.result = 'white_win') OR (g.black_player_id = $1 AND g.result = 'black_win') THEN 'win'
+					ELSE 'loss'
+				END AS outcome
+			FROM games g
+			JOIN users opp ON opp.id = CASE
+				WHEN g.white_player_id = $1 THEN g.black_player_id
+				ELSE g.white_player_id
+			END
+			WHERE (g.white_player_id = $1 OR g.black_player_id = $1)
+			  AND ($2 = '' OR g.time_control_mode = $2)
+			  AND g.rated = true
+			  AND g.status = 'finished'
+			  AND g.ended_at IS NOT NULL
+			ORDER BY g.ended_at DESC
+			LIMIT $3
+		)
+		SELECT game_id, ended_at, rating, rating_change, opponent_username, outcome
+		FROM recent_games
+		ORDER BY ended_at ASC`,
+		userID,
+		mode,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var points []model.RatingHistoryPoint
+	for rows.Next() {
+		var p model.RatingHistoryPoint
+		err := rows.Scan(
+			&p.GameID,
+			&p.EndedAt,
+			&p.Rating,
+			&p.RatingChange,
+			&p.OpponentUsername,
+			&p.Outcome,
+		)
+		if err != nil {
+			return nil, err
+		}
+		points = append(points, p)
+	}
+
+	return points, rows.Err()
 }
 
 func (r *ProfileRepository) SearchByUsername(ctx context.Context, prefix string, limit int) ([]model.Profile, error) {

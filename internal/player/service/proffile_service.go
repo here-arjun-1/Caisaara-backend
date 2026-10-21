@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"math"
 	"strings"
 	"unicode/utf8"
 
@@ -41,6 +42,7 @@ type ProfileRepository interface {
 	FindModeRatings(ctx context.Context, userID int64) ([]model.ModeRating, error)
 	FindModeGameStats(ctx context.Context, userID int64, mode string) (*model.ModeGameStats, error)
 	FindRecentGamesByMode(ctx context.Context, userID int64, mode string, limit int) ([]model.RecentGame, error)
+	FindRatingHistory(ctx context.Context, userID int64, mode string, limit int) ([]model.RatingHistoryPoint, error)
 	SearchByUsername(ctx context.Context, prefix string, limit int) ([]model.Profile, error)
 }
 
@@ -246,8 +248,23 @@ func (h *ProfileService) GetModeStats(ctx context.Context, username string, mode
 
 	gamesPlayed := stats.Wins + stats.Losses + stats.Draws
 	winPercent := 0
+	winRate := 0.0
 	if gamesPlayed > 0 {
 		winPercent = stats.Wins * 100 / gamesPlayed
+		winRate = math.Round((float64(stats.Wins)/float64(gamesPlayed))*10000) / 100
+	}
+
+	historyPoints, _ := h.ProfileRepository.FindRatingHistory(ctx, p.UserID, mode, 100)
+	ratingHistory := make([]dto.RatingPointResponse, 0, len(historyPoints))
+	for _, pt := range historyPoints {
+		ratingHistory = append(ratingHistory, dto.RatingPointResponse{
+			GameID:           pt.GameID,
+			EndedAt:          pt.EndedAt,
+			Rating:           pt.Rating,
+			RatingChange:     pt.RatingChange,
+			OpponentUsername: pt.OpponentUsername,
+			Outcome:          pt.Outcome,
+		})
 	}
 
 	recentGames := make([]dto.RecentGameResponse, 0, len(games))
@@ -265,17 +282,100 @@ func (h *ProfileService) GetModeStats(ctx context.Context, username string, mode
 	r := findModeRating(p, mode)
 
 	return &dto.ModeStatsResponse{
-		Mode:         mode,
-		Rating:       r.Rating,
-		Provisional:  glicko2.IsProvisional(r.RatingDeviation),
-		BestRating:   r.BestRating,
-		BestRatingAt: r.BestRatingAt,
-		GamesPlayed:  gamesPlayed,
-		Wins:         stats.Wins,
-		Losses:       stats.Losses,
-		Draws:        stats.Draws,
-		WinPercent:   winPercent,
-		RecentGames:  recentGames,
+		Mode:            mode,
+		Rating:          r.Rating,
+		Provisional:     glicko2.IsProvisional(r.RatingDeviation),
+		BestRating:      r.BestRating,
+		BestRatingAt:    r.BestRatingAt,
+		GamesPlayed:     gamesPlayed,
+		Wins:            stats.Wins,
+		Losses:          stats.Losses,
+		Draws:           stats.Draws,
+		WinPercent:      winPercent,
+		WinRate:         winRate,
+		AverageGameTime: math.Round(stats.AverageGameTimeSeconds*100) / 100,
+		RatingHistory:   ratingHistory,
+		RecentGames:     recentGames,
+	}, nil
+}
+
+func (h *ProfileService) GetPlayerStats(ctx context.Context, username string, mode string) (*dto.PlayerStatsResponse, error) {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode != "" && mode != "all" && !isRatedMode(mode) {
+		return nil, ErrInvalidMode
+	}
+	if mode == "all" {
+		mode = ""
+	}
+
+	username = strings.ToLower(strings.TrimSpace(username))
+
+	p, err := h.ProfileRepository.FindByUsername(ctx, username)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrUserNotFound
+	}
+	if err != nil {
+		slog.Error("find profile by username failed", "error", err)
+		return nil, ErrInternal
+	}
+
+	if err := h.loadRatings(ctx, p); err != nil {
+		return nil, err
+	}
+
+	stats, err := h.ProfileRepository.FindModeGameStats(ctx, p.UserID, mode)
+	if err != nil {
+		slog.Error("find mode game stats failed", "error", err)
+		return nil, ErrInternal
+	}
+
+	historyPoints, err := h.ProfileRepository.FindRatingHistory(ctx, p.UserID, mode, 100)
+	if err != nil {
+		slog.Error("find rating history failed", "error", err)
+		return nil, ErrInternal
+	}
+
+	ratingHistory := make([]dto.RatingPointResponse, 0, len(historyPoints))
+	for _, pt := range historyPoints {
+		ratingHistory = append(ratingHistory, dto.RatingPointResponse{
+			GameID:           pt.GameID,
+			EndedAt:          pt.EndedAt,
+			Rating:           pt.Rating,
+			RatingChange:     pt.RatingChange,
+			OpponentUsername: pt.OpponentUsername,
+			Outcome:          pt.Outcome,
+		})
+	}
+
+	gamesPlayed := stats.Wins + stats.Losses + stats.Draws
+	winRate := 0.0
+	if gamesPlayed > 0 {
+		winRate = math.Round((float64(stats.Wins)/float64(gamesPlayed))*10000) / 100
+	}
+
+	currentRating := defaultRating
+	if mode != "" {
+		currentRating = findModeRating(p, mode).Rating
+	} else if p.Rating != nil {
+		currentRating = *p.Rating
+	}
+
+	displayMode := mode
+	if displayMode == "" {
+		displayMode = "all"
+	}
+
+	return &dto.PlayerStatsResponse{
+		Username:        p.Username,
+		Mode:            displayMode,
+		Rating:          currentRating,
+		GamesPlayed:     gamesPlayed,
+		Wins:            stats.Wins,
+		Losses:          stats.Losses,
+		Draws:           stats.Draws,
+		WinRate:         winRate,
+		AverageGameTime: math.Round(stats.AverageGameTimeSeconds*100) / 100,
+		RatingHistory:   ratingHistory,
 	}, nil
 }
 

@@ -51,18 +51,43 @@ type RecentGameResponse struct {
 	EndedAt          *time.Time `json:"ended_at"`
 }
 
+type RatingPointResponse struct {
+	GameID           string    `json:"game_id"`
+	EndedAt          time.Time `json:"ended_at"`
+	Rating           int       `json:"rating"`
+	RatingChange     int       `json:"rating_change"`
+	OpponentUsername string    `json:"opponent_username"`
+	Outcome          string    `json:"outcome"`
+}
+
+type PlayerStatsResponse struct {
+	Username        string                `json:"username"`
+	Mode            string                `json:"mode"`
+	Rating          int                   `json:"rating"`
+	GamesPlayed     int                   `json:"games_played"`
+	Wins            int                   `json:"wins"`
+	Losses          int                   `json:"losses"`
+	Draws           int                   `json:"draws"`
+	WinRate         float64               `json:"win_rate"`
+	AverageGameTime float64               `json:"average_game_time_seconds"`
+	RatingHistory   []RatingPointResponse `json:"rating_history"`
+}
+
 type ModeStatsResponse struct {
-	Mode         string               `json:"mode"`
-	Rating       int                  `json:"rating"`
-	Provisional  bool                 `json:"provisional"`
-	BestRating   *int                 `json:"best_rating"`
-	BestRatingAt *time.Time           `json:"best_rating_at"`
-	GamesPlayed  int                  `json:"games_played"`
-	Wins         int                  `json:"wins"`
-	Losses       int                  `json:"losses"`
-	Draws        int                  `json:"draws"`
-	WinPercent   int                  `json:"win_percent"`
-	RecentGames  []RecentGameResponse `json:"recent_games"`
+	Mode            string                `json:"mode"`
+	Rating          int                   `json:"rating"`
+	Provisional     bool                  `json:"provisional"`
+	BestRating      *int                  `json:"best_rating"`
+	BestRatingAt    *time.Time            `json:"best_rating_at"`
+	GamesPlayed     int                   `json:"games_played"`
+	Wins            int                   `json:"wins"`
+	Losses          int                   `json:"losses"`
+	Draws           int                   `json:"draws"`
+	WinPercent      int                   `json:"win_percent"`
+	WinRate         float64               `json:"win_rate"`
+	AverageGameTime float64               `json:"average_game_time_seconds"`
+	RatingHistory   []RatingPointResponse `json:"rating_history"`
+	RecentGames     []RecentGameResponse  `json:"recent_games"`
 }
 
 type PlayerSearchResult struct {

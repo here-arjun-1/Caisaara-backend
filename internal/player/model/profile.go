@@ -28,9 +28,19 @@ type ModeRating struct {
 }
 
 type ModeGameStats struct {
-	Wins   int
-	Losses int
-	Draws  int
+	Wins                   int
+	Losses                 int
+	Draws                  int
+	AverageGameTimeSeconds float64
+}
+
+type RatingHistoryPoint struct {
+	GameID           string
+	EndedAt          time.Time
+	Rating           int
+	RatingChange     int
+	OpponentUsername string
+	Outcome          string
 }
 
 type RecentGame struct {

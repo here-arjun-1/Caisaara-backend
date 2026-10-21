@@ -17,6 +17,7 @@ type ProfileService interface {
 	GetPublicProfile(ctx context.Context, username string) (*dto.PublicProfileResponse, error)
 	UpdateMyProfile(ctx context.Context, userID int64, req dto.UpdateProfileData) (*dto.MyProfileResponse, error)
 	GetModeStats(ctx context.Context, username string, mode string) (*dto.ModeStatsResponse, error)
+	GetPlayerStats(ctx context.Context, username string, mode string) (*dto.PlayerStatsResponse, error)
 	SearchPlayers(ctx context.Context, query string) ([]dto.PlayerSearchResult, error)
 }
 
@@ -129,4 +130,45 @@ func (h *ProfileHandler) GetModeStats(c *gin.Context) {
 	}
 
 	response.Success(c, http.StatusOK, "mode stats fetched successfully", stats)
+}
+
+func (h *ProfileHandler) GetPlayerStats(c *gin.Context) {
+	username := c.Param("username")
+	mode := c.Query("mode")
+	stats, err := h.ProfileService.GetPlayerStats(c.Request.Context(), username, mode)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "player stats fetched successfully", stats)
+}
+
+func (h *ProfileHandler) GetMyStats(c *gin.Context) {
+	isGuest := c.GetBool("is_guest")
+	if isGuest {
+		response.Error(c, http.StatusBadRequest, "guest accounts do not have stats")
+		return
+	}
+
+	userID := c.GetInt64("user_id")
+	if userID <= 0 {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	profile, err := h.ProfileService.GetMyProfile(c.Request.Context(), userID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	mode := c.Query("mode")
+	stats, err := h.ProfileService.GetPlayerStats(c.Request.Context(), profile.Username, mode)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "my stats fetched successfully", stats)
 }
