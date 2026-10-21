@@ -19,4 +19,5 @@ var (
 	ErrKickedRecently     = errors.New("you were kicked from this club, you can join again after 7 days")
 	ErrBannedFromClub     = errors.New("you are banned from this club")
 	ErrUserNotFound       = errors.New("player not found")
+	ErrInvalidMode        = errors.New("mode must be bullet, blitz, rapid or daily")
 )

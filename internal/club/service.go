@@ -2,7 +2,9 @@ package club
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
+	"math/big"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -15,12 +17,15 @@ const (
 	maxClubsLimit     = 50
 	messageHistory    = 50
 	kickBlockDuration = 7 * 24 * time.Hour
+	shareCodeLength   = 8
+	shareCodeChars    = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	defaultBoardMode  = "blitz"
 )
 
 var likeEscaper = strings.NewReplacer(
-	`\`, `\\`,
-	`%`, `\%`,
-	`_`, `\_`,
+	"\\", "\\\\",
+	"%", "\\%",
+	"_", "\\_",
 )
 
 type ClubService interface {
@@ -30,7 +35,7 @@ type ClubService interface {
 	JoinClub(ctx context.Context, clubID string, userID int64) error
 	LeaveClub(ctx context.Context, clubID string, userID int64) error
 	GetMembers(ctx context.Context, clubID string) ([]Member, error)
-	GetLeaderboard(ctx context.Context, clubID string) ([]LeaderboardEntry, error)
+	GetLeaderboard(ctx context.Context, clubID string, mode string) ([]LeaderboardEntry, error)
 	SendMessage(ctx context.Context, clubID string, userID int64, text string) (*Message, error)
 	GetMessages(ctx context.Context, clubID string, userID int64) ([]Message, error)
 	PromoteToAdmin(ctx context.Context, clubID string, leaderID int64, targetID int64) error
@@ -41,6 +46,8 @@ type ClubService interface {
 	UnblockMember(ctx context.Context, clubID string, userID int64, targetID int64) error
 	GetBlockedList(ctx context.Context, clubID string, userID int64) ([]BlockedUser, error)
 	GetMyClubs(ctx context.Context, userID int64) ([]MyClub, error)
+	JoinClubByCode(ctx context.Context, shareCode string, userID int64) (*Club, error)
+	DeleteClub(ctx context.Context, clubID string, userID int64) error
 }
 
 type Service struct {
@@ -68,10 +75,16 @@ func (s *Service) CreateClub(ctx context.Context, ownerID int64, name string, de
 		return nil, ErrDescriptionTooLong
 	}
 
+	shareCode, err := generateShareCode()
+	if err != nil {
+		return nil, err
+	}
+
 	club := &Club{
 		Name:        name,
 		Description: description,
 		OwnerID:     ownerID,
+		ShareCode:   shareCode,
 	}
 
 	if err := s.Repository.CreateClub(ctx, club); err != nil {
@@ -148,12 +161,20 @@ func (s *Service) GetMembers(ctx context.Context, clubID string) ([]Member, erro
 	return s.Repository.ListMembers(ctx, clubID)
 }
 
-func (s *Service) GetLeaderboard(ctx context.Context, clubID string) ([]LeaderboardEntry, error) {
+func (s *Service) GetLeaderboard(ctx context.Context, clubID string, mode string) ([]LeaderboardEntry, error) {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "" {
+		mode = defaultBoardMode
+	}
+	if mode != "bullet" && mode != "blitz" && mode != "rapid" && mode != "daily" {
+		return nil, ErrInvalidMode
+	}
+
 	if _, err := s.Repository.FindClubByID(ctx, clubID); err != nil {
 		return nil, err
 	}
 
-	return s.Repository.GetLeaderboard(ctx, clubID)
+	return s.Repository.GetLeaderboard(ctx, clubID, mode)
 }
 
 func (s *Service) SendMessage(ctx context.Context, clubID string, userID int64, text string) (*Message, error) {
@@ -344,4 +365,47 @@ func (s *Service) GetBlockedList(ctx context.Context, clubID string, userID int6
 
 func (s *Service) GetMyClubs(ctx context.Context, userID int64) ([]MyClub, error) {
 	return s.Repository.ListMyClubs(ctx, userID)
+}
+
+func (s *Service) JoinClubByCode(ctx context.Context, shareCode string, userID int64) (*Club, error) {
+	shareCode = strings.ToUpper(strings.TrimSpace(shareCode))
+	if len(shareCode) != shareCodeLength {
+		return nil, ErrClubNotFound
+	}
+
+	club, err := s.Repository.FindClubByShareCode(ctx, shareCode)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.JoinClub(ctx, club.ID, userID); err != nil {
+		return nil, err
+	}
+
+	club.MemberCount++
+	return club, nil
+}
+
+func (s *Service) DeleteClub(ctx context.Context, clubID string, userID int64) error {
+	myRole, err := s.getRole(ctx, clubID, userID)
+	if err != nil {
+		return err
+	}
+	if myRole != RoleOwner {
+		return ErrNotAllowed
+	}
+
+	return s.Repository.DeleteClub(ctx, clubID)
+}
+
+func generateShareCode() (string, error) {
+	code := make([]byte, shareCodeLength)
+	for i := range code {
+		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(shareCodeChars))))
+		if err != nil {
+			return "", err
+		}
+		code[i] = shareCodeChars[num.Int64()]
+	}
+	return string(code), nil
 }
