@@ -30,6 +30,7 @@ type TournamentRepository interface {
 	AddPlayer(ctx context.Context, player *TournamentPlayer) error
 	RemovePlayer(ctx context.Context, tournamentID int64, userID int64) error
 	StartTournament(ctx context.Context, tournamentID int64) error
+	UndoStartTournament(ctx context.Context, tournamentID int64) error
 	EndTournament(ctx context.Context, tournamentID int64) error
 	GetSwissPlayers(ctx context.Context, tournamentID int64) ([]*SwissPlayer, error)
 	SaveRoundPairings(ctx context.Context, tournamentID int64, roundNumber int, pairings []SwissPairingResult, gameRepo ...game.GameRepository) ([]*TournamentPairing, error)
@@ -674,6 +675,17 @@ func (r *Repository) SaveRoundPairings(ctx context.Context, tournamentID int64, 
 	_ = tx.QueryRow(ctx, `SELECT time_control FROM tournaments WHERE id = $1`, tournamentID).Scan(&timeControlStr)
 	tcMinutes, tcIncrement := parseTimeControl(timeControlStr)
 
+	var createdGameIDs []string
+	saved := false
+	defer func() {
+		if saved {
+			return
+		}
+		for _, gameID := range createdGameIDs {
+			_ = gameRepo[0].DeleteGameWithMoves(ctx, gameID)
+		}
+	}()
+
 	var roundID int64
 	err = tx.QueryRow(
 		ctx,
@@ -734,10 +746,13 @@ func (r *Repository) SaveRoundPairings(ctx context.Context, tournamentID int64, 
 			var createdGameID *string
 			if len(gameRepo) > 0 && gameRepo[0] != nil && p.WhitePlayerID != nil && p.BlackPlayerID != nil {
 				gID, gErr := gameRepo[0].CreateGame(ctx, *p.WhitePlayerID, *p.BlackPlayerID, tcMinutes, tcIncrement, false)
-				if gErr == nil && gID != "" {
-					createdGameID = &gID
-					tp.GameID = &gID
+				if gErr != nil {
+					slog.ErrorContext(ctx, "create tournament game failed", "tournament_id", tournamentID, "round", roundNumber, "error", gErr)
+					return nil, gErr
 				}
+				createdGameIDs = append(createdGameIDs, gID)
+				createdGameID = &gID
+				tp.GameID = &gID
 			}
 
 			err = tx.QueryRow(
@@ -759,6 +774,7 @@ func (r *Repository) SaveRoundPairings(ctx context.Context, tournamentID int64, 
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
+	saved = true // NEW
 
 	return resultPairings, nil
 }
@@ -1116,4 +1132,36 @@ func (r *Repository) DeleteOldTournaments(ctx context.Context, olderThan time.Du
 		return 0, err
 	}
 	return tag.RowsAffected(), nil
+}
+
+func (r *Repository) UndoStartTournament(ctx context.Context, tournamentID int64) error {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "begin transaction failed for undo start tournament", "tournament_id", tournamentID, "error", err)
+		return err
+	}
+
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	_, err = tx.Exec(ctx, `DELETE FROM tournament_rounds WHERE tournament_id = $1`, tournamentID)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete rounds failed for undo start tournament", "tournament_id", tournamentID, "error", err)
+		return err
+	}
+
+	_, err = tx.Exec(ctx,
+		`UPDATE tournaments
+		SET status = 'registration', current_round = 0, updated_at = NOW()
+		WHERE id = $1 AND status = 'ongoing'`,
+		tournamentID,
+	)
+
+	if err != nil {
+		slog.ErrorContext(ctx, "reset tournament status failed for undo start tournament", "tournament_id", tournamentID, "error", err)
+		return err
+	}
+
+	return tx.Commit(ctx)
 }

@@ -166,7 +166,9 @@ func run() error {
 		if err := ratingService.UpdateRatingsAfterGame(ctx, gameID); err != nil {
 			slog.ErrorContext(ctx, "update ratings failed", "game_id", gameID, "error", err)
 		}
-		_ = tournamentService.OnGameCompleted(ctx, gameID, result)
+		if err := tournamentService.OnGameCompleted(ctx, gameID, result); err != nil {
+			slog.ErrorContext(ctx, "tournament game completion failed", "game_id", gameID, "error", err)
+		}
 		_, _ = analysisService.TriggerAnalysis(ctx, gameID, 0)
 	})
 
