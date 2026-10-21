@@ -681,8 +681,9 @@ func (r *Repository) SaveRoundPairings(ctx context.Context, tournamentID int64, 
 		if saved {
 			return
 		}
+		cleanupCtx := context.WithoutCancel(ctx)
 		for _, gameID := range createdGameIDs {
-			_ = gameRepo[0].DeleteGameWithMoves(ctx, gameID)
+			_ = gameRepo[0].DeleteGameWithMoves(cleanupCtx, gameID)
 		}
 	}()
 
@@ -774,7 +775,7 @@ func (r *Repository) SaveRoundPairings(ctx context.Context, tournamentID int64, 
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}
-	saved = true // NEW
+	saved = true
 
 	return resultPairings, nil
 }
