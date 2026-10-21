@@ -11,6 +11,7 @@ import (
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -444,6 +445,10 @@ func (r *Repository) AddPlayer(ctx context.Context, player *TournamentPlayer) er
 	).Scan(&player.ID, &player.JoinedAt)
 
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return ErrAlreadyJoined
+		}
 		slog.ErrorContext(ctx, "add tournament player failed", "tournament_id", player.TournamentID, "user_id", player.UserID, "error", err)
 		return err
 	}
@@ -496,7 +501,7 @@ func (r *Repository) StartTournament(ctx context.Context, tournamentID int64) er
 		ctx,
 		`INSERT INTO tournament_rounds (tournament_id, round_number, status, started_at)
 		VALUES ($1, 1, 'ongoing', NOW())
-		ON CONFLICT (tournament_id, round_number)qw
+		ON CONFLICT (tournament_id, round_number)
 		DO UPDATE SET status = 'ongoing', started_at = NOW()`,
 		tournamentID,
 	)
@@ -950,7 +955,7 @@ func (r *Repository) GetRounds(ctx context.Context, tournamentID int64, roundNum
 		tp.id, tp.round_id, tr.round_number, 
 		tp.white_player_id, COALESCE(uw.username, ''), 
 		tp.black_player_id, COALESCE(ub.username, ''), 
-		tp.game_id, tp.result, tp.status, tp.is_bye
+		tp.game_id, COALESCE(tp.result, ''), tp.status, tp.is_bye
 	FROM tournament_pairings tp
 	JOIN tournament_rounds tr ON tr.id = tp.round_id
 	LEFT JOIN users uw ON uw.id = tp.white_player_id
@@ -1003,7 +1008,7 @@ func (r *Repository) GetGames(ctx context.Context, tournamentID int64, userID ..
 		tp.game_id, tp.id, tr.round_number,
 		COALESCE(tp.white_player_id, 0), COALESCE(uw.username, ''),
 		COALESCE(tp.black_player_id, 0), COALESCE(ub.username, ''),
-		tp.result, tp.status
+		COALESCE(tp.result, ''), tp.status
 	FROM tournament_pairings tp
 	JOIN tournament_rounds tr ON tr.id = tp.round_id
 	LEFT JOIN users uw ON uw.id = tp.white_player_id
