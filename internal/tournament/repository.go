@@ -54,17 +54,17 @@ func NewRepository(db *pgxpool.Pool) TournamentRepository {
 	}
 }
 
-func parseTimeControl(tcStr string) (int, int) {
+func parseTimeControl(tcStr string) (int, int, bool) {
 	tcStr = strings.ToLower(strings.TrimSpace(tcStr))
 	if strings.HasSuffix(tcStr, "d") || strings.Contains(tcStr, "day") {
 		fields := strings.Fields(tcStr)
 		if len(fields) > 0 {
 			valStr := strings.TrimSuffix(fields[0], "d")
 			if val, err := strconv.Atoi(valStr); err == nil && val > 0 {
-				return val * 1440, 0
+				return val * 1440, 0, true
 			}
 		}
-		return 1440, 0
+		return 1440, 0, true
 	}
 
 	sep := "+"
@@ -75,20 +75,18 @@ func parseTimeControl(tcStr string) (int, int) {
 		parts := strings.Split(tcStr, sep)
 		minVal, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
 		incVal, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
-		if err1 == nil && minVal >= 0 {
-			if err2 != nil || incVal < 0 {
-				incVal = 0
-			}
-			return minVal, incVal
+		if err1 == nil && err2 == nil && minVal >= 0 && incVal >= 0 && minVal+incVal > 0 {
+			return minVal, incVal, true
 		}
+		return 5, 0, false
 	}
 
 	tcClean := strings.TrimSuffix(strings.TrimSuffix(tcStr, "min"), "m")
 	if val, err := strconv.Atoi(strings.TrimSpace(tcClean)); err == nil && val > 0 {
-		return val, 0
+		return val, 0, true
 	}
 
-	return 5, 0
+	return 5, 0, false
 }
 
 func (r *Repository) CreateTournament(ctx context.Context, tournament *Tournament) error {
@@ -422,7 +420,43 @@ func (r *Repository) GetPlayerRating(ctx context.Context, userID int64, mode str
 }
 
 func (r *Repository) AddPlayer(ctx context.Context, player *TournamentPlayer) error {
-	err := r.DB.QueryRow(
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var status string
+	var maxPlayers int
+	err = tx.QueryRow(
+		ctx,
+		`SELECT status, max_players FROM tournaments WHERE id = $1 FOR UPDATE`,
+		player.TournamentID,
+	).Scan(&status, &maxPlayers)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrTournamentNotFound
+		}
+		return err
+	}
+	if status != StatusRegistration {
+		return ErrNotRegistration
+	}
+
+	var playerCount int
+	err = tx.QueryRow(
+		ctx,
+		`SELECT COUNT(*) FROM tournament_players WHERE tournament_id = $1`,
+		player.TournamentID,
+	).Scan(&playerCount)
+	if err != nil {
+		return err
+	}
+	if playerCount >= maxPlayers {
+		return ErrTournamentFull
+	}
+
+	err = tx.QueryRow(
 		ctx,
 		`INSERT INTO tournament_players (
 			tournament_id,
@@ -454,11 +488,29 @@ func (r *Repository) AddPlayer(ctx context.Context, player *TournamentPlayer) er
 		return err
 	}
 
-	return nil
+	return tx.Commit(ctx)
 }
 
 func (r *Repository) RemovePlayer(ctx context.Context, tournamentID int64, userID int64) error {
-	tag, err := r.DB.Exec(
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var status string
+	err = tx.QueryRow(ctx, `SELECT status FROM tournaments WHERE id = $1 FOR UPDATE`, tournamentID).Scan(&status)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrTournamentNotFound
+		}
+		return err
+	}
+	if status != StatusRegistration {
+		return ErrCannotLeaveStarted
+	}
+
+	tag, err := tx.Exec(
 		ctx,
 		`DELETE FROM tournament_players
 		WHERE tournament_id = $1 AND user_id = $2`,
@@ -472,7 +524,7 @@ func (r *Repository) RemovePlayer(ctx context.Context, tournamentID int64, userI
 	if tag.RowsAffected() == 0 {
 		return ErrNotJoined
 	}
-	return nil
+	return tx.Commit(ctx)
 }
 
 func (r *Repository) StartTournament(ctx context.Context, tournamentID int64) error {
@@ -571,7 +623,7 @@ func (r *Repository) GetSwissPlayers(ctx context.Context, tournamentID int64) ([
 		slog.ErrorContext(ctx, "get tournament time control failed", "tournament_id", tournamentID, "error", err)
 		return nil, err
 	}
-	tcMinutes, tcIncrement := parseTimeControl(timeControlStr)
+	tcMinutes, tcIncrement, _ := parseTimeControl(timeControlStr)
 	mode, _, _, _ := game.ResolveTimeControlMode(tcMinutes, tcIncrement)
 
 	rows, err := r.DB.Query(
@@ -677,7 +729,7 @@ func (r *Repository) SaveRoundPairings(ctx context.Context, tournamentID int64, 
 
 	var timeControlStr string
 	_ = tx.QueryRow(ctx, `SELECT time_control FROM tournaments WHERE id = $1`, tournamentID).Scan(&timeControlStr)
-	tcMinutes, tcIncrement := parseTimeControl(timeControlStr)
+	tcMinutes, tcIncrement, _ := parseTimeControl(timeControlStr)
 
 	var createdGameIDs []string
 	saved := false
@@ -826,26 +878,24 @@ func (r *Repository) UpdatePairingOnGameCompleted(ctx context.Context, gameID st
 
 	switch normResult {
 	case ResultWhiteWin:
-		if whiteID != nil {
-			_, _ = tx.Exec(ctx, `UPDATE tournament_players SET score = score + 1.0, wins = wins + 1, games_played = games_played + 1 WHERE tournament_id = $1 AND user_id = $2`, tournamentID, *whiteID)
-		}
-		if blackID != nil {
-			_, _ = tx.Exec(ctx, `UPDATE tournament_players SET losses = losses + 1, games_played = games_played + 1 WHERE tournament_id = $1 AND user_id = $2`, tournamentID, *blackID)
+		err = addPlayerResult(ctx, tx, tournamentID, whiteID, 1.0, 1, 0, 0)
+		if err == nil {
+			err = addPlayerResult(ctx, tx, tournamentID, blackID, 0, 0, 0, 1)
 		}
 	case ResultBlackWin:
-		if blackID != nil {
-			_, _ = tx.Exec(ctx, `UPDATE tournament_players SET score = score + 1.0, wins = wins + 1, games_played = games_played + 1 WHERE tournament_id = $1 AND user_id = $2`, tournamentID, *blackID)
-		}
-		if whiteID != nil {
-			_, _ = tx.Exec(ctx, `UPDATE tournament_players SET losses = losses + 1, games_played = games_played + 1 WHERE tournament_id = $1 AND user_id = $2`, tournamentID, *whiteID)
+		err = addPlayerResult(ctx, tx, tournamentID, blackID, 1.0, 1, 0, 0)
+		if err == nil {
+			err = addPlayerResult(ctx, tx, tournamentID, whiteID, 0, 0, 0, 1)
 		}
 	case ResultDraw:
-		if whiteID != nil {
-			_, _ = tx.Exec(ctx, `UPDATE tournament_players SET score = score + 0.5, draws = draws + 1, games_played = games_played + 1 WHERE tournament_id = $1 AND user_id = $2`, tournamentID, *whiteID)
+		err = addPlayerResult(ctx, tx, tournamentID, whiteID, 0.5, 0, 1, 0)
+		if err == nil {
+			err = addPlayerResult(ctx, tx, tournamentID, blackID, 0.5, 0, 1, 0)
 		}
-		if blackID != nil {
-			_, _ = tx.Exec(ctx, `UPDATE tournament_players SET score = score + 0.5, draws = draws + 1, games_played = games_played + 1 WHERE tournament_id = $1 AND user_id = $2`, tournamentID, *blackID)
-		}
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "update tournament player score failed", "game_id", gameID, "error", err)
+		return 0, false, err
 	}
 
 	var lockedRoundID int64
@@ -855,21 +905,31 @@ func (r *Repository) UpdatePairingOnGameCompleted(ctx context.Context, gameID st
 	}
 
 	var uncompletedCount int
-	_ = tx.QueryRow(ctx, `SELECT COUNT(*) FROM tournament_pairings WHERE round_id = $1 AND status != 'completed'`, roundID).Scan(&uncompletedCount)
+	err = tx.QueryRow(ctx, `SELECT COUNT(*) FROM tournament_pairings WHERE round_id = $1 AND status != 'completed'`, roundID).Scan(&uncompletedCount)
+	if err != nil {
+		return 0, false, err
+	}
 
-	roundCompleted := false
-	if uncompletedCount == 0 {
-		roundCompleted = true
-		_, _ = tx.Exec(ctx, `UPDATE tournament_rounds SET status = 'completed', completed_at = NOW() WHERE id = $1`, roundID)
+	roundCompleted := uncompletedCount == 0
+	if roundCompleted {
+		_, err = tx.Exec(ctx, `UPDATE tournament_rounds SET status = 'completed', completed_at = NOW() WHERE id = $1`, roundID)
+		if err != nil {
+			return 0, false, err
+		}
 
 		var currentRound, totalRounds int
 		err = tx.QueryRow(ctx, `SELECT current_round, total_rounds FROM tournaments WHERE id = $1`, tournamentID).Scan(&currentRound, &totalRounds)
-		if err == nil {
-			if currentRound >= totalRounds {
-				_, _ = tx.Exec(ctx, `UPDATE tournaments SET status = 'completed', updated_at = NOW() WHERE id = $1`, tournamentID)
-			} else {
-				_, _ = tx.Exec(ctx, `UPDATE tournaments SET current_round = current_round + 1, updated_at = NOW() WHERE id = $1`, tournamentID)
-			}
+		if err != nil {
+			return 0, false, err
+		}
+
+		if currentRound >= totalRounds {
+			_, err = tx.Exec(ctx, `UPDATE tournaments SET status = 'completed', updated_at = NOW() WHERE id = $1`, tournamentID)
+		} else {
+			_, err = tx.Exec(ctx, `UPDATE tournaments SET current_round = current_round + 1, updated_at = NOW() WHERE id = $1`, tournamentID)
+		}
+		if err != nil {
+			return 0, false, err
 		}
 	}
 
@@ -878,6 +938,30 @@ func (r *Repository) UpdatePairingOnGameCompleted(ctx context.Context, gameID st
 	}
 
 	return tournamentID, roundCompleted, nil
+}
+
+func addPlayerResult(ctx context.Context, tx pgx.Tx, tournamentID int64, userID *int64, score float64, wins int, draws int, losses int) error {
+	if userID == nil {
+		return nil
+	}
+
+	_, err := tx.Exec(
+		ctx,
+		`UPDATE tournament_players
+		SET score = score + $3,
+			wins = wins + $4,
+			draws = draws + $5,
+			losses = losses + $6,
+			games_played = games_played + 1
+		WHERE tournament_id = $1 AND user_id = $2`,
+		tournamentID,
+		*userID,
+		score,
+		wins,
+		draws,
+		losses,
+	)
+	return err
 }
 
 func (r *Repository) GetStandings(ctx context.Context, tournamentID int64) ([]*StandingsPlayerResponse, error) {
