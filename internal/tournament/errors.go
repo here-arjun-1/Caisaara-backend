@@ -9,7 +9,7 @@ var (
 	ErrInvalidVisibility    = errors.New("visibility must be public or private")
 	ErrInvalidMinPlayers    = errors.New("min_players must be at least 2 and cannot exceed max_players")
 	ErrInvalidMaxPlayers    = errors.New("max_players must be at least 2")
-	ErrInvalidTotalRounds   = errors.New("total_rounds must be at least 1")
+	ErrInvalidTotalRounds   = errors.New("total_rounds must be between 1 and 50")
 	ErrInvalidTimeControl   = errors.New("time_control is required")
 	ErrUserNotAuthenticated = errors.New("user not authenticated")
 	ErrNotRegistration      = errors.New("tournament is not accepting registrations")

@@ -661,6 +661,10 @@ func (r *Repository) GetSwissPlayers(ctx context.Context, tournamentID int64) ([
 		players = append(players, p)
 	}
 
+	sort.Slice(players, func(i, j int) bool {
+		return players[i].UserID < players[j].UserID
+	})
+
 	return players, nil
 }
 
@@ -842,6 +846,12 @@ func (r *Repository) UpdatePairingOnGameCompleted(ctx context.Context, gameID st
 		if blackID != nil {
 			_, _ = tx.Exec(ctx, `UPDATE tournament_players SET score = score + 0.5, draws = draws + 1, games_played = games_played + 1 WHERE tournament_id = $1 AND user_id = $2`, tournamentID, *blackID)
 		}
+	}
+
+	var lockedRoundID int64
+	err = tx.QueryRow(ctx, `SELECT id FROM tournament_rounds WHERE id = $1 FOR UPDATE`, roundID).Scan(&lockedRoundID)
+	if err != nil {
+		return 0, false, err
 	}
 
 	var uncompletedCount int

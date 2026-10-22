@@ -111,8 +111,12 @@ func (s *TournamentService) CreateTournament(ctx context.Context, userID int64, 
 		return nil, ErrInvalidMinRating
 	}
 
+	if req.TotalRounds < 0 || req.TotalRounds > 50 {
+		return nil, ErrInvalidTotalRounds
+	}
+
 	totalRounds := req.TotalRounds
-	if totalRounds <= 0 {
+	if totalRounds == 0 {
 		totalRounds = 5
 	}
 
@@ -334,6 +338,16 @@ func (s *TournamentService) StartTournament(ctx context.Context, tournamentID in
 		swissPlayers, err := s.Repo.GetSwissPlayers(ctx, tournamentID)
 		if err != nil || len(swissPlayers) < 2 {
 			return nil, ErrNotEnoughPlayers
+		}
+
+		maxRounds := len(swissPlayers) - 1
+		if len(swissPlayers)%2 != 0 {
+			maxRounds = len(swissPlayers)
+		}
+		if t.TotalRounds > maxRounds {
+			if err := s.Repo.UpdateTotalRounds(ctx, tournamentID, maxRounds); err != nil {
+				return nil, err
+			}
 		}
 
 		pairingsResult, err := GenerateSwissPairings(swissPlayers)
