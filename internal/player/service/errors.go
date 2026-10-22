@@ -11,6 +11,6 @@ var (
 	ErrInvalidMode        = errors.New("mode must be one of bullet, blitz, rapid, daily")
 	ErrInvalidPhoto       = errors.New("photo must be a jpeg, png or webp image")
 	ErrPhotoTooLarge      = errors.New("photo can be at most 5000x5000 pixels")
-	ErrInvalidAvatarID    = errors.New("avatar_id must be one of king, queen, rook, bishop, knight, pawn")
+	ErrInvalidAvatarID    = errors.New("avatar_id is not a valid default avatar")
 	ErrInvalidSearchQuery = errors.New("search query must be 2 to 50 characters")
 )
