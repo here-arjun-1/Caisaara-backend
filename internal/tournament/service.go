@@ -286,28 +286,30 @@ func (s *TournamentService) StartTournament(ctx context.Context, tournamentID in
 		return nil, err
 	}
 
-	if err := s.createFirstRound(ctx, t); err != nil {
+	pairings, err := s.createFirstRound(ctx, t)
+	if err != nil {
 		_ = s.Repo.UndoStartTournament(ctx, tournamentID)
 		return nil, err
 	}
 
 	if s.Broadcaster != nil {
 		s.Broadcaster.BroadcastTournamentEvent(tournamentID, map[string]interface{}{
-			"type":  "tournament_round_started",
-			"round": 1,
+			"type":     "tournament_round_started",
+			"round":    1,
+			"pairings": pairings,
 		})
 	}
 
 	return s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
 }
 
-func (s *TournamentService) createFirstRound(ctx context.Context, t *TournamentWithPlayerCount) error {
+func (s *TournamentService) createFirstRound(ctx context.Context, t *TournamentWithPlayerCount) ([]*TournamentPairing, error) {
 	swissPlayers, err := s.Repo.GetSwissPlayers(ctx, t.ID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(swissPlayers) < 2 || len(swissPlayers) < t.MinPlayers {
-		return ErrNotEnoughPlayers
+		return nil, ErrNotEnoughPlayers
 	}
 
 	var pairings []SwissPairingResult
@@ -322,14 +324,14 @@ func (s *TournamentService) createFirstRound(ctx context.Context, t *TournamentW
 
 		schedule, rounds, err := GenerateRoundRobinSchedule(playerIDs)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		pairings = schedule[1]
 		totalRounds = rounds
 	case FormatKnockout:
 		knockoutPairings, rounds, err := GenerateKnockoutRound1(swissPlayers)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		pairings = knockoutPairings
 		totalRounds = rounds
@@ -344,19 +346,18 @@ func (s *TournamentService) createFirstRound(ctx context.Context, t *TournamentW
 
 		swissPairings, err := GenerateSwissPairings(swissPlayers)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		pairings = swissPairings
 	}
 
 	if totalRounds != t.TotalRounds {
 		if err := s.Repo.UpdateTotalRounds(ctx, t.ID, totalRounds); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
-	_, err = s.Repo.SaveRoundPairings(ctx, t.ID, 1, pairings, s.GameRepo)
-	return err
+	return s.Repo.SaveRoundPairings(ctx, t.ID, 1, pairings, s.GameRepo)
 }
 
 func (s *TournamentService) EndTournament(ctx context.Context, tournamentID int64, userID int64) (*int64, error) {
@@ -507,15 +508,16 @@ func (s *TournamentService) OnGameCompleted(ctx context.Context, gameID string, 
 				return err
 			}
 
-			_, err = s.Repo.SaveRoundPairings(ctx, tournamentID, t.CurrentRound, pairingsResult, s.GameRepo)
+			savedPairings, err := s.Repo.SaveRoundPairings(ctx, tournamentID, t.CurrentRound, pairingsResult, s.GameRepo)
 			if err != nil {
 				return err
 			}
 
 			if s.Broadcaster != nil {
 				s.Broadcaster.BroadcastTournamentEvent(tournamentID, map[string]interface{}{
-					"type":  "tournament_round_started",
-					"round": t.CurrentRound,
+					"type":     "tournament_round_started",
+					"round":    t.CurrentRound,
+					"pairings": savedPairings,
 				})
 			}
 		}
