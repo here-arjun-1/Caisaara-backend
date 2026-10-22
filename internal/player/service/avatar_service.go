@@ -12,7 +12,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-var defaultAvatarIDs = []string{"king", "queen", "rook", "bishop", "knight", "pawn"}
+var defaultAvatarIDs = []string{
+	"king", "queen", "rook", "bishop", "knight", "pawn",
+	"black-king", "black-queen", "black-rook", "black-bishop", "black-knight", "black-pawn",
+}
 
 type AvatarRepository interface {
 	GetAvatarURL(ctx context.Context, userID int64) (*string, error)
