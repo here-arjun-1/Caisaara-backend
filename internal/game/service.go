@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +34,16 @@ type GameService interface {
 }
 
 const moveWorkerCount = 16
+
+const firstMoveTimeoutMs = 60000
+
+func ClockStarted(g *Game) bool {
+	parts := strings.Fields(g.Position)
+	if len(parts) < 6 {
+		return true
+	}
+	return parts[5] != "1"
+}
 
 type movePersistTask struct {
 	GameID        string     `json:"game_id"`
@@ -252,7 +263,8 @@ func (s *Service) CheckGameTimeout(ctx context.Context, currentGame *Game) (bool
 	newWhiteTimeMs := currentGame.WhiteTimeMs
 	newBlackTimeMs := currentGame.BlackTimeMs
 
-	if currentGame.TimeControlMode == ModeDaily {
+	switch {
+	case currentGame.TimeControlMode == ModeDaily:
 		dailyLimitMs := currentGame.DailyMoveTimeMs
 		if dailyLimitMs <= 0 {
 			dailyLimitMs = 86400000
@@ -268,7 +280,17 @@ func (s *Service) CheckGameTimeout(ctx context.Context, currentGame *Game) (bool
 				newBlackTimeMs = 0
 			}
 		}
-	} else {
+	case !ClockStarted(currentGame):
+		if elapsedMs >= firstMoveTimeoutMs {
+			timedOut = true
+			endReason = EndReasonAbandonment
+			if isWhiteTurn {
+				result = ResultBlackWin
+			} else {
+				result = ResultWhiteWin
+			}
+		}
+	default:
 		if isWhiteTurn {
 			newWhiteTimeMs = currentGame.WhiteTimeMs - elapsedMs
 			if newWhiteTimeMs <= 0 {
@@ -481,6 +503,9 @@ func (s *Service) MakeMove(
 
 	elapsedMs := now.Sub(turnStartedAt).Milliseconds()
 	if elapsedMs < 0 {
+		elapsedMs = 0
+	}
+	if !ClockStarted(currentGame) {
 		elapsedMs = 0
 	}
 

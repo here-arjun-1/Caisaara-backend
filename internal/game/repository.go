@@ -292,6 +292,12 @@ func (r *Repository) GetTimedOutGames(ctx context.Context, includeDaily bool, li
 		             ELSE COALESCE(g.black_time_ms, 600000)
 		        END * interval '1 millisecond'
 		      ) <= NOW()
+		    )
+		    OR
+		    (
+		      COALESCE(g.time_control_mode, 'rapid') != 'daily'
+		      AND split_part(g.position, ' ', 6) = '1'
+		      AND COALESCE(g.turn_started_at, g.started_at, g.created_at) + ($2::bigint * interval '1 millisecond') <= NOW()
 		    )`
 
 	if includeDaily {
@@ -310,7 +316,7 @@ func (r *Repository) GetTimedOutGames(ctx context.Context, includeDaily bool, li
 		ORDER BY COALESCE(g.turn_started_at, g.started_at, g.created_at) ASC
 		LIMIT $1`
 
-	rows, err := r.DB.Query(ctx, query, limit)
+	rows, err := r.DB.Query(ctx, query, limit, firstMoveTimeoutMs)
 	if err != nil {
 		slog.ErrorContext(ctx, "get timed out games query failed", "error", err)
 		return nil, err

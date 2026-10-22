@@ -869,6 +869,10 @@ func calculateLiveClocks(g *game.Game) (int64, int64, *time.Time) {
 		return dailyLimitMs, remaining, &now
 	}
 
+	if !game.ClockStarted(g) {
+		return whiteTimeMs, blackTimeMs, &now
+	}
+
 	if isWhiteTurn {
 		whiteTimeMs -= elapsedMs
 		if whiteTimeMs < 0 {
