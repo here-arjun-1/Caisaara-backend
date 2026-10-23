@@ -557,7 +557,6 @@ func (h *Handler) readPump(
 			if room != nil {
 				room.SetGame(currentGame)
 			}
-			h.broadcastGameState(ctx, room, currentGame)
 
 		case "offer_draw", "draw_offer", "draw":
 			currentGame, accepted, offererID, err := h.GameService.OfferDraw(
@@ -570,7 +569,9 @@ func (h *Handler) readPump(
 				continue
 			}
 			if accepted {
-				h.broadcastGameState(ctx, room, currentGame)
+				if room != nil {
+					room.SetGame(currentGame)
+				}
 			} else {
 				h.broadcastDrawOffer(ctx, room, client.GameID, offererID)
 			}
@@ -588,7 +589,6 @@ func (h *Handler) readPump(
 			if room != nil {
 				room.SetGame(currentGame)
 			}
-			h.broadcastGameState(ctx, room, currentGame)
 
 		case "decline_draw", "reject_draw", "draw_decline", "draw_reject":
 			_, err := h.GameService.DeclineDraw(
@@ -649,7 +649,6 @@ func (h *Handler) readPump(
 						if room != nil {
 							room.SetGame(currentGame)
 						}
-						h.broadcastGameState(ctx, room, currentGame)
 						claimed = true
 					}
 				}
@@ -820,6 +819,7 @@ func (h *Handler) BroadcastGameState(g *game.Game) {
 	room, exists := h.Hub.Rooms[g.ID]
 	h.Hub.Mutex.RUnlock()
 	if exists && room != nil {
+		room.SetGame(g)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		h.broadcastGameState(ctx, room, g)
@@ -1144,13 +1144,9 @@ func (h *Handler) handleDisconnectTimeout(gameID string, userID int64) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	g, err := h.GameService.EndGameOnDisconnect(ctx, gameID, userID)
-	if err != nil || g == nil {
-		return
-	}
-
-	if room != nil {
-		h.broadcastGameState(ctx, room, g)
+	_, err := h.GameService.EndGameOnDisconnect(ctx, gameID, userID)
+	if err != nil {
+		slog.WarnContext(ctx, "end game on disconnect failed", "game_id", gameID, "user_id", userID, "error", err)
 	}
 }
 
