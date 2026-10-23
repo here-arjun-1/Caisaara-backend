@@ -26,6 +26,7 @@ var ratedModes = []string{
 	game.ModeBullet,
 	game.ModeBlitz,
 	game.ModeRapid,
+	game.ModeDaily,
 }
 
 var likeEscaper = strings.NewReplacer(
@@ -295,13 +296,9 @@ func toModeRatings(p *model.Profile) map[string]dto.ModeRatingResponse {
 
 	for _, mode := range ratedModes {
 		r := findModeRating(p, mode)
-		provisional := false
-		if r.GamesPlayed > 0 {
-			provisional = glicko2.IsProvisional(r.RatingDeviation)
-		}
 		ratings[mode] = dto.ModeRatingResponse{
 			Rating:      r.Rating,
-			Provisional: provisional,
+			Provisional: glicko2.IsProvisional(r.RatingDeviation),
 		}
 	}
 
