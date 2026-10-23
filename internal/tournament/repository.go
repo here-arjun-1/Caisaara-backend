@@ -1168,13 +1168,27 @@ func (r *Repository) UpdateTotalRounds(ctx context.Context, tournamentID int64, 
 }
 
 func (r *Repository) GetRoundWinners(ctx context.Context, tournamentID int64, roundID int64) ([]int64, error) {
+	var timeControlStr string
+	err := r.DB.QueryRow(ctx, `SELECT time_control FROM tournaments WHERE id = $1`, tournamentID).Scan(&timeControlStr)
+	if err != nil {
+		slog.ErrorContext(ctx, "get tournament time control failed", "tournament_id", tournamentID, "error", err)
+		return nil, err
+	}
+	tcMinutes, tcIncrement, _ := parseTimeControl(timeControlStr)
+	mode, _, _, _ := game.ResolveTimeControlMode(tcMinutes, tcIncrement)
+
 	rows, err := r.DB.Query(
 		ctx,
-		`SELECT white_player_id, black_player_id, result, is_bye
-		FROM tournament_pairings
-		WHERE tournament_id = $1 AND round_id = $2 AND status = 'completed'
-		ORDER BY id ASC`,
-		tournamentID, roundID,
+		`SELECT tp.white_player_id, tp.black_player_id, tp.result, tp.is_bye,
+			COALESCE(wr.rating, wu.start_rating, 1200), COALESCE(br.rating, bu.start_rating, 1200)
+		FROM tournament_pairings tp
+		LEFT JOIN users wu ON wu.id = tp.white_player_id
+		LEFT JOIN player_ratings wr ON wr.user_id = tp.white_player_id AND wr.mode = $3
+		LEFT JOIN users bu ON bu.id = tp.black_player_id
+		LEFT JOIN player_ratings br ON br.user_id = tp.black_player_id AND br.mode = $3
+		WHERE tp.tournament_id = $1 AND tp.round_id = $2 AND tp.status = 'completed'
+		ORDER BY tp.id ASC`,
+		tournamentID, roundID, mode,
 	)
 	if err != nil {
 		return nil, err
@@ -1186,7 +1200,8 @@ func (r *Repository) GetRoundWinners(ctx context.Context, tournamentID int64, ro
 		var wID, bID *int64
 		var result *string
 		var isBye bool
-		if err := rows.Scan(&wID, &bID, &result, &isBye); err != nil {
+		var whiteRating, blackRating int
+		if err := rows.Scan(&wID, &bID, &result, &isBye, &whiteRating, &blackRating); err != nil {
 			return nil, err
 		}
 
@@ -1203,7 +1218,9 @@ func (r *Repository) GetRoundWinners(ctx context.Context, tournamentID int64, ro
 					winners = append(winners, *bID)
 				}
 			case ResultDraw:
-				if wID != nil {
+				if bID != nil && blackRating > whiteRating {
+					winners = append(winners, *bID)
+				} else if wID != nil {
 					winners = append(winners, *wID)
 				}
 			}

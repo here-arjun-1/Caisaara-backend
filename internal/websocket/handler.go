@@ -1026,12 +1026,17 @@ func (h *Handler) ConnectTournament(c *gin.Context) {
 			return nil
 		})
 
+		limiter := newWSRateLimiter(10, time.Second)
+
 		for {
 			_, _, err := conn.ReadMessage()
 			if err != nil {
 				break
 			}
 			_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+			if !limiter.allow() {
+				continue
+			}
 			if !h.validateActiveClient(ctx, client) {
 				break
 			}
