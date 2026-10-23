@@ -70,6 +70,8 @@ type Service struct {
 	drawOffers         sync.Map
 	gameLocks          sync.Map
 	moveQueues         [moveWorkerCount]chan movePersistTask
+	pendingMu          sync.Mutex
+	pendingMoves       map[string]int
 }
 
 func (s *Service) getGameLock(gameID string) *sync.Mutex {
@@ -77,9 +79,42 @@ func (s *Service) getGameLock(gameID string) *sync.Mutex {
 	return val.(*sync.Mutex)
 }
 
+func (s *Service) addPendingMove(gameID string) {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	s.pendingMoves[gameID]++
+}
+
+func (s *Service) removePendingMove(gameID string) {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	if s.pendingMoves[gameID] <= 1 {
+		delete(s.pendingMoves, gameID)
+		return
+	}
+	s.pendingMoves[gameID]--
+}
+
+func (s *Service) hasPendingMoves(gameID string) bool {
+	s.pendingMu.Lock()
+	defer s.pendingMu.Unlock()
+	return s.pendingMoves[gameID] > 0
+}
+
+func (s *Service) waitForPendingMoves(gameID string) {
+	for i := 0; i < 100; i++ {
+		if !s.hasPendingMoves(gameID) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	slog.Warn("pending moves not saved in time", "game_id", gameID)
+}
+
 func NewService(repository GameRepository, redisClient ...*redis.Client) GameService {
 	s := &Service{
-		Repository: repository,
+		Repository:   repository,
+		pendingMoves: make(map[string]int),
 	}
 	if len(redisClient) > 0 {
 		s.RedisClient = redisClient[0]
@@ -131,6 +166,7 @@ func (s *Service) enqueueMovePersist(task movePersistTask) {
 			task.ExpectedTurn,
 		)
 		cancel()
+		s.removePendingMove(task.GameID)
 		return
 	}
 	s.moveQueues[idx] <- task
@@ -162,8 +198,10 @@ func (s *Service) processMovePersist(task movePersistTask) {
 		lastErr = err
 		time.Sleep(50 * time.Millisecond)
 	}
+	s.removePendingMove(task.GameID)
 	if lastErr != nil {
 		slog.Error("save move transaction failed in worker after retries", "game_id", task.GameID, "error", lastErr)
+		return
 	}
 	if task.Status == StatusFinished {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -312,6 +350,8 @@ func (s *Service) CheckGameTimeout(ctx context.Context, currentGame *Game) (bool
 		return false, nil
 	}
 
+	s.waitForPendingMoves(currentGame.ID)
+
 	err := s.Repository.UpdateGameState(
 		ctx,
 		currentGame.ID,
@@ -359,17 +399,24 @@ func (s *Service) checkTimeouts(ctx context.Context, includeDaily bool) ([]*Game
 
 	var timedOutGames []*Game
 	for i := range activeGames {
-		g := &activeGames[i]
-		mu := s.getGameLock(g.ID)
+		gameID := activeGames[i].ID
+		mu := s.getGameLock(gameID)
 		mu.Lock()
-		timedOut, err := s.CheckGameTimeout(ctx, g)
+		s.waitForPendingMoves(gameID)
+		latestGame, err := s.Repository.FindGameByID(ctx, gameID)
+		if err != nil {
+			mu.Unlock()
+			slog.ErrorContext(ctx, "find game for timeout check failed", "game_id", gameID, "error", err)
+			continue
+		}
+		timedOut, err := s.CheckGameTimeout(ctx, latestGame)
 		mu.Unlock()
 		if err != nil {
-			slog.ErrorContext(ctx, "check active game timeout failed", "game_id", g.ID, "error", err)
+			slog.ErrorContext(ctx, "check active game timeout failed", "game_id", gameID, "error", err)
 			continue
 		}
 		if timedOut {
-			timedOutGames = append(timedOutGames, g)
+			timedOutGames = append(timedOutGames, latestGame)
 		}
 	}
 
@@ -380,6 +427,8 @@ func (s *Service) ClaimTimeout(ctx context.Context, gameID string) (*Game, error
 	mu := s.getGameLock(gameID)
 	mu.Lock()
 	defer mu.Unlock()
+
+	s.waitForPendingMoves(gameID)
 
 	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
 	if err != nil {
@@ -579,6 +628,7 @@ func (s *Service) MakeMove(
 	currentGame.TurnStartedAt = &now
 	currentGame.LastMove = move
 
+	s.addPendingMove(gameID)
 	s.enqueueMovePersist(movePersistTask{
 		GameID:        gameID,
 		Position:      position,
@@ -611,6 +661,7 @@ func (s *Service) ResignGame(
 	defer mu.Unlock()
 
 	s.drawOffers.Delete(gameID)
+	s.waitForPendingMoves(gameID)
 
 	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
 	if err != nil {
@@ -658,6 +709,7 @@ func (s *Service) ResignGame(
 	currentGame.TurnStartedAt = &now
 
 	s.notifyGameCompleted(ctx, currentGame)
+	s.notifyGameStateUpdated(ctx, currentGame)
 
 	return currentGame, nil
 }
@@ -672,6 +724,7 @@ func (s *Service) DrawGame(
 	defer mu.Unlock()
 
 	s.drawOffers.Delete(gameID)
+	s.waitForPendingMoves(gameID)
 
 	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
 	if err != nil {
@@ -713,6 +766,7 @@ func (s *Service) DrawGame(
 	currentGame.TurnStartedAt = &now
 
 	s.notifyGameCompleted(ctx, currentGame)
+	s.notifyGameStateUpdated(ctx, currentGame)
 
 	return currentGame, nil
 }
@@ -814,9 +868,6 @@ func (s *Service) GetGame(
 	if err != nil {
 		return nil, err
 	}
-	if g.Status == StatusActive {
-		_, _ = s.CheckGameTimeout(ctx, g)
-	}
 	if val, ok := s.drawOffers.Load(gameID); ok {
 		g.DrawOfferedBy = val.(int64)
 	}
@@ -863,6 +914,7 @@ func (s *Service) EndGameOnDisconnect(
 	defer mu.Unlock()
 
 	s.drawOffers.Delete(gameID)
+	s.waitForPendingMoves(gameID)
 
 	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
 	if err != nil {

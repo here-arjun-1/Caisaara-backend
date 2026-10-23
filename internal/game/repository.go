@@ -12,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+var ErrGameAlreadyFinished = errors.New("game is already finished")
+
 type GameRepository interface {
 	CreateGame(ctx context.Context, whitePlayerID int64, blackPlayerID int64, timeControlMinutes int, incrementSeconds int, rated bool) (string, error)
 	CreateGameWithID(ctx context.Context, gameID string, whitePlayerID int64, blackPlayerID int64, timeControlMinutes int, incrementSeconds int, rated bool) (string, error)
@@ -376,7 +378,7 @@ func (r *Repository) UpdateGameState(
 	blackTimeMs int64,
 	turnStartedAt *time.Time,
 ) error {
-	_, err := r.DB.Exec(
+	tag, err := r.DB.Exec(
 		ctx,
 		`UPDATE games
 		SET position = $1,
@@ -391,7 +393,7 @@ func (r *Repository) UpdateGameState(
 				WHEN $2::text = 'finished' THEN NOW()
 				ELSE ended_at
 			END
-		WHERE id = $9`,
+		WHERE id = $9 AND status = 'active'`,
 		position,
 		status,
 		result,
@@ -406,6 +408,10 @@ func (r *Repository) UpdateGameState(
 	if err != nil {
 		slog.ErrorContext(ctx, "update game state failed", "game_id", gameID, "error", err)
 		return err
+	}
+
+	if tag.RowsAffected() == 0 {
+		return ErrGameAlreadyFinished
 	}
 
 	return nil
