@@ -202,8 +202,9 @@ func (r *Repository) FindPairRequest(ctx context.Context, userID int64, otherID 
 	err := r.DB.QueryRow(ctx,
 		`SELECT id, sender_id, status
 		FROM friend_requests
-		WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)`,
-		userID, otherID,
+		WHERE ((sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1))
+			AND status <> $3`,
+		userID, otherID, StatusRejected,
 	).Scan(&request.ID, &request.SenderID, &request.Status)
 
 	if errors.Is(err, pgx.ErrNoRows) {
