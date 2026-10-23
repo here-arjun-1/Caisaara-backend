@@ -21,7 +21,19 @@ func NewPostRepository(db *pgxpool.Pool) *PostRepository {
 const postColumns = `
 	p.id,
 	p.user_id,
+	p.kind,
 	p.body,
+	p.fen,
+	p.game_id,
+	COALESCE(p.game_pgn, ''),
+	COALESCE(p.game_white_name, ''),
+	COALESCE(p.game_black_name, ''),
+	p.game_white_rating,
+	p.game_black_rating,
+	COALESCE(p.game_result, ''),
+	COALESCE(p.game_end_reason, ''),
+	COALESCE(p.game_mode, ''),
+	p.game_played_at,
 	p.created_at,
 	u.username,
 	pr.display_name,
@@ -34,11 +46,25 @@ LEFT JOIN player_profiles pr ON pr.user_id = p.user_id`
 
 func scanPost(row pgx.Row) (*model.Post, error) {
 	var p model.Post
+	var game model.PostGame
+	var gameID *string
 
 	err := row.Scan(
 		&p.ID,
 		&p.UserID,
+		&p.Kind,
 		&p.Body,
+		&p.FEN,
+		&gameID,
+		&game.PGN,
+		&game.WhiteName,
+		&game.BlackName,
+		&game.WhiteRating,
+		&game.BlackRating,
+		&game.Result,
+		&game.EndReason,
+		&game.Mode,
+		&game.PlayedAt,
 		&p.CreatedAt,
 		&p.Author.Username,
 		&p.Author.DisplayName,
@@ -50,19 +76,57 @@ func scanPost(row pgx.Row) (*model.Post, error) {
 		return nil, err
 	}
 
+	if gameID != nil {
+		game.ID = *gameID
+		p.Game = &game
+	}
+
 	return &p, nil
 }
 
-func (r *PostRepository) CreatePost(ctx context.Context, userID int64, body string) (int64, error) {
+func (r *PostRepository) CreatePost(ctx context.Context, post *model.Post) (int64, error) {
 	var id int64
 
+	if post.Game == nil {
+		err := r.DB.QueryRow(
+			ctx,
+			`INSERT INTO posts (user_id, kind, body, fen)
+			VALUES ($1, $2, $3, $4)
+			RETURNING id`,
+			post.UserID,
+			post.Kind,
+			post.Body,
+			post.FEN,
+		).Scan(&id)
+
+		return id, err
+	}
+
+	game := post.Game
 	err := r.DB.QueryRow(
 		ctx,
-		`INSERT INTO posts (user_id, body)
-		VALUES ($1, $2)
+		`INSERT INTO posts (
+			user_id, kind, body, fen,
+			game_id, game_pgn, game_white_name, game_black_name,
+			game_white_rating, game_black_rating, game_result, game_end_reason,
+			game_mode, game_played_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 		RETURNING id`,
-		userID,
-		body,
+		post.UserID,
+		post.Kind,
+		post.Body,
+		post.FEN,
+		game.ID,
+		game.PGN,
+		game.WhiteName,
+		game.BlackName,
+		game.WhiteRating,
+		game.BlackRating,
+		game.Result,
+		game.EndReason,
+		game.Mode,
+		game.PlayedAt,
 	).Scan(&id)
 
 	return id, err

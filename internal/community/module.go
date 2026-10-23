@@ -19,8 +19,9 @@ type Module struct {
 func NewModule(db *pgxpool.Pool) *Module {
 	postRepository := repository.NewPostRepository(db)
 	commentRepository := repository.NewCommentRepository(db)
+	gameRepository := repository.NewGameRepository(db)
 
-	postService := service.NewPostService(postRepository)
+	postService := service.NewPostService(postRepository, gameRepository)
 	commentService := service.NewCommentService(commentRepository, postRepository)
 
 	return &Module{

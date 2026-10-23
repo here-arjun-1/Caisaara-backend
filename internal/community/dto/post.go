@@ -3,7 +3,10 @@ package dto
 import "time"
 
 type CreatePostData struct {
-	Body string `json:"body" binding:"required"`
+	Kind   string `json:"kind" binding:"omitempty,oneof=text game bot_game position"`
+	Body   string `json:"body"`
+	GameID string `json:"game_id"`
+	FEN    string `json:"fen"`
 }
 
 type CreateCommentData struct {
@@ -21,13 +24,16 @@ type AuthorResponse struct {
 }
 
 type PostResponse struct {
-	ID           int64          `json:"id"`
-	Author       AuthorResponse `json:"author"`
-	Body         string         `json:"body"`
-	Reactions    map[string]int `json:"reactions"`
-	MyReaction   *string        `json:"my_reaction"`
-	CommentCount int            `json:"comment_count"`
-	CreatedAt    time.Time      `json:"created_at"`
+	ID           int64             `json:"id"`
+	Author       AuthorResponse    `json:"author"`
+	Kind         string            `json:"kind"`
+	Body         string            `json:"body"`
+	FEN          *string           `json:"fen"`
+	Game         *PostGameResponse `json:"game"`
+	Reactions    map[string]int    `json:"reactions"`
+	MyReaction   *string           `json:"my_reaction"`
+	CommentCount int               `json:"comment_count"`
+	CreatedAt    time.Time         `json:"created_at"`
 }
 
 type FeedResponse struct {
@@ -50,4 +56,17 @@ type CommentListResponse struct {
 type ReactionResponse struct {
 	Reactions  map[string]int `json:"reactions"`
 	MyReaction *string        `json:"my_reaction"`
+}
+
+type PostGameResponse struct {
+	ID          string     `json:"id"`
+	PGN         string     `json:"pgn"`
+	WhiteName   string     `json:"white_name"`
+	BlackName   string     `json:"black_name"`
+	WhiteRating *int       `json:"white_rating"`
+	BlackRating *int       `json:"black_rating"`
+	Result      string     `json:"result"`
+	EndReason   string     `json:"end_reason"`
+	Mode        string     `json:"mode"`
+	PlayedAt    *time.Time `json:"played_at"`
 }

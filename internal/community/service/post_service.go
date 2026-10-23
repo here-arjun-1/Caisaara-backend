@@ -7,6 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/corentings/chess/v2"
 	"github.com/here-arjun-1/Caisaara-backend/internal/community/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/community/model"
 	"github.com/jackc/pgx/v5"
@@ -20,7 +21,7 @@ const (
 )
 
 type PostRepository interface {
-	CreatePost(ctx context.Context, userID int64, body string) (int64, error)
+	CreatePost(ctx context.Context, post *model.Post) (int64, error)
 	FindPostByID(ctx context.Context, viewerID, postID int64) (*model.Post, error)
 	ListPosts(ctx context.Context, viewerID, beforeID int64, limit int) ([]*model.Post, error)
 	FindPostOwner(ctx context.Context, postID int64) (int64, error)
@@ -30,24 +31,62 @@ type PostRepository interface {
 	DeleteReaction(ctx context.Context, postID, userID int64) error
 }
 
-type PostService struct {
-	PostRepository PostRepository
+type GameRepository interface {
+	FindGame(ctx context.Context, gameID string) (*model.GameForPost, error)
+	FindBotGame(ctx context.Context, gameID string) (*model.BotGameForPost, error)
 }
 
-func NewPostService(postRepository PostRepository) *PostService {
+type PostService struct {
+	PostRepository PostRepository
+	GameRepository GameRepository
+}
+
+func NewPostService(postRepository PostRepository, gameRepository GameRepository) *PostService {
 	return &PostService{
 		PostRepository: postRepository,
+		GameRepository: gameRepository,
 	}
 }
 
 func (s *PostService) CreatePost(ctx context.Context, userID int64, req dto.CreatePostData) (*dto.PostResponse, error) {
+	kind := req.Kind
+	if kind == "" {
+		kind = "text"
+	}
+
 	body := strings.TrimSpace(req.Body)
 	length := utf8.RuneCountInString(body)
-	if length < 1 || length > 2000 {
+	if length > 2000 || (kind == "text" && length < 1) {
 		return nil, ErrInvalidBody
 	}
 
-	postID, err := s.PostRepository.CreatePost(ctx, userID, body)
+	post := &model.Post{
+		UserID: userID,
+		Kind:   kind,
+		Body:   body,
+	}
+
+	switch kind {
+	case "position":
+		fen := strings.TrimSpace(req.FEN)
+		if fen == "" || len(fen) > 100 {
+			return nil, ErrInvalidFEN
+		}
+		if _, err := chess.FEN(fen); err != nil {
+			return nil, ErrInvalidFEN
+		}
+		post.FEN = &fen
+	case "game":
+		if err := s.attachGame(ctx, post, req.GameID); err != nil {
+			return nil, err
+		}
+	case "bot_game":
+		if err := s.attachBotGame(ctx, post, req.GameID); err != nil {
+			return nil, err
+		}
+	}
+
+	postID, err := s.PostRepository.CreatePost(ctx, post)
 	if err != nil {
 		slog.Error("create post failed", "error", err)
 		return nil, ErrInternal
@@ -179,6 +218,22 @@ func (s *PostService) reactionSummary(ctx context.Context, postID int64, myReact
 }
 
 func toPostResponse(p *model.Post) dto.PostResponse {
+	var game *dto.PostGameResponse
+	if p.Game != nil {
+		game = &dto.PostGameResponse{
+			ID:          p.Game.ID,
+			PGN:         p.Game.PGN,
+			WhiteName:   p.Game.WhiteName,
+			BlackName:   p.Game.BlackName,
+			WhiteRating: p.Game.WhiteRating,
+			BlackRating: p.Game.BlackRating,
+			Result:      p.Game.Result,
+			EndReason:   p.Game.EndReason,
+			Mode:        p.Game.Mode,
+			PlayedAt:    p.Game.PlayedAt,
+		}
+	}
+
 	return dto.PostResponse{
 		ID: p.ID,
 		Author: dto.AuthorResponse{
@@ -186,7 +241,10 @@ func toPostResponse(p *model.Post) dto.PostResponse {
 			DisplayName: p.Author.DisplayName,
 			AvatarURL:   p.Author.AvatarURL,
 		},
+		Kind:         p.Kind,
 		Body:         p.Body,
+		FEN:          p.FEN,
+		Game:         game,
 		Reactions:    nonNilCounts(p.Reactions),
 		MyReaction:   p.MyReaction,
 		CommentCount: p.CommentCount,
