@@ -25,9 +25,14 @@ type EngineSettings struct {
 
 func SettingsForRating(rating int) EngineSettings {
 	if rating >= minUCIElo {
+		engineElo := rating - 200
+		if engineElo < minUCIElo {
+			engineElo = minUCIElo
+		}
+
 		return EngineSettings{
 			LimitStrength: true,
-			Elo:           rating,
+			Elo:           engineElo,
 			SkillLevel:    20,
 			MoveTimeMs:    moveTimeMs,
 		}
@@ -41,4 +46,20 @@ func SettingsForRating(rating int) EngineSettings {
 		Depth:      depth,
 		MoveTimeMs: moveTimeMs,
 	}
+}
+
+func MistakeChance(rating int) int {
+	if rating >= 2400 {
+		return 0
+	}
+
+	if rating >= minUCIElo {
+		return (2400 - rating) * 10 / (2400 - minUCIElo)
+	}
+
+	if rating < MinRating {
+		rating = MinRating
+	}
+
+	return 10 + (minUCIElo-rating)*30/(minUCIElo-MinRating)
 }
