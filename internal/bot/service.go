@@ -184,13 +184,20 @@ func (s *Service) PlayBotMove(
 		return game, nil
 	}
 
-	engineCtx, cancel := context.WithTimeout(ctx, botMoveTimeout)
-	defer cancel()
+	move := ""
+	if rand.IntN(100) < MistakeChance(game.BotRating) { //nolint:gosec // bot mistakes do not need secure randomness
+		move = randomMove(board)
+	}
 
-	move, err := s.Engine.BestMove(engineCtx, board.FEN(), SettingsForRating(game.BotRating))
-	if err != nil {
-		slog.ErrorContext(ctx, "bot engine failed", "game_id", gameID, "error", err)
-		return nil, err
+	if move == "" {
+		engineCtx, cancel := context.WithTimeout(ctx, botMoveTimeout)
+		defer cancel()
+
+		move, err = s.Engine.BestMove(engineCtx, board.FEN(), SettingsForRating(game.BotRating))
+		if err != nil {
+			slog.ErrorContext(ctx, "bot engine failed", "game_id", gameID, "error", err)
+			return nil, err
+		}
 	}
 
 	if err := board.PushNotationMove(move, chess.UCINotation{}, nil); err != nil {
@@ -306,6 +313,16 @@ func replayMoves(moves []string) (*chess.Game, error) {
 	return board, nil
 }
 
+func randomMove(board *chess.Game) string {
+	moves := board.ValidMoves()
+	if len(moves) == 0 {
+		return ""
+	}
+
+	move := moves[rand.IntN(len(moves))] //nolint:gosec
+	return chess.UCINotation{}.Encode(nil, &move)
+}
+
 func isColorTurn(board *chess.Game, color string) bool {
 	if color == ColorWhite {
 		return board.Position().Turn() == chess.White
@@ -320,7 +337,7 @@ func resolveColor(color string) (string, error) {
 	case ColorBlack:
 		return ColorBlack, nil
 	case ColorRandom:
-		if rand.IntN(2) == 0 { //nolint:gosec // picking a side does not need secure randomness
+		if rand.IntN(2) == 0 { //nolint:gosec
 			return ColorWhite, nil
 		}
 		return ColorBlack, nil
