@@ -16,7 +16,7 @@ type ProfileService interface {
 	GetMyProfile(ctx context.Context, userID int64) (*dto.MyProfileResponse, error)
 	GetPublicProfile(ctx context.Context, username string) (*dto.PublicProfileResponse, error)
 	UpdateMyProfile(ctx context.Context, userID int64, req dto.UpdateProfileData) (*dto.MyProfileResponse, error)
-	GetModeStats(ctx context.Context, username string, mode string) (*dto.ModeStatsResponse, error)
+	GetModeStats(ctx context.Context, username string, mode string, statsRange string) (*dto.ModeStatsResponse, error)
 	SearchPlayers(ctx context.Context, query string) ([]dto.PlayerSearchResult, error)
 }
 
@@ -122,7 +122,7 @@ func writeError(c *gin.Context, err error) {
 }
 
 func (h *ProfileHandler) GetModeStats(c *gin.Context) {
-	stats, err := h.ProfileService.GetModeStats(c.Request.Context(), c.Param("username"), c.Param("mode"))
+	stats, err := h.ProfileService.GetModeStats(c.Request.Context(), c.Param("username"), c.Param("mode"), c.Query("range"))
 	if err != nil {
 		writeError(c, err)
 		return

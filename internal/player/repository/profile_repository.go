@@ -2,8 +2,11 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/player/model"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -133,6 +136,9 @@ func (r *ProfileRepository) FindModeRatings(ctx context.Context, userID int64) (
 			rating,
 			rating_deviation,
 			games_played,
+			wins,
+			losses,
+			draws,
 			best_rating,
 			best_rating_at
 		FROM player_ratings
@@ -152,6 +158,9 @@ func (r *ProfileRepository) FindModeRatings(ctx context.Context, userID int64) (
 			&mr.Rating,
 			&mr.RatingDeviation,
 			&mr.GamesPlayed,
+			&mr.Wins,
+			&mr.Losses,
+			&mr.Draws,
 			&mr.BestRating,
 			&mr.BestRatingAt,
 		)
@@ -170,15 +179,12 @@ func (r *ProfileRepository) FindModeGameStats(ctx context.Context, userID int64,
 	err := r.DB.QueryRow(
 		ctx,
 		`SELECT
-			COUNT(*) FILTER (
-				WHERE (white_player_id = $1 AND result = 'white_win')
-				   OR (black_player_id = $1 AND result = 'black_win')
-			),
-			COUNT(*) FILTER (
-				WHERE (white_player_id = $1 AND result = 'black_win')
-				   OR (black_player_id = $1 AND result = 'white_win')
-			),
-			COUNT(*) FILTER (WHERE result = 'draw')
+			COUNT(*) FILTER (WHERE white_player_id = $1 AND result = 'white_win'),
+			COUNT(*) FILTER (WHERE white_player_id = $1 AND result = 'black_win'),
+			COUNT(*) FILTER (WHERE white_player_id = $1 AND result = 'draw'),
+			COUNT(*) FILTER (WHERE black_player_id = $1 AND result = 'black_win'),
+			COUNT(*) FILTER (WHERE black_player_id = $1 AND result = 'white_win'),
+			COUNT(*) FILTER (WHERE black_player_id = $1 AND result = 'draw')
 		FROM games
 		WHERE (white_player_id = $1 OR black_player_id = $1)
 		  AND time_control_mode = $2
@@ -187,9 +193,12 @@ func (r *ProfileRepository) FindModeGameStats(ctx context.Context, userID int64,
 		userID,
 		mode,
 	).Scan(
-		&s.Wins,
-		&s.Losses,
-		&s.Draws,
+		&s.WhiteWins,
+		&s.WhiteLosses,
+		&s.WhiteDraws,
+		&s.BlackWins,
+		&s.BlackLosses,
+		&s.BlackDraws,
 	)
 
 	if err != nil {
@@ -247,6 +256,145 @@ func (r *ProfileRepository) FindRecentGamesByMode(ctx context.Context, userID in
 	}
 
 	return games, rows.Err()
+}
+
+func (r *ProfileRepository) FindRatingHistory(ctx context.Context, userID int64, mode string, since time.Time) ([]model.RatingPoint, error) {
+	rows, err := r.DB.Query(
+		ctx,
+		`SELECT DISTINCT ON (game_date) game_date, rating
+		FROM (
+			SELECT
+				to_char(ended_at AT TIME ZONE 'UTC', 'YYYY-MM-DD') AS game_date,
+				CASE WHEN white_player_id = $1 THEN white_rating_after ELSE black_rating_after END AS rating,
+				ended_at
+			FROM games
+			WHERE (white_player_id = $1 OR black_player_id = $1)
+			  AND time_control_mode = $2
+			  AND rated = true
+			  AND status = 'finished'
+			  AND ended_at >= $3
+		) t
+		WHERE rating IS NOT NULL
+		ORDER BY game_date, ended_at DESC`,
+		userID,
+		mode,
+		since,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var points []model.RatingPoint
+	for rows.Next() {
+		var p model.RatingPoint
+		if err := rows.Scan(&p.Date, &p.Rating); err != nil {
+			return nil, err
+		}
+		points = append(points, p)
+	}
+
+	return points, rows.Err()
+}
+
+func (r *ProfileRepository) FindStartRating(ctx context.Context, userID int64, mode string, since time.Time) (*int, error) {
+	var rating int
+
+	err := r.DB.QueryRow(
+		ctx,
+		`SELECT rating
+		FROM (
+			SELECT
+				CASE WHEN white_player_id = $1 THEN white_rating_before ELSE black_rating_before END AS rating,
+				ended_at
+			FROM games
+			WHERE (white_player_id = $1 OR black_player_id = $1)
+			  AND time_control_mode = $2
+			  AND rated = true
+			  AND status = 'finished'
+			  AND ended_at >= $3
+		) t
+		WHERE rating IS NOT NULL
+		ORDER BY ended_at
+		LIMIT 1`,
+		userID,
+		mode,
+		since,
+	).Scan(&rating)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &rating, nil
+}
+
+func (r *ProfileRepository) FindLowestRating(ctx context.Context, userID int64, mode string) (*model.LowestRating, error) {
+	var lowest model.LowestRating
+
+	err := r.DB.QueryRow(
+		ctx,
+		`SELECT rating, ended_at
+		FROM (
+			SELECT
+				CASE WHEN white_player_id = $1 THEN white_rating_after ELSE black_rating_after END AS rating,
+				ended_at
+			FROM games
+			WHERE (white_player_id = $1 OR black_player_id = $1)
+			  AND time_control_mode = $2
+			  AND rated = true
+			  AND status = 'finished'
+		) t
+		WHERE rating IS NOT NULL
+		ORDER BY rating, ended_at
+		LIMIT 1`,
+		userID,
+		mode,
+	).Scan(&lowest.Rating, &lowest.At)
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	return &lowest, nil
+}
+
+func (r *ProfileRepository) FindGameResults(ctx context.Context, userID int64, mode string) ([]model.GameResult, error) {
+	rows, err := r.DB.Query(
+		ctx,
+		`SELECT
+			CASE WHEN white_player_id = $1 THEN 'white' ELSE 'black' END,
+			COALESCE(result, '')
+		FROM games
+		WHERE (white_player_id = $1 OR black_player_id = $1)
+		  AND time_control_mode = $2
+		  AND rated = true
+		  AND status = 'finished'
+		ORDER BY ended_at ASC NULLS FIRST`,
+		userID,
+		mode,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var results []model.GameResult
+	for rows.Next() {
+		var g model.GameResult
+		if err := rows.Scan(&g.Color, &g.Result); err != nil {
+			return nil, err
+		}
+		results = append(results, g)
+	}
+
+	return results, rows.Err()
 }
 
 func (r *ProfileRepository) SearchByUsername(ctx context.Context, prefix string, limit int) ([]model.Profile, error) {
