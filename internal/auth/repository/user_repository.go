@@ -20,6 +20,7 @@ func (r *UserRepository) FindUserByID(ctx context.Context, id int64) (*model.Use
 			id,
 			username,
 			email,
+			skill_level,
 			COALESCE(password_version, 1)
 		FROM users
 		WHERE id = $1`,
@@ -28,6 +29,7 @@ func (r *UserRepository) FindUserByID(ctx context.Context, id int64) (*model.Use
 		&user.ID,
 		&user.Username,
 		&user.Email,
+		&user.SkillLevel,
 		&user.PasswordVersion,
 	)
 	if err != nil {
@@ -151,7 +153,7 @@ func (r *UserRepository) SetInitialRating(ctx context.Context, userID int64, lev
 	tag, err := r.DB.Exec(
 		ctx,
 		`UPDATE users
-		SET skill_level = $1, rating = $2
+		SET skill_level = $1, rating = $2, start_rating = $2
 		WHERE id = $3 AND skill_level IS NULL`,
 		level,
 		rating,

@@ -337,10 +337,10 @@ func (r *Repository) GetLeaderboard(ctx context.Context, clubID string, mode str
 	rows, err := r.DB.Query(
 		ctx,
 		`SELECT
-			RANK() OVER (ORDER BY COALESCE(pr.rating, u.rating) DESC) AS rank,
+			RANK() OVER (ORDER BY COALESCE(pr.rating, u.start_rating) DESC) AS rank,
 			u.id,
 			u.username,
-			COALESCE(pr.rating, u.rating) AS rating
+			COALESCE(pr.rating, u.start_rating) AS rating
 		FROM club_members m
 		JOIN users u ON u.id = m.user_id
 		LEFT JOIN player_ratings pr ON pr.user_id = m.user_id AND pr.mode = $2

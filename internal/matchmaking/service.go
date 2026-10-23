@@ -42,6 +42,7 @@ const queueTTL = 10 * time.Minute
 
 type RatingFinder interface {
 	GetRatingForMode(ctx context.Context, userID int64, mode string) (int, error)
+	HasPickedLevel(ctx context.Context, userID int64) (bool, error)
 }
 
 type TiltChecker interface {
@@ -93,6 +94,17 @@ func (s *Service) Join(
 
 	if !isAllowedTimeControl(timeControlMinutes, incrementSeconds) {
 		return nil, ErrInvalidTimeControl
+	}
+
+	if rated {
+		picked, err := s.RatingFinder.HasPickedLevel(ctx, userID)
+		if err != nil {
+			slog.ErrorContext(ctx, "check picked level failed", "error", err, "user_id", userID)
+			return nil, ErrInternal
+		}
+		if !picked {
+			return nil, ErrLevelNotPicked
+		}
 	}
 
 	if rated && !ignoreTilt {

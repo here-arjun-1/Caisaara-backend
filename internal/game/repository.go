@@ -23,7 +23,6 @@ type GameRepository interface {
 	SaveMoveTx(ctx context.Context, gameID string, position string, status string, result string, endReason string, currentTurn string, whiteTimeMs int64, blackTimeMs int64, turnStartedAt *time.Time, move *GameMove, expectedTurn ...string) error
 	GetMoves(ctx context.Context, gameID string) ([]GameMove, error)
 	GetPlayerGames(ctx context.Context, playerID int64) ([]Game, error)
-	EnforceRetention(ctx context.Context, playerID int64) error
 	DeleteGameWithMoves(ctx context.Context, gameID string) error
 	Begin(ctx context.Context) (pgx.Tx, error)
 }
@@ -686,7 +685,8 @@ func (r *Repository) GetPlayerGames(
 		LEFT JOIN users uw ON uw.id = g.white_player_id
 		LEFT JOIN users ub ON ub.id = g.black_player_id
 		WHERE g.white_player_id = $1 OR g.black_player_id = $1
-		ORDER BY g.created_at DESC`,
+		ORDER BY g.created_at DESC
+		LIMIT 50`,
 		playerID,
 	)
 	if err != nil {
@@ -787,49 +787,6 @@ func (r *Repository) DeleteGameWithMoves(
 	if err := tx.Commit(ctx); err != nil {
 		slog.ErrorContext(ctx, "commit transaction failed for delete game", "game_id", gameID, "error", err)
 		return err
-	}
-
-	return nil
-}
-
-func (r *Repository) EnforceRetention(
-	ctx context.Context,
-	playerID int64,
-) error {
-	rows, err := r.DB.Query(
-		ctx,
-		`SELECT id
-		FROM games
-		WHERE (white_player_id = $1 OR black_player_id = $1)
-		  AND status = 'finished'
-		ORDER BY COALESCE(ended_at, started_at, created_at) DESC, id DESC`,
-		playerID,
-	)
-	if err != nil {
-		slog.ErrorContext(ctx, "enforce retention query failed", "player_id", playerID, "error", err)
-		return err
-	}
-
-	var completedGameIDs []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
-		}
-		completedGameIDs = append(completedGameIDs, id)
-	}
-	rows.Close()
-
-	if len(completedGameIDs) <= 10 {
-		return nil
-	}
-
-	for _, gameIDToDelete := range completedGameIDs[10:] {
-		if err := r.DeleteGameWithMoves(ctx, gameIDToDelete); err != nil {
-			slog.ErrorContext(ctx, "enforce retention delete failed", "game_id", gameIDToDelete, "player_id", playerID, "error", err)
-			return err
-		}
 	}
 
 	return nil

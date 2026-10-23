@@ -35,6 +35,7 @@ func (r *Repository) ClaimGame(ctx context.Context, tx pgx.Tx, gameID string) (*
 		  AND rating_applied = false
 		  AND time_control_mode IN ('bullet', 'blitz', 'rapid', 'daily')
 		  AND result IN ('white_win', 'black_win', 'draw')
+		  AND NOT (COALESCE(end_reason, '') = 'abandonment' AND split_part(position, ' ', 6) = '1')
 		RETURNING white_player_id, black_player_id, time_control_mode, result`,
 		gameID,
 	).Scan(
@@ -60,7 +61,7 @@ func (r *Repository) LockRatings(ctx context.Context, tx pgx.Tx, mode string, wh
 	_, err := tx.Exec(
 		ctx,
 		`INSERT INTO player_ratings (user_id, mode, rating)
-		SELECT id, $2, rating
+		SELECT id, $2, start_rating
 		FROM users
 		WHERE id = ANY($1)
 		ORDER BY id
@@ -85,7 +86,8 @@ func (r *Repository) LockRatings(ctx context.Context, tx pgx.Tx, mode string, wh
 			losses,
 			draws,
 			best_rating,
-			best_rating_at
+			best_rating_at,
+			updated_at
 		FROM player_ratings
 		WHERE mode = $2 AND user_id = ANY($1)
 		ORDER BY user_id
@@ -113,6 +115,7 @@ func (r *Repository) LockRatings(ctx context.Context, tx pgx.Tx, mode string, wh
 			&pr.Draws,
 			&pr.BestRating,
 			&pr.BestRatingAt,
+			&pr.UpdatedAt,
 		)
 		if err != nil {
 			return nil, nil, err
@@ -170,7 +173,7 @@ func (r *Repository) GetRatingForMode(ctx context.Context, userID int64, mode st
 
 	err := r.DB.QueryRow(
 		ctx,
-		`SELECT COALESCE(pr.rating, u.rating)
+		`SELECT COALESCE(pr.rating, u.start_rating)
 		FROM users u
 		LEFT JOIN player_ratings pr ON pr.user_id = u.id AND pr.mode = $2
 		WHERE u.id = $1`,
@@ -184,18 +187,71 @@ func (r *Repository) GetRatingForMode(ctx context.Context, userID int64, mode st
 	return rating, nil
 }
 
-func (r *Repository) SaveOverallRating(ctx context.Context, tx pgx.Tx, userID int64, rating int, rd float64) error {
+func (r *Repository) HasPickedLevel(ctx context.Context, userID int64) (bool, error) {
+	var picked bool
+
+	err := r.DB.QueryRow(
+		ctx,
+		`SELECT skill_level IS NOT NULL FROM users WHERE id = $1`,
+		userID,
+	).Scan(&picked)
+	if err != nil {
+		return false, err
+	}
+
+	return picked, nil
+}
+
+func (r *Repository) SaveOverallRating(ctx context.Context, tx pgx.Tx, userID int64) error {
 	_, err := tx.Exec(
 		ctx,
-		`UPDATE users
-		SET rating = $2,
-		    rating_deviation = $3
-		WHERE id = $1`,
+		`UPDATE users u
+		SET rating = pr.rating,
+		    rating_deviation = pr.rating_deviation
+		FROM (
+			SELECT rating, rating_deviation
+			FROM player_ratings
+			WHERE user_id = $1
+			ORDER BY games_played DESC, updated_at DESC
+			LIMIT 1
+		) pr
+		WHERE u.id = $1`,
 		userID,
-		rating,
-		rd,
 	)
 	return err
+}
+
+func (r *Repository) FindGamesWithoutRating(ctx context.Context) ([]string, error) {
+	rows, err := r.DB.Query(
+		ctx,
+		`SELECT id::text
+		FROM games
+		WHERE status = 'finished'
+		  AND rated = true
+		  AND rating_applied = false
+		  AND time_control_mode IN ('bullet', 'blitz', 'rapid', 'daily')
+		  AND result IN ('white_win', 'black_win', 'draw')
+		  AND NOT (COALESCE(end_reason, '') = 'abandonment' AND split_part(position, ' ', 6) = '1')
+		  AND ended_at < NOW() - interval '1 minute'
+		  AND ended_at > NOW() - interval '1 day'
+		ORDER BY ended_at
+		LIMIT 100`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var gameIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		gameIDs = append(gameIDs, id)
+	}
+
+	return gameIDs, rows.Err()
 }
 
 func (r *Repository) SaveGameRatings(

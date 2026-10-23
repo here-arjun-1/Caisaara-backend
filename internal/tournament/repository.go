@@ -405,7 +405,7 @@ func (r *Repository) GetPlayerRating(ctx context.Context, userID int64, mode str
 	var rating int
 	err := r.DB.QueryRow(
 		ctx,
-		`SELECT COALESCE(pr.rating, u.rating, 1200)
+		`SELECT COALESCE(pr.rating, u.start_rating, 1200)
 		FROM users u
 		LEFT JOIN player_ratings pr ON pr.user_id = u.id AND pr.mode = $2
 		WHERE u.id = $1`,
@@ -628,7 +628,7 @@ func (r *Repository) GetSwissPlayers(ctx context.Context, tournamentID int64) ([
 
 	rows, err := r.DB.Query(
 		ctx,
-		`SELECT tp.user_id, COALESCE(pr.rating, u.rating, 1200) AS rating, tp.score, tp.wins, tp.draws, tp.losses, tp.games_played
+		`SELECT tp.user_id, COALESCE(pr.rating, u.start_rating, 1200) AS rating, tp.score, tp.wins, tp.draws, tp.losses, tp.games_played
 		FROM tournament_players tp
 		LEFT JOIN users u ON tp.user_id = u.id
 		LEFT JOIN player_ratings pr ON pr.user_id = tp.user_id AND pr.mode = $2

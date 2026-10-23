@@ -8,6 +8,7 @@ type Profile struct {
 	Email           string
 	Rating          *int
 	RatingDeviation float64
+	StartRating     int
 	SkillLevel      *string
 	CreatedAt       time.Time
 	DisplayName     *string

@@ -17,4 +17,5 @@ var (
 	ErrNotYourGame        = errors.New("you are not playing this game")
 	ErrGameNotActive      = errors.New("game is not active")
 	ErrWatchLinkNotFound  = errors.New("watch link not found or expired")
+	ErrLevelNotPicked     = errors.New("pick your level before playing rated games")
 )
