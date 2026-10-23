@@ -40,6 +40,9 @@ type PublicProfileResponse struct {
 type ModeRatingResponse struct {
 	Rating      int  `json:"rating"`
 	Provisional bool `json:"provisional"`
+	Wins        int  `json:"wins"`
+	Losses      int  `json:"losses"`
+	Draws       int  `json:"draws"`
 }
 
 type RecentGameResponse struct {
@@ -51,18 +54,38 @@ type RecentGameResponse struct {
 	EndedAt          *time.Time `json:"ended_at"`
 }
 
+type RecordResponse struct {
+	Wins   int `json:"wins"`
+	Losses int `json:"losses"`
+	Draws  int `json:"draws"`
+}
+
+type RatingPointResponse struct {
+	Date   string `json:"date"`
+	Rating int    `json:"rating"`
+}
+
 type ModeStatsResponse struct {
-	Mode         string               `json:"mode"`
-	Rating       int                  `json:"rating"`
-	Provisional  bool                 `json:"provisional"`
-	BestRating   *int                 `json:"best_rating"`
-	BestRatingAt *time.Time           `json:"best_rating_at"`
-	GamesPlayed  int                  `json:"games_played"`
-	Wins         int                  `json:"wins"`
-	Losses       int                  `json:"losses"`
-	Draws        int                  `json:"draws"`
-	WinPercent   int                  `json:"win_percent"`
-	RecentGames  []RecentGameResponse `json:"recent_games"`
+	Mode           string                `json:"mode"`
+	Range          string                `json:"range"`
+	Rating         int                   `json:"rating"`
+	Provisional    bool                  `json:"provisional"`
+	BestRating     *int                  `json:"best_rating"`
+	BestRatingAt   *time.Time            `json:"best_rating_at"`
+	LowestRating   *int                  `json:"lowest_rating"`
+	LowestRatingAt *time.Time            `json:"lowest_rating_at"`
+	StartRating    int                   `json:"start_rating"`
+	GamesPlayed    int                   `json:"games_played"`
+	Wins           int                   `json:"wins"`
+	Losses         int                   `json:"losses"`
+	Draws          int                   `json:"draws"`
+	WinPercent     int                   `json:"win_percent"`
+	AsWhite        RecordResponse        `json:"as_white"`
+	AsBlack        RecordResponse        `json:"as_black"`
+	CurrentStreak  int                   `json:"current_streak"`
+	BestStreak     int                   `json:"best_streak"`
+	RatingHistory  []RatingPointResponse `json:"rating_history"`
+	RecentGames    []RecentGameResponse  `json:"recent_games"`
 }
 
 type PlayerSearchResult struct {

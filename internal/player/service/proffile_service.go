@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
@@ -15,11 +16,12 @@ import (
 )
 
 const (
-	defaultRating    = 1200
-	recentGamesLimit = 10
-	searchLimit      = 10
-	minSearchLength  = 2
-	maxSearchLength  = 50
+	defaultRating     = 1200
+	defaultStatsRange = "30d"
+	recentGamesLimit  = 10
+	searchLimit       = 10
+	minSearchLength   = 2
+	maxSearchLength   = 50
 )
 
 var ratedModes = []string{
@@ -42,6 +44,10 @@ type ProfileRepository interface {
 	FindModeRatings(ctx context.Context, userID int64) ([]model.ModeRating, error)
 	FindModeGameStats(ctx context.Context, userID int64, mode string) (*model.ModeGameStats, error)
 	FindRecentGamesByMode(ctx context.Context, userID int64, mode string, limit int) ([]model.RecentGame, error)
+	FindRatingHistory(ctx context.Context, userID int64, mode string, since time.Time) ([]model.RatingPoint, error)
+	FindStartRating(ctx context.Context, userID int64, mode string, since time.Time) (*int, error)
+	FindLowestRating(ctx context.Context, userID int64, mode string) (*model.LowestRating, error)
+	FindGameResults(ctx context.Context, userID int64, mode string) ([]model.GameResult, error)
 	SearchByUsername(ctx context.Context, prefix string, limit int) ([]model.Profile, error)
 }
 
@@ -212,10 +218,20 @@ func isCountryCode(v string) bool {
 	return true
 }
 
-func (h *ProfileService) GetModeStats(ctx context.Context, username string, mode string) (*dto.ModeStatsResponse, error) {
+func (h *ProfileService) GetModeStats(ctx context.Context, username string, mode string, statsRange string) (*dto.ModeStatsResponse, error) {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	if !isRatedMode(mode) {
 		return nil, ErrInvalidMode
+	}
+
+	statsRange = strings.ToLower(strings.TrimSpace(statsRange))
+	if statsRange == "" {
+		statsRange = defaultStatsRange
+	}
+
+	since, ok := rangeStart(statsRange)
+	if !ok {
+		return nil, ErrInvalidRange
 	}
 
 	username = strings.ToLower(strings.TrimSpace(username))
@@ -245,10 +261,48 @@ func (h *ProfileService) GetModeStats(ctx context.Context, username string, mode
 		return nil, ErrInternal
 	}
 
-	gamesPlayed := stats.Wins + stats.Losses + stats.Draws
+	history, err := h.ProfileRepository.FindRatingHistory(ctx, p.UserID, mode, since)
+	if err != nil {
+		slog.Error("find rating history failed", "error", err)
+		return nil, ErrInternal
+	}
+
+	startRating, err := h.ProfileRepository.FindStartRating(ctx, p.UserID, mode, since)
+	if err != nil {
+		slog.Error("find start rating failed", "error", err)
+		return nil, ErrInternal
+	}
+
+	lowest, err := h.ProfileRepository.FindLowestRating(ctx, p.UserID, mode)
+	if err != nil {
+		slog.Error("find lowest rating failed", "error", err)
+		return nil, ErrInternal
+	}
+
+	results, err := h.ProfileRepository.FindGameResults(ctx, p.UserID, mode)
+	if err != nil {
+		slog.Error("find game results failed", "error", err)
+		return nil, ErrInternal
+	}
+
+	wins := stats.WhiteWins + stats.BlackWins
+	losses := stats.WhiteLosses + stats.BlackLosses
+	draws := stats.WhiteDraws + stats.BlackDraws
+
+	gamesPlayed := wins + losses + draws
 	winPercent := 0
 	if gamesPlayed > 0 {
-		winPercent = stats.Wins * 100 / gamesPlayed
+		winPercent = wins * 100 / gamesPlayed
+	}
+
+	currentStreak, bestStreak := winStreaks(results)
+
+	ratingHistory := make([]dto.RatingPointResponse, 0, len(history))
+	for _, point := range history {
+		ratingHistory = append(ratingHistory, dto.RatingPointResponse{
+			Date:   point.Date,
+			Rating: point.Rating,
+		})
 	}
 
 	recentGames := make([]dto.RecentGameResponse, 0, len(games))
@@ -265,19 +319,85 @@ func (h *ProfileService) GetModeStats(ctx context.Context, username string, mode
 
 	r := findModeRating(p, mode)
 
+	start := r.Rating
+	if startRating != nil {
+		start = *startRating
+	}
+
+	var lowestRating *int
+	var lowestRatingAt *time.Time
+	if lowest != nil {
+		lowestRating = &lowest.Rating
+		lowestRatingAt = lowest.At
+	}
+
 	return &dto.ModeStatsResponse{
-		Mode:         mode,
-		Rating:       r.Rating,
-		Provisional:  glicko2.IsProvisional(r.RatingDeviation),
-		BestRating:   r.BestRating,
-		BestRatingAt: r.BestRatingAt,
-		GamesPlayed:  gamesPlayed,
-		Wins:         stats.Wins,
-		Losses:       stats.Losses,
-		Draws:        stats.Draws,
-		WinPercent:   winPercent,
-		RecentGames:  recentGames,
+		Mode:           mode,
+		Range:          statsRange,
+		Rating:         r.Rating,
+		Provisional:    glicko2.IsProvisional(r.RatingDeviation),
+		BestRating:     r.BestRating,
+		BestRatingAt:   r.BestRatingAt,
+		LowestRating:   lowestRating,
+		LowestRatingAt: lowestRatingAt,
+		StartRating:    start,
+		GamesPlayed:    gamesPlayed,
+		Wins:           wins,
+		Losses:         losses,
+		Draws:          draws,
+		WinPercent:     winPercent,
+		AsWhite: dto.RecordResponse{
+			Wins:   stats.WhiteWins,
+			Losses: stats.WhiteLosses,
+			Draws:  stats.WhiteDraws,
+		},
+		AsBlack: dto.RecordResponse{
+			Wins:   stats.BlackWins,
+			Losses: stats.BlackLosses,
+			Draws:  stats.BlackDraws,
+		},
+		CurrentStreak: currentStreak,
+		BestStreak:    bestStreak,
+		RatingHistory: ratingHistory,
+		RecentGames:   recentGames,
 	}, nil
+}
+
+func rangeStart(statsRange string) (time.Time, bool) {
+	now := time.Now()
+
+	switch statsRange {
+	case "7d":
+		return now.AddDate(0, 0, -7), true
+	case "30d":
+		return now.AddDate(0, 0, -30), true
+	case "90d":
+		return now.AddDate(0, 0, -90), true
+	case "1y":
+		return now.AddDate(-1, 0, 0), true
+	case "all":
+		return time.Unix(0, 0), true
+	}
+
+	return time.Time{}, false
+}
+
+func winStreaks(results []model.GameResult) (int, int) {
+	current := 0
+	best := 0
+
+	for _, g := range results {
+		if gameOutcome(g.Color, g.Result) == "win" {
+			current++
+			if current > best {
+				best = current
+			}
+		} else {
+			current = 0
+		}
+	}
+
+	return current, best
 }
 
 func (h *ProfileService) loadRatings(ctx context.Context, p *model.Profile) error {
@@ -299,6 +419,9 @@ func toModeRatings(p *model.Profile) map[string]dto.ModeRatingResponse {
 		ratings[mode] = dto.ModeRatingResponse{
 			Rating:      r.Rating,
 			Provisional: glicko2.IsProvisional(r.RatingDeviation),
+			Wins:        r.Wins,
+			Losses:      r.Losses,
+			Draws:       r.Draws,
 		}
 	}
 
