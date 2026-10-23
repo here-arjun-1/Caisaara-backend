@@ -167,8 +167,6 @@ func (s *Service) processMovePersist(task movePersistTask) {
 	}
 	if task.Status == StatusFinished {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		_ = s.Repository.EnforceRetention(ctx, task.WhitePlayerID)
-		_ = s.Repository.EnforceRetention(ctx, task.BlackPlayerID)
 		s.notifyGameCompleted(ctx, task.Game)
 		s.notifyGameStateUpdated(ctx, task.Game)
 		cancel()
@@ -330,9 +328,6 @@ func (s *Service) CheckGameTimeout(ctx context.Context, currentGame *Game) (bool
 		slog.ErrorContext(ctx, "update game state on timeout failed", "game_id", currentGame.ID, "error", err)
 		return false, err
 	}
-
-	_ = s.Repository.EnforceRetention(ctx, currentGame.WhitePlayerID)
-	_ = s.Repository.EnforceRetention(ctx, currentGame.BlackPlayerID)
 
 	currentGame.Status = StatusFinished
 	currentGame.Result = result
@@ -657,9 +652,6 @@ func (s *Service) ResignGame(
 		return nil, err
 	}
 
-	_ = s.Repository.EnforceRetention(ctx, currentGame.WhitePlayerID)
-	_ = s.Repository.EnforceRetention(ctx, currentGame.BlackPlayerID)
-
 	currentGame.Status = status
 	currentGame.Result = result
 	currentGame.EndReason = endReason
@@ -714,9 +706,6 @@ func (s *Service) DrawGame(
 	if err != nil {
 		return nil, err
 	}
-
-	_ = s.Repository.EnforceRetention(ctx, currentGame.WhitePlayerID)
-	_ = s.Repository.EnforceRetention(ctx, currentGame.BlackPlayerID)
 
 	currentGame.Status = status
 	currentGame.Result = result
@@ -849,7 +838,6 @@ func (s *Service) GetPlayerGames(
 	ctx context.Context,
 	playerID int64,
 ) ([]Game, error) {
-	_ = s.Repository.EnforceRetention(ctx, playerID)
 	return s.Repository.GetPlayerGames(ctx, playerID)
 }
 
@@ -948,9 +936,6 @@ func (s *Service) EndGameOnDisconnect(
 	if err != nil {
 		return nil, err
 	}
-
-	_ = s.Repository.EnforceRetention(ctx, currentGame.WhitePlayerID)
-	_ = s.Repository.EnforceRetention(ctx, currentGame.BlackPlayerID)
 
 	currentGame.Status = status
 	currentGame.Result = result

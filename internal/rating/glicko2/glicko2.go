@@ -64,6 +64,16 @@ func Update(p Player, results []Result) Player {
 	}
 }
 
+func AddInactiveDays(p Player, days int) Player {
+	for i := 0; i < days; i++ {
+		if p.RD >= DefaultRD {
+			break
+		}
+		p = Update(p, nil)
+	}
+	return p
+}
+
 func IsProvisional(rd float64) bool {
 	return rd > ProvisionalRD
 }

@@ -208,6 +208,7 @@ func run() error {
 	matcher.Start(appCtx)
 	tournament.StartTournamentCleanup(appCtx, tournamentRepo, 24*time.Hour)
 	gameService.StartTimeoutChecker(appCtx, 1*time.Second)
+	ratingService.StartMissedRatingsChecker(appCtx, 1*time.Minute)
 	wsHandler.StartActiveAuthChecker(appCtx, 5*time.Second)
 
 	srv := &http.Server{

@@ -16,7 +16,6 @@ import (
 )
 
 const (
-	defaultRating     = 1200
 	defaultStatsRange = "30d"
 	recentGamesLimit  = 10
 	searchLimit       = 10
@@ -437,7 +436,7 @@ func findModeRating(p *model.Profile, mode string) model.ModeRating {
 
 	return model.ModeRating{
 		Mode:            mode,
-		Rating:          defaultRating,
+		Rating:          p.StartRating,
 		RatingDeviation: glicko2.DefaultRD,
 	}
 }

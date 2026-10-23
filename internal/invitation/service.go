@@ -93,6 +93,22 @@ func (s *Service) CreateInvite(
 		}
 	}
 
+	isRated := true
+	if len(rated) > 0 {
+		isRated = rated[0]
+	}
+
+	if isRated {
+		creator, err := s.UserFinder.FindUserByID(ctx, userID)
+		if err != nil {
+			slog.ErrorContext(ctx, "find invite creator failed", "error", err, "user_id", userID)
+			return nil, ErrInternal
+		}
+		if creator.SkillLevel == nil {
+			return nil, ErrLevelNotPicked
+		}
+	}
+
 	code, err := generateInviteCode()
 	if err != nil {
 		slog.ErrorContext(ctx, "generate invite code failed", "error", err)
@@ -100,11 +116,6 @@ func (s *Service) CreateInvite(
 	}
 
 	gameID := uuid.New().String()
-
-	isRated := true
-	if len(rated) > 0 {
-		isRated = rated[0]
-	}
 
 	invite := &Invite{
 		Code:               code,
@@ -199,6 +210,17 @@ func (s *Service) JoinInvite(
 
 	if invite.OpponentID != 0 && invite.OpponentID != player2ID {
 		return "", ErrNotYourChallenge
+	}
+
+	if invite.Rated {
+		player2, err := s.UserFinder.FindUserByID(ctx, player2ID)
+		if err != nil {
+			slog.ErrorContext(ctx, "find invite player failed", "error", err, "user_id", player2ID)
+			return "", ErrInternal
+		}
+		if player2.SkillLevel == nil {
+			return "", ErrLevelNotPicked
+		}
 	}
 
 	locked, err := s.InviteRepo.AcquireLock(ctx, code, player2ID, 10*time.Second)

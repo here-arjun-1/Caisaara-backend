@@ -132,6 +132,13 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
+	if errors.Is(err, ErrLevelNotPicked) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
 	if errors.Is(err, ErrOpponentNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": err.Error(),
@@ -275,7 +282,7 @@ func (h *Handler) Join(c *gin.Context) {
 		return
 	}
 
-	if errors.Is(err, ErrNotYourChallenge) {
+	if errors.Is(err, ErrNotYourChallenge) || errors.Is(err, ErrLevelNotPicked) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": err.Error(),
 		})

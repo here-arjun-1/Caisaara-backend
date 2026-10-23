@@ -21,4 +21,5 @@ type PlayerRating struct {
 	Draws            int
 	BestRating       *int
 	BestRatingAt     *time.Time
+	UpdatedAt        time.Time
 }

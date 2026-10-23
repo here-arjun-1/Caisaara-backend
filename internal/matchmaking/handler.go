@@ -59,6 +59,13 @@ func (h *Handler) Join(c *gin.Context) {
 		return
 	}
 
+	if errors.Is(err, ErrLevelNotPicked) {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
 	if errors.Is(err, ErrAlreadyInQueue) {
 		c.JSON(http.StatusConflict, gin.H{
 			"error": err.Error(),

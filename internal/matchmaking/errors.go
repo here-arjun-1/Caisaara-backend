@@ -8,5 +8,6 @@ var (
 	ErrNotInQueue         = errors.New("you are not in the queue")
 	ErrGuestRatedGame     = errors.New("guests cannot play rated games")
 	ErrTilted             = errors.New("you seem tilted, take a break before your next rated game")
+	ErrLevelNotPicked     = errors.New("pick your level before playing rated games")
 	ErrInternal           = errors.New("internal server error")
 )
