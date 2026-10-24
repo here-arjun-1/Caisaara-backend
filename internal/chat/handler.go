@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -47,6 +48,7 @@ func (h *Handler) SendMessage(c *gin.Context) {
 	if gameID := c.Param("gameID"); gameID != "" {
 		msg, err := h.Service.SendMessage(ctx, gameID, userID, req.Message)
 		if err != nil {
+			slog.WarnContext(ctx, "send chat message failed", "game_id", gameID, "user_id", userID, "error", err)
 			switch err.Error() {
 			case "message cannot be empty", "message exceeds maximum length of 500 characters", "cannot send chat messages in a finished game":
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -82,7 +84,17 @@ func (h *Handler) SendMessage(c *gin.Context) {
 
 	msg, err := h.Service.SendDirectMessage(ctx, userID, receiverID, strings.TrimSpace(req.Message))
 	if err != nil {
-		response.Error(c, http.StatusBadRequest, err.Error())
+		slog.WarnContext(ctx, "send direct message failed", "sender_id", userID, "receiver_id", receiverID, "error", err)
+		switch err.Error() {
+		case "cannot send message to yourself", "message cannot be empty", "message exceeds maximum length of 500 characters":
+			response.Error(c, http.StatusBadRequest, err.Error())
+		case "recipient user not found":
+			response.Error(c, http.StatusNotFound, err.Error())
+		case "rate limit exceeded, please wait":
+			response.Error(c, http.StatusTooManyRequests, err.Error())
+		default:
+			response.Error(c, http.StatusInternalServerError, "failed to send message")
+		}
 		return
 	}
 
@@ -104,6 +116,7 @@ func (h *Handler) GetMessages(c *gin.Context) {
 	if gameID := c.Param("gameID"); gameID != "" {
 		messages, err := h.Service.GetMessages(ctx, gameID, userID)
 		if err != nil {
+			slog.WarnContext(ctx, "get chat messages failed", "game_id", gameID, "user_id", userID, "error", err)
 			if err.Error() == "player is not part of this game" {
 				c.JSON(http.StatusForbidden, gin.H{"error": "player is not part of this game"})
 				return
@@ -127,6 +140,10 @@ func (h *Handler) GetMessages(c *gin.Context) {
 		}
 		messages, err := h.Service.GetDirectMessages(ctx, userID, otherID)
 		if err != nil {
+			if err.Error() == "invalid user id" {
+				response.Error(c, http.StatusBadRequest, "invalid user id")
+				return
+			}
 			response.Error(c, http.StatusInternalServerError, "failed to get messages")
 			return
 		}

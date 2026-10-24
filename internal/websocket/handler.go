@@ -831,9 +831,6 @@ func (h *Handler) BroadcastDirectMessage(receiverID int64, msg *chat.DirectMessa
 func (h *Handler) ConnectDirectMessages(c *gin.Context) {
 	ctx := context.WithoutCancel(c.Request.Context())
 	accessToken := c.Query("token")
-	if accessToken == "" {
-		accessToken = c.GetHeader("Sec-WebSocket-Protocol")
-	}
 
 	if accessToken == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{
