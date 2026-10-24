@@ -25,6 +25,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/friends"
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
 	"github.com/here-arjun-1/Caisaara-backend/internal/invitation"
+	"github.com/here-arjun-1/Caisaara-backend/internal/leaderboard"
 	"github.com/here-arjun-1/Caisaara-backend/internal/matchmaking"
 	"github.com/here-arjun-1/Caisaara-backend/internal/nearby"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
@@ -162,6 +163,10 @@ func run() error {
 	puzzleService := puzzle.NewService(puzzleRepo)
 	puzzleHandler := puzzle.NewHandler(puzzleService)
 
+	leaderboardRepository := leaderboard.NewRepository(conn)
+	leaderboardService := leaderboard.NewService(leaderboardRepository)
+	leaderboardHandler := leaderboard.NewHandler(leaderboardService)
+
 	gameService.SetGameCompletionListener(func(ctx context.Context, gameID string, result string) {
 		if err := ratingService.UpdateRatingsAfterGame(ctx, gameID); err != nil {
 			slog.ErrorContext(ctx, "update ratings failed", "game_id", gameID, "error", err)
@@ -193,6 +198,7 @@ func run() error {
 		nearbyHandler,
 		friendsHandler,
 		puzzleHandler,
+		leaderboardHandler,
 		tournamentHandler,
 	)
 	if err != nil {
