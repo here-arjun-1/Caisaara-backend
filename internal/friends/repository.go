@@ -216,3 +216,119 @@ func (r *Repository) FindPairRequest(ctx context.Context, userID int64, otherID 
 	}
 	return &request, nil
 }
+
+func (r *Repository) BlockUser(ctx context.Context, blockerID int64, blockedID int64) error {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "begin block user tx failed", "error", err)
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	_, err = tx.Exec(ctx,
+		`INSERT INTO user_blocks (blocker_id, blocked_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+		blockerID, blockedID,
+	)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			return ErrUserNotFound
+		}
+		slog.ErrorContext(ctx, "save user block failed", "blocker_id", blockerID, "blocked_id", blockedID, "error", err)
+		return err
+	}
+
+	_, err = tx.Exec(ctx,
+		`DELETE FROM friend_requests
+		WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)`,
+		blockerID, blockedID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete friend requests on block failed", "blocker_id", blockerID, "blocked_id", blockedID, "error", err)
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		slog.ErrorContext(ctx, "commit block user tx failed", "blocker_id", blockerID, "error", err)
+		return err
+	}
+
+	return nil
+}
+
+func (r *Repository) UnblockUser(ctx context.Context, blockerID int64, blockedID int64) (bool, error) {
+	result, err := r.DB.Exec(ctx,
+		`DELETE FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2`,
+		blockerID, blockedID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "unblock user failed", "blocker_id", blockerID, "blocked_id", blockedID, "error", err)
+		return false, err
+	}
+	return result.RowsAffected() > 0, nil
+}
+
+func (r *Repository) FindBlockedUsers(ctx context.Context, userID int64) ([]BlockedUser, error) {
+	rows, err := r.DB.Query(ctx,
+		`SELECT u.id, u.username, u.rating, ub.created_at
+		FROM user_blocks ub
+		JOIN users u ON u.id = ub.blocked_id
+		WHERE ub.blocker_id = $1
+		ORDER BY ub.created_at DESC`,
+		userID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "find blocked users failed", "user_id", userID, "error", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	blockedUsers := []BlockedUser{}
+	for rows.Next() {
+		var blockedUser BlockedUser
+		err := rows.Scan(&blockedUser.UserID, &blockedUser.Username, &blockedUser.Rating, &blockedUser.BlockedAt)
+		if err != nil {
+			slog.ErrorContext(ctx, "scan blocked user row failed", "user_id", userID, "error", err)
+			return nil, err
+		}
+		blockedUsers = append(blockedUsers, blockedUser)
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "blocked users rows iteration error", "user_id", userID, "error", err)
+		return nil, err
+	}
+
+	return blockedUsers, nil
+}
+
+func (r *Repository) IsBlocked(ctx context.Context, blockerID int64, blockedID int64) (bool, error) {
+	var blocked bool
+	err := r.DB.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM user_blocks WHERE blocker_id = $1 AND blocked_id = $2)`,
+		blockerID, blockedID,
+	).Scan(&blocked)
+	if err != nil {
+		slog.ErrorContext(ctx, "check user block failed", "blocker_id", blockerID, "blocked_id", blockedID, "error", err)
+		return false, err
+	}
+	return blocked, nil
+}
+
+func (r *Repository) IsBlockedEitherWay(ctx context.Context, userID int64, otherID int64) (bool, error) {
+	var blocked bool
+	err := r.DB.QueryRow(ctx,
+		`SELECT EXISTS (
+			SELECT 1 FROM user_blocks
+			WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1)
+		)`,
+		userID, otherID,
+	).Scan(&blocked)
+	if err != nil {
+		slog.ErrorContext(ctx, "check block between users failed", "user_id", userID, "other_id", otherID, "error", err)
+		return false, err
+	}
+	return blocked, nil
+}
