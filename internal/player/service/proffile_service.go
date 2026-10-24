@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -82,6 +83,11 @@ func (h *ProfileService) GetPublicProfile(ctx context.Context, username string) 
 
 	p, err := h.ProfileRepository.FindByUsername(ctx, username)
 	if errors.Is(err, pgx.ErrNoRows) {
+		if id, parseErr := strconv.ParseInt(username, 10, 64); parseErr == nil && id > 0 {
+			p, err = h.ProfileRepository.FindByUserID(ctx, id)
+		}
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrUserNotFound
 	}
 	if err != nil {
@@ -111,7 +117,14 @@ func (h *ProfileService) SearchPlayers(ctx context.Context, query string) ([]dto
 	query = strings.ToLower(strings.TrimSpace(query))
 
 	length := utf8.RuneCountInString(query)
-	if length < minSearchLength || length > maxSearchLength {
+	isNumeric := length > 0
+	for _, c := range query {
+		if c < '0' || c > '9' {
+			isNumeric = false
+			break
+		}
+	}
+	if (!isNumeric && length < minSearchLength) || length > maxSearchLength || length == 0 {
 		return nil, ErrInvalidSearchQuery
 	}
 
@@ -124,6 +137,7 @@ func (h *ProfileService) SearchPlayers(ctx context.Context, query string) ([]dto
 	results := make([]dto.PlayerSearchResult, 0, len(profiles))
 	for _, p := range profiles {
 		results = append(results, dto.PlayerSearchResult{
+			UserID:      p.UserID,
 			Username:    p.Username,
 			DisplayName: p.DisplayName,
 			AvatarURL:   p.AvatarURL,

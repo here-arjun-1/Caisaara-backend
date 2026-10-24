@@ -811,6 +811,102 @@ func (h *Handler) BroadcastChatMessage(gameID string, msg *chat.ChatMessage) {
 	}
 }
 
+func (h *Handler) BroadcastDirectMessage(receiverID int64, msg *chat.DirectMessage) {
+	if h.Hub == nil || msg == nil {
+		return
+	}
+	roomKey := "dm:" + strconv.FormatInt(receiverID, 10)
+	payload := gin.H{
+		"type":    "direct_message",
+		"message": msg,
+	}
+	_ = h.Hub.BroadcastJSON(roomKey, payload)
+
+	senderRoomKey := "dm:" + strconv.FormatInt(msg.SenderID, 10)
+	if senderRoomKey != roomKey {
+		_ = h.Hub.BroadcastJSON(senderRoomKey, payload)
+	}
+}
+
+func (h *Handler) ConnectDirectMessages(c *gin.Context) {
+	ctx := context.WithoutCancel(c.Request.Context())
+	accessToken := c.Query("token")
+	if accessToken == "" {
+		accessToken = c.GetHeader("Sec-WebSocket-Protocol")
+	}
+
+	if accessToken == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "token required",
+		})
+		return
+	}
+
+	claims, err := token.ValidateToken(accessToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "invalid or expired token",
+		})
+		return
+	}
+
+	if claims.IsGuest || claims.UserID <= 0 {
+		c.JSON(http.StatusForbidden, gin.H{
+			"error": "registered user required for messaging",
+		})
+		return
+	}
+
+	if !h.validatePasswordVersion(ctx, claims) {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "invalid or revoked token",
+		})
+		return
+	}
+
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		slog.ErrorContext(ctx, "direct messages websocket upgrade failed", "user_id", claims.UserID, "error", err)
+		return
+	}
+
+	roomKey := "dm:" + strconv.FormatInt(claims.UserID, 10)
+	client := newClientFromClaims(conn, claims, roomKey)
+
+	room := h.Hub.GetOrCreateRoom(roomKey)
+	room.AddClient(client)
+
+	defer func() {
+		room.RemoveClient(client.UserID, client)
+		client.Close()
+		if room.Count() == 0 {
+			h.Hub.RemoveRoom(roomKey)
+		}
+	}()
+
+	go h.writePump(ctx, client)
+
+	_ = client.SendJSON(gin.H{
+		"type":    "connected",
+		"user_id": claims.UserID,
+	})
+
+	conn.SetReadLimit(maxMessageSize)
+	_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
+
+	for {
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			break
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(pongWait))
+	}
+}
+
 func (h *Handler) BroadcastGameState(g *game.Game) {
 	if h.Hub == nil || g == nil {
 		return

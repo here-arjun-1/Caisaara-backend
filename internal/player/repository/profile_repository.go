@@ -405,13 +405,14 @@ func (r *ProfileRepository) SearchByUsername(ctx context.Context, prefix string,
 	rows, err := r.DB.Query(
 		ctx,
 		`SELECT
+			u.id,
 			u.username,
 			u.rating,
 			p.display_name,
 			p.avatar_url
 		FROM users u
 		LEFT JOIN player_profiles p ON p.user_id = u.id
-		WHERE u.username LIKE $1 || '%'
+		WHERE u.username ILIKE $1 || '%' OR CAST(u.id AS TEXT) = $1
 		ORDER BY u.username
 		LIMIT $2`,
 		prefix,
@@ -426,6 +427,7 @@ func (r *ProfileRepository) SearchByUsername(ctx context.Context, prefix string,
 	for rows.Next() {
 		var p model.Profile
 		err := rows.Scan(
+			&p.UserID,
 			&p.Username,
 			&p.Rating,
 			&p.DisplayName,
