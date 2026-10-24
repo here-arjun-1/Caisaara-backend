@@ -412,7 +412,7 @@ func (r *ProfileRepository) SearchByUsername(ctx context.Context, prefix string,
 			p.avatar_url
 		FROM users u
 		LEFT JOIN player_profiles p ON p.user_id = u.id
-		WHERE u.username ILIKE $1 || '%' OR CAST(u.id AS TEXT) = $1
+		WHERE u.username LIKE $1 || '%' OR CAST(u.id AS TEXT) = $1
 		ORDER BY u.username
 		LIMIT $2`,
 		prefix,

@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -48,20 +49,24 @@ func (s *Service) SendMessage(ctx context.Context, gameID string, userID int64, 
 
 	g, err := s.GameRepo.FindGameByID(ctx, gameID)
 	if err != nil {
+		slog.ErrorContext(ctx, "find game failed for chat message", "game_id", gameID, "error", err)
 		return nil, errors.New("game not found")
 	}
 
 	if userID != g.WhitePlayerID && userID != g.BlackPlayerID {
+		slog.WarnContext(ctx, "unauthorized chat message attempt", "game_id", gameID, "user_id", userID)
 		return nil, errors.New("player is not part of this game")
 	}
 
 	if g.Status != game.StatusActive {
+		slog.WarnContext(ctx, "cannot send chat message in finished game", "game_id", gameID, "status", g.Status)
 		return nil, errors.New("cannot send chat messages in a finished game")
 	}
 
 	if s.RateLimiter != nil {
 		allowed, err := s.RateLimiter.Allow(ctx, gameID, userID)
 		if err == nil && !allowed {
+			slog.WarnContext(ctx, "chat rate limit exceeded", "game_id", gameID, "user_id", userID)
 			return nil, errors.New("rate limit exceeded, please wait")
 		}
 	}
@@ -84,6 +89,7 @@ func (s *Service) SendMessage(ctx context.Context, gameID string, userID int64, 
 	}
 
 	if err := s.ChatRepo.CreateMessage(ctx, msg); err != nil {
+		slog.ErrorContext(ctx, "create chat message failed in service", "game_id", gameID, "user_id", userID, "error", err)
 		return nil, err
 	}
 
@@ -93,10 +99,12 @@ func (s *Service) SendMessage(ctx context.Context, gameID string, userID int64, 
 func (s *Service) GetMessages(ctx context.Context, gameID string, userID int64) ([]ChatMessage, error) {
 	g, err := s.GameRepo.FindGameByID(ctx, gameID)
 	if err != nil {
+		slog.ErrorContext(ctx, "find game failed for get chat messages", "game_id", gameID, "error", err)
 		return nil, errors.New("game not found")
 	}
 
 	if userID != g.WhitePlayerID && userID != g.BlackPlayerID {
+		slog.WarnContext(ctx, "unauthorized get chat messages attempt", "game_id", gameID, "user_id", userID)
 		return nil, errors.New("player is not part of this game")
 	}
 
@@ -129,8 +137,17 @@ func (s *Service) SendDirectMessage(ctx context.Context, senderID, receiverID in
 		return nil, errors.New("message exceeds maximum length of 500 characters")
 	}
 
+	if s.RateLimiter != nil {
+		allowed, err := s.RateLimiter.Allow(ctx, "dm", senderID)
+		if err == nil && !allowed {
+			slog.WarnContext(ctx, "direct message rate limit exceeded", "sender_id", senderID)
+			return nil, errors.New("rate limit exceeded, please wait")
+		}
+	}
+
 	exists, err := s.ChatRepo.UserExists(ctx, receiverID)
 	if err != nil {
+		slog.ErrorContext(ctx, "check receiver exists failed", "receiver_id", receiverID, "error", err)
 		return nil, errors.New("internal server error")
 	}
 	if !exists {
@@ -144,6 +161,7 @@ func (s *Service) SendDirectMessage(ctx context.Context, senderID, receiverID in
 	}
 
 	if err := s.ChatRepo.CreateDirectMessage(ctx, msg); err != nil {
+		slog.ErrorContext(ctx, "create direct message failed", "sender_id", senderID, "receiver_id", receiverID, "error", err)
 		return nil, err
 	}
 
@@ -157,14 +175,22 @@ func (s *Service) GetDirectMessages(ctx context.Context, currentUserID, otherUse
 
 	messages, err := s.ChatRepo.GetDirectMessages(ctx, currentUserID, otherUserID)
 	if err != nil {
+		slog.ErrorContext(ctx, "get direct messages failed", "user_id", currentUserID, "other_user_id", otherUserID, "error", err)
 		return nil, err
 	}
 
-	_ = s.ChatRepo.MarkDirectMessagesAsRead(ctx, currentUserID, otherUserID)
+	if err := s.ChatRepo.MarkDirectMessagesAsRead(ctx, currentUserID, otherUserID); err != nil {
+		slog.WarnContext(ctx, "mark direct messages as read failed", "user_id", currentUserID, "other_user_id", otherUserID, "error", err)
+	}
 
 	return messages, nil
 }
 
 func (s *Service) GetConversations(ctx context.Context, userID int64) ([]Conversation, error) {
-	return s.ChatRepo.GetConversations(ctx, userID)
+	conversations, err := s.ChatRepo.GetConversations(ctx, userID)
+	if err != nil {
+		slog.ErrorContext(ctx, "get conversations failed", "user_id", userID, "error", err)
+		return nil, err
+	}
+	return conversations, nil
 }

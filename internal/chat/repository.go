@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"errors"
+	"log/slog"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -46,7 +47,11 @@ func (r *Repository) CreateMessage(ctx context.Context, msg *ChatMessage) error 
 		msg.Message,
 		msg.CreatedAt,
 	)
-	return err
+	if err != nil {
+		slog.ErrorContext(ctx, "create chat message failed", "game_id", msg.GameID, "user_id", msg.UserID, "error", err)
+		return err
+	}
+	return nil
 }
 
 func (r *Repository) GetMessagesByGameID(ctx context.Context, gameID string) ([]ChatMessage, error) {
@@ -60,6 +65,7 @@ func (r *Repository) GetMessagesByGameID(ctx context.Context, gameID string) ([]
 		gameID,
 	)
 	if err != nil {
+		slog.ErrorContext(ctx, "get chat messages query failed", "game_id", gameID, "error", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -68,6 +74,7 @@ func (r *Repository) GetMessagesByGameID(ctx context.Context, gameID string) ([]
 	for rows.Next() {
 		var msg ChatMessage
 		if err := rows.Scan(&msg.ID, &msg.GameID, &msg.UserID, &msg.Username, &msg.Message, &msg.CreatedAt); err != nil {
+			slog.ErrorContext(ctx, "scan chat message row failed", "game_id", gameID, "error", err)
 			return nil, err
 		}
 		messages = append(messages, msg)
@@ -77,7 +84,11 @@ func (r *Repository) GetMessagesByGameID(ctx context.Context, gameID string) ([]
 
 func (r *Repository) DeleteMessagesByGameID(ctx context.Context, gameID string) error {
 	_, err := r.DB.Exec(ctx, `DELETE FROM game_chat_messages WHERE game_id = $1`, gameID)
-	return err
+	if err != nil {
+		slog.ErrorContext(ctx, "delete chat messages failed", "game_id", gameID, "error", err)
+		return err
+	}
+	return nil
 }
 
 func (r *Repository) CreateDirectMessage(ctx context.Context, msg *DirectMessage) error {
@@ -93,14 +104,19 @@ func (r *Repository) CreateDirectMessage(ctx context.Context, msg *DirectMessage
 }
 
 func (r *Repository) GetDirectMessages(ctx context.Context, user1ID, user2ID int64) ([]DirectMessage, error) {
+	// inner query picks the newest 100, outer query puts them back in old -> new order for the chat screen
 	rows, err := r.DB.Query(
 		ctx,
 		`SELECT id, sender_id, receiver_id, message, created_at
-		FROM direct_messages
-		WHERE (sender_id = $1 AND receiver_id = $2)
-		   OR (sender_id = $2 AND receiver_id = $1)
-		ORDER BY created_at ASC
-		LIMIT 100`,
+		FROM (
+			SELECT id, sender_id, receiver_id, message, created_at
+			FROM direct_messages
+			WHERE (sender_id = $1 AND receiver_id = $2)
+			   OR (sender_id = $2 AND receiver_id = $1)
+			ORDER BY created_at DESC
+			LIMIT 100
+		) latest
+		ORDER BY created_at ASC`,
 		user1ID,
 		user2ID,
 	)
