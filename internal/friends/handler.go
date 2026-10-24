@@ -141,10 +141,12 @@ func (h *Handler) GetFriends(c *gin.Context) {
 
 func handleError(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, ErrCannotAddYourself):
+	case errors.Is(err, ErrCannotAddYourself), errors.Is(err, ErrCannotBlockYourself):
 		response.Error(c, http.StatusBadRequest, err.Error())
-	case errors.Is(err, ErrUserNotFound), errors.Is(err, ErrRequestNotFound), errors.Is(err, ErrNotFriends):
+	case errors.Is(err, ErrUserNotFound), errors.Is(err, ErrRequestNotFound), errors.Is(err, ErrNotFriends), errors.Is(err, ErrNotBlocked):
 		response.Error(c, http.StatusNotFound, err.Error())
+	case errors.Is(err, ErrUserBlocked):
+		response.Error(c, http.StatusForbidden, err.Error())
 	case errors.Is(err, ErrRequestExists):
 		response.Error(c, http.StatusConflict, err.Error())
 	default:
@@ -227,4 +229,64 @@ func (h *Handler) GetFriendshipStatus(c *gin.Context) {
 	}
 
 	response.Success(c, http.StatusOK, "friendship status fetched", status)
+}
+
+func (h *Handler) BlockUser(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	targetID, ok := getFriendID(c)
+	if !ok {
+		response.Error(c, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	err := h.Service.BlockUser(c.Request.Context(), userID, targetID)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "user blocked", nil)
+}
+
+func (h *Handler) UnblockUser(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	targetID, ok := getFriendID(c)
+	if !ok {
+		response.Error(c, http.StatusBadRequest, "invalid user id")
+		return
+	}
+
+	err := h.Service.UnblockUser(c.Request.Context(), userID, targetID)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "user unblocked", nil)
+}
+
+func (h *Handler) GetBlockedUsers(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	blockedUsers, err := h.Service.GetBlockedUsers(c.Request.Context(), userID)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "blocked users fetched", gin.H{"blocked_users": blockedUsers})
 }

@@ -22,4 +22,7 @@ func RegisterRoutes(handler *Handler, protected *gin.RouterGroup) {
 	friends.DELETE("/:userID", limiter.Limit, handler.RemoveFriend)
 	friends.GET("/requests/sent", limiter.Limit, handler.GetSentRequests)
 	friends.GET("/status/:username", limiter.Limit, handler.GetFriendshipStatus)
+	friends.GET("/blocks", limiter.Limit, handler.GetBlockedUsers)
+	friends.POST("/blocks/:userID", limiter.Limit, handler.BlockUser)
+	friends.DELETE("/blocks/:userID", limiter.Limit, handler.UnblockUser)
 }

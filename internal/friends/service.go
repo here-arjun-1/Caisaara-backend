@@ -26,6 +26,14 @@ func (s *Service) SendRequest(ctx context.Context, senderID int64, receiverUsern
 		return 0, ErrCannotAddYourself
 	}
 
+	blocked, err := s.Repository.IsBlockedEitherWay(ctx, senderID, receiverID)
+	if err != nil {
+		return 0, err
+	}
+	if blocked {
+		return 0, ErrUserBlocked
+	}
+
 	return s.Repository.CreateRequest(ctx, senderID, receiverID)
 }
 
@@ -95,6 +103,23 @@ func (s *Service) GetFriendshipStatus(ctx context.Context, userID int64, usernam
 	if userID == otherID {
 		return &FriendshipStatus{Status: FriendshipSelf}, nil
 	}
+
+	iBlocked, err := s.Repository.IsBlocked(ctx, userID, otherID)
+	if err != nil {
+		return nil, err
+	}
+	if iBlocked {
+		return &FriendshipStatus{Status: FriendshipBlocked}, nil
+	}
+
+	theyBlocked, err := s.Repository.IsBlocked(ctx, otherID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if theyBlocked {
+		return &FriendshipStatus{Status: FriendshipUnavailable}, nil
+	}
+
 	req, err := s.Repository.FindPairRequest(ctx, userID, otherID)
 	if err != nil {
 		return nil, err
@@ -109,4 +134,26 @@ func (s *Service) GetFriendshipStatus(ctx context.Context, userID int64, usernam
 		return &FriendshipStatus{Status: FriendshipRequestSent, RequestID: &req.ID}, nil
 	}
 	return &FriendshipStatus{Status: FriendshipRequestReceived, RequestID: &req.ID}, nil
+}
+
+func (s *Service) BlockUser(ctx context.Context, userID int64, targetID int64) error {
+	if userID == targetID {
+		return ErrCannotBlockYourself
+	}
+	return s.Repository.BlockUser(ctx, userID, targetID)
+}
+
+func (s *Service) UnblockUser(ctx context.Context, userID int64, targetID int64) error {
+	found, err := s.Repository.UnblockUser(ctx, userID, targetID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return ErrNotBlocked
+	}
+	return nil
+}
+
+func (s *Service) GetBlockedUsers(ctx context.Context, userID int64) ([]BlockedUser, error) {
+	return s.Repository.FindBlockedUsers(ctx, userID)
 }

@@ -20,6 +20,10 @@ type UserFinder interface {
 	FindUserByID(ctx context.Context, id int64) (*model.User, error)
 }
 
+type BlockChecker interface {
+	IsBlockedEitherWay(ctx context.Context, userID int64, otherID int64) (bool, error)
+}
+
 type InvitationService interface {
 	CreateInvite(ctx context.Context, userID int64, timeControlMinutes int, incrementSeconds int, color string, opponentID int64, rated ...bool) (*Invite, error)
 	GetInvite(ctx context.Context, code string) (*Invite, error)
@@ -37,17 +41,20 @@ type Service struct {
 	InviteRepo     InviteRepository
 	GameRepository game.GameRepository
 	UserFinder     UserFinder
+	BlockChecker   BlockChecker
 }
 
 func NewService(
 	inviteRepo InviteRepository,
 	gameRepository game.GameRepository,
 	userFinder UserFinder,
+	blockChecker BlockChecker,
 ) *Service {
 	return &Service{
 		InviteRepo:     inviteRepo,
 		GameRepository: gameRepository,
 		UserFinder:     userFinder,
+		BlockChecker:   blockChecker,
 	}
 }
 
@@ -90,6 +97,15 @@ func (s *Service) CreateInvite(
 		if err != nil {
 			slog.ErrorContext(ctx, "find opponent failed", "error", err, "opponent_id", opponentID)
 			return nil, ErrInternal
+		}
+
+		blocked, err := s.BlockChecker.IsBlockedEitherWay(ctx, userID, opponentID)
+		if err != nil {
+			slog.ErrorContext(ctx, "check block for challenge failed", "error", err, "opponent_id", opponentID)
+			return nil, ErrInternal
+		}
+		if blocked {
+			return nil, ErrPlayerBlocked
 		}
 	}
 
@@ -212,6 +228,15 @@ func (s *Service) JoinInvite(
 		return "", ErrNotYourChallenge
 	}
 
+	blocked, err := s.BlockChecker.IsBlockedEitherWay(ctx, invite.CreatorID, player2ID)
+	if err != nil {
+		slog.ErrorContext(ctx, "check block for join failed", "error", err, "code", code)
+		return "", ErrInternal
+	}
+	if blocked {
+		return "", ErrPlayerBlocked
+	}
+
 	if invite.Rated {
 		player2, err := s.UserFinder.FindUserByID(ctx, player2ID)
 		if err != nil {
@@ -332,6 +357,15 @@ func (s *Service) GetMyChallenges(ctx context.Context, userID int64) ([]Challeng
 		}
 
 		if invite.Status == "active" {
+			continue
+		}
+
+		blocked, err := s.BlockChecker.IsBlockedEitherWay(ctx, invite.CreatorID, userID)
+		if err != nil {
+			slog.ErrorContext(ctx, "check block for challenge list failed", "error", err, "code", code)
+			continue
+		}
+		if blocked {
 			continue
 		}
 

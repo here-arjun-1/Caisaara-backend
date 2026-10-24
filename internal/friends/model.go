@@ -14,6 +14,8 @@ const (
 	FriendshipFriends         = "friends"
 	FriendshipRequestSent     = "request_sent"
 	FriendshipRequestReceived = "request_received"
+	FriendshipBlocked         = "blocked"
+	FriendshipUnavailable     = "unavailable"
 )
 
 type FriendRequest struct {
@@ -48,4 +50,11 @@ type PairRequest struct {
 	ID       int64
 	SenderID int64
 	Status   string
+}
+
+type BlockedUser struct {
+	UserID    int64     `json:"user_id"`
+	Username  string    `json:"username"`
+	Rating    int       `json:"rating"`
+	BlockedAt time.Time `json:"blocked_at"`
 }

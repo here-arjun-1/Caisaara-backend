@@ -107,11 +107,16 @@ func run() error {
 	botService := bot.NewService(botRepository, botEngine)
 	botHandler := bot.NewHandler(botService)
 
+	friendsRepository := friends.NewRepository(conn)
+	friendsService := friends.NewService(friendsRepository)
+	friendsHandler := friends.NewHandler(friendsService)
+
 	inviteRepo := invitation.NewRedisInviteRepository(redisClient)
 	invitationService := invitation.NewService(
 		inviteRepo,
 		gameRepository,
 		authModule.UserRepository,
+		friendsRepository,
 	)
 	invitationHandler := invitation.NewHandler(invitationService)
 
@@ -154,10 +159,6 @@ func run() error {
 	nearbyRepository := nearby.NewRepository(conn)
 	nearbyService := nearby.NewService(nearbyRepository)
 	nearbyHandler := nearby.NewHandler(nearbyService)
-
-	friendsRepository := friends.NewRepository(conn)
-	friendsService := friends.NewService(friendsRepository)
-	friendsHandler := friends.NewHandler(friendsService)
 
 	puzzleRepo := puzzle.NewRepository(conn)
 	puzzleService := puzzle.NewService(puzzleRepo)
