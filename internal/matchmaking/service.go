@@ -124,6 +124,12 @@ func (s *Service) Join(
 		return nil, ErrInternal
 	}
 
+	_, err = s.QueueRepo.RemoveFromQueue(ctx, userID)
+	if err != nil && !errors.Is(err, ErrNotInQueue) {
+		slog.ErrorContext(ctx, "remove old queue entry failed", "error", err, "user_id", userID)
+		return nil, ErrInternal
+	}
+
 	entry := &QueueEntry{
 		UserID:             userID,
 		Rating:             rating,
