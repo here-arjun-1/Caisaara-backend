@@ -150,6 +150,7 @@ func run() error {
 	botHandler.SetUserRepo(authModule.UserRepository)
 	botHandler.SetHub(wsHub)
 	chatHandler := chat.NewHandler(chatService, wsHandler.BroadcastChatMessage)
+	chatHandler.SetDirectBroadcaster(wsHandler.BroadcastDirectMessage)
 
 	tournamentRepo := tournament.NewRepository(conn)
 	tournamentService := tournament.NewService(tournamentRepo, gameRepository, wsHandler)

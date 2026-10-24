@@ -12,7 +12,8 @@ type ChatMessage struct {
 }
 
 type SendChatMessageRequest struct {
-	Message string `json:"message"`
+	Message    string `json:"message"`
+	ReceiverID int64  `json:"receiver_id,omitempty"`
 }
 
 type ChatWSMessage struct {
@@ -23,4 +24,22 @@ type ChatWSMessage struct {
 	Username  string    `json:"username,omitempty"`
 	Message   string    `json:"message"`
 	CreatedAt time.Time `json:"created_at,omitempty"`
+}
+
+type DirectMessage struct {
+	ID         int64     `json:"id"`
+	SenderID   int64     `json:"sender_id"`
+	ReceiverID int64     `json:"receiver_id"`
+	Message    string    `json:"message"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+type Conversation struct {
+	UserID        int64     `json:"user_id"`
+	Username      string    `json:"username"`
+	DisplayName   *string   `json:"display_name"`
+	AvatarURL     *string   `json:"avatar_url"`
+	LastMessage   string    `json:"last_message"`
+	LastMessageAt time.Time `json:"last_message_at"`
+	UnreadCount   int       `json:"unread_count"`
 }

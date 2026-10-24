@@ -155,6 +155,7 @@ func New(
 		r.GET("/ws/:gameID", wsHandler.Connect)
 		r.GET("/ws/tournament/:tournamentID", wsHandler.ConnectTournament)
 		r.GET("/ws/watch/:code", wsHandler.ConnectSpectator)
+		r.GET("/ws/messages", wsHandler.ConnectDirectMessages)
 		protected.GET("/games/:gameID/ws", wsHandler.Connect)
 	}
 
