@@ -23,6 +23,7 @@ ENV STOCKFISH_PATH=/usr/games/stockfish
 WORKDIR /app
 
 COPY --from=builder /app/caisaara-backend .
+COPY --from=builder /app/.well-known ./.well-known
 
 USER app
 
