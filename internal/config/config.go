@@ -10,13 +10,14 @@ import (
 )
 
 type Config struct {
-	Port          string
-	DatabaseURL   string
-	RedisURL      string
-	JWTSecret     string
-	SMTP          SMTPConfig
-	S3            S3Config
-	StockfishPath string
+	Port                string
+	DatabaseURL         string
+	RedisURL            string
+	JWTSecret           string
+	SMTP                SMTPConfig
+	S3                  S3Config
+	StockfishPath       string
+	FirebaseCredentials string
 }
 
 type SMTPConfig struct {
@@ -38,11 +39,12 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		Port:          getEnv("PORT", "8050"),
-		DatabaseURL:   os.Getenv("dbURL"),
-		RedisURL:      getEnv("REDIS_URL", "localhost:6379"),
-		JWTSecret:     os.Getenv("JWT_SECRET"),
-		StockfishPath: getEnv("STOCKFISH_PATH", "stockfish"),
+		Port:                getEnv("PORT", "8050"),
+		DatabaseURL:         os.Getenv("dbURL"),
+		RedisURL:            getEnv("REDIS_URL", "localhost:6379"),
+		JWTSecret:           os.Getenv("JWT_SECRET"),
+		StockfishPath:       getEnv("STOCKFISH_PATH", "stockfish"),
+		FirebaseCredentials: os.Getenv("FIREBASE_CREDENTIALS_BASE64"),
 		SMTP: SMTPConfig{
 			Host:     getEnv("SMTP_HOST", "smtp.gmail.com"),
 			Port:     getEnv("SMTP_PORT", "587"),

@@ -11,6 +11,15 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/response"
 )
 
+type DeviceTokenBody struct {
+	Token    string `json:"token" binding:"required,max=4096"`
+	Platform string `json:"platform" binding:"required,oneof=android ios"`
+}
+
+type RemoveDeviceBody struct {
+	Token string `json:"token" binding:"required,max=4096"`
+}
+
 type Handler struct {
 	Service *Service
 }
@@ -100,4 +109,46 @@ func handleError(c *gin.Context, err error) {
 		slog.ErrorContext(c.Request.Context(), "notification request failed", "path", c.FullPath(), "error", err)
 		response.Error(c, http.StatusInternalServerError, "internal server error")
 	}
+}
+
+func (h *Handler) RegisterDevice(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	var req DeviceTokenBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.Service.RegisterDevice(c.Request.Context(), userID, req.Token, req.Platform); err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "device registered", nil)
+}
+
+func (h *Handler) UnregisterDevice(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	var req RemoveDeviceBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.Service.UnregisterDevice(c.Request.Context(), userID, req.Token); err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "device removed", nil)
 }
