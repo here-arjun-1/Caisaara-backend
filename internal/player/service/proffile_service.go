@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -220,15 +221,7 @@ func emptyToNil(v string) *string {
 }
 
 func isCountryCode(v string) bool {
-	if len(v) != 2 {
-		return false
-	}
-	for _, c := range v {
-		if c < 'A' || c > 'Z' {
-			return false
-		}
-	}
-	return true
+	return slices.Contains(countryCodes, v)
 }
 
 func (h *ProfileService) GetModeStats(ctx context.Context, username string, mode string, statsRange string) (*dto.ModeStatsResponse, error) {

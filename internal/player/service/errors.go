@@ -6,7 +6,7 @@ var (
 	ErrInternal           = errors.New("internal server error")
 	ErrUserNotFound       = errors.New("user not found")
 	ErrInvalidDisplayName = errors.New("display_name must be at most 30 characters on a single line")
-	ErrInvalidCountry     = errors.New("country must be a 2-letter code like IN")
+	ErrInvalidCountry     = errors.New("country must be a valid 2-letter ISO code like IN")
 	ErrInvalidBio         = errors.New("bio must be at most 160 characters")
 	ErrInvalidMode        = errors.New("mode must be one of bullet, blitz, rapid, daily")
 	ErrInvalidRange       = errors.New("range must be one of 7d, 30d, 90d, 1y, all")
