@@ -50,11 +50,21 @@ type ClubService interface {
 	JoinClubByCode(ctx context.Context, shareCode string, userID int64) (*Club, error)
 	RegenerateShareCode(ctx context.Context, clubID string, userID int64) (*Club, error)
 	DeleteClub(ctx context.Context, clubID string, userID int64) error
+	SetPrivacyChecker(checker PrivacyChecker)
+}
+
+type PrivacyChecker interface {
+	CheckClubJoin(ctx context.Context, joinerID, ownerID int64) error
 }
 
 type Service struct {
-	Repository  ClubRepository
-	RateLimiter chat.RateLimiter
+	Repository     ClubRepository
+	RateLimiter    chat.RateLimiter
+	PrivacyChecker PrivacyChecker
+}
+
+func (s *Service) SetPrivacyChecker(checker PrivacyChecker) {
+	s.PrivacyChecker = checker
 }
 
 func NewService(repository ClubRepository, rateLimiter chat.RateLimiter) ClubService {
@@ -123,8 +133,15 @@ func (s *Service) GetClub(ctx context.Context, clubID string) (*Club, error) {
 }
 
 func (s *Service) JoinClub(ctx context.Context, clubID string, userID int64) error {
-	if _, err := s.Repository.FindClubByID(ctx, clubID); err != nil {
+	club, err := s.Repository.FindClubByID(ctx, clubID)
+	if err != nil {
 		return err
+	}
+
+	if s.PrivacyChecker != nil {
+		if err := s.PrivacyChecker.CheckClubJoin(ctx, userID, club.OwnerID); err != nil {
+			return err
+		}
 	}
 
 	blocked, blockedUntil, err := s.Repository.IsBlocked(ctx, clubID, userID)

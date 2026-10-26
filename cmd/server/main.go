@@ -31,6 +31,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/nearby"
 	"github.com/here-arjun-1/Caisaara-backend/internal/notification"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
+	"github.com/here-arjun-1/Caisaara-backend/internal/privacy"
 	"github.com/here-arjun-1/Caisaara-backend/internal/puzzle"
 	"github.com/here-arjun-1/Caisaara-backend/internal/rating"
 	"github.com/here-arjun-1/Caisaara-backend/internal/router"
@@ -190,6 +191,15 @@ func run() error {
 	)
 	accountHandler := account.NewHandler(accountService)
 
+	privacyRepo := privacy.NewRepository(conn)
+	privacyService := privacy.NewService(privacyRepo)
+	privacyHandler := privacy.NewHandler(privacyService)
+
+	chatService.SetPrivacyChecker(privacyService)
+	invitationService.SetPrivacyChecker(privacyService)
+	clubService.SetPrivacyChecker(privacyService)
+	tournamentService.SetPrivacyChecker(privacyService)
+
 	gameService.SetGameCompletionListener(func(ctx context.Context, gameID string, result string) {
 		if err := ratingService.UpdateRatingsAfterGame(ctx, gameID); err != nil {
 			slog.ErrorContext(ctx, "update ratings failed", "game_id", gameID, "error", err)
@@ -225,6 +235,7 @@ func run() error {
 		notificationHandler,
 		accountHandler,
 		tournamentHandler,
+		privacyHandler,
 	)
 	if err != nil {
 		return fmt.Errorf("setup router: %w", err)

@@ -29,6 +29,10 @@ type Notifier interface {
 	Send(ctx context.Context, userID int64, notificationType string, title string, body string, data map[string]any) error
 }
 
+type PrivacyChecker interface {
+	CheckInviteFriend(ctx context.Context, senderID, opponentID int64) error
+}
+
 type InvitationService interface {
 	CreateInvite(ctx context.Context, userID int64, timeControlMinutes int, incrementSeconds int, color string, opponentID int64, rated ...bool) (*Invite, error)
 	GetInvite(ctx context.Context, code string) (*Invite, error)
@@ -40,6 +44,8 @@ type InvitationService interface {
 	CreateWatchInvite(ctx context.Context, userID int64, gameID string) (*WatchInvite, error)
 	GetWatchInvite(ctx context.Context, code string) (*WatchInvite, error)
 	DeleteWatchInvite(ctx context.Context, gameID string) error
+	SetNotifier(notifier Notifier)
+	SetPrivacyChecker(checker PrivacyChecker)
 }
 
 type Service struct {
@@ -48,6 +54,11 @@ type Service struct {
 	UserFinder     UserFinder
 	BlockChecker   BlockChecker
 	Notifier       Notifier
+	PrivacyChecker PrivacyChecker
+}
+
+func (s *Service) SetPrivacyChecker(checker PrivacyChecker) {
+	s.PrivacyChecker = checker
 }
 
 func NewService(
@@ -116,6 +127,12 @@ func (s *Service) CreateInvite(
 		}
 		if blocked {
 			return nil, ErrPlayerBlocked
+		}
+
+		if s.PrivacyChecker != nil {
+			if err := s.PrivacyChecker.CheckInviteFriend(ctx, userID, opponentID); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -268,6 +285,12 @@ func (s *Service) JoinInvite(
 	}
 	if blocked {
 		return "", ErrPlayerBlocked
+	}
+
+	if s.PrivacyChecker != nil {
+		if err := s.PrivacyChecker.CheckInviteFriend(ctx, player2ID, invite.CreatorID); err != nil {
+			return "", err
+		}
 	}
 
 	if invite.Rated {
