@@ -1,6 +1,7 @@
 package leaderboard
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -19,15 +20,20 @@ func NewHandler(service *Service) *Handler {
 	}
 }
 
-func (h *Handler) GetDailyLeaderboard(c *gin.Context) {
+func (h *Handler) GetLeaderboard(c *gin.Context) {
 	ctx := c.Request.Context()
 
+	mode := c.Query("mode")
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
 
-	entries, err := h.Service.GetDailyLeaderboard(ctx, limit, offset)
+	entries, err := h.Service.GetLeaderboard(ctx, mode, limit, offset)
+	if errors.Is(err, ErrInvalidMode) {
+		response.Error(c, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err != nil {
-		slog.ErrorContext(ctx, "get daily leaderboard failed", "limit", limit, "offset", offset, "error", err)
+		slog.ErrorContext(ctx, "get leaderboard failed", "mode", mode, "limit", limit, "offset", offset, "error", err)
 		response.Error(c, http.StatusInternalServerError, "failed to get leaderboard")
 		return
 	}

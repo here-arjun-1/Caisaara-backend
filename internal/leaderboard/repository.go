@@ -16,14 +16,21 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	}
 }
 
-func (r *Repository) GetDailyLeaderboard(ctx context.Context, limit int, offset int) ([]LeaderboardEntry, error) {
+func (r *Repository) GetLeaderboard(ctx context.Context, mode string, maxRD float64, limit int, offset int) ([]LeaderboardEntry, error) {
 	rows, err := r.DB.Query(
 		ctx,
-		`SELECT u.id, u.username, COALESCE(pr.rating, u.start_rating) AS daily_rating
-		FROM users u
-		LEFT JOIN player_ratings pr ON pr.user_id = u.id AND pr.mode = 'daily'
-		ORDER BY daily_rating DESC, u.created_at::date ASC NULLS LAST, LOWER(u.username) ASC
-		LIMIT $1 OFFSET $2`,
+		`SELECT
+			RANK() OVER (ORDER BY pr.rating DESC) AS rank,
+			u.id,
+			u.username,
+			pr.rating
+		FROM player_ratings pr
+		JOIN users u ON u.id = pr.user_id
+		WHERE pr.mode = $1 AND pr.rating_deviation <= $2
+		ORDER BY pr.rating DESC, LOWER(u.username) ASC, u.id ASC
+		LIMIT $3 OFFSET $4`,
+		mode,
+		maxRD,
 		limit,
 		offset,
 	)
@@ -35,7 +42,7 @@ func (r *Repository) GetDailyLeaderboard(ctx context.Context, limit int, offset 
 	entries := []LeaderboardEntry{}
 	for rows.Next() {
 		var entry LeaderboardEntry
-		err := rows.Scan(&entry.UserID, &entry.Username, &entry.Rating)
+		err := rows.Scan(&entry.Rank, &entry.UserID, &entry.Username, &entry.Rating)
 		if err != nil {
 			return nil, err
 		}

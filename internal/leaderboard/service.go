@@ -1,8 +1,14 @@
 package leaderboard
 
-import "context"
+import (
+	"context"
+	"strings"
+
+	"github.com/here-arjun-1/Caisaara-backend/internal/rating/glicko2"
+)
 
 const (
+	defaultMode  = "daily"
 	defaultLimit = 50
 	maxLimit     = 100
 )
@@ -17,7 +23,16 @@ func NewService(repository *Repository) *Service {
 	}
 }
 
-func (s *Service) GetDailyLeaderboard(ctx context.Context, limit int, offset int) ([]LeaderboardEntry, error) {
+func (s *Service) GetLeaderboard(ctx context.Context, mode string, limit int, offset int) ([]LeaderboardEntry, error) {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	if mode == "" {
+		mode = defaultMode
+	}
+
+	if mode != "bullet" && mode != "blitz" && mode != "rapid" && mode != "daily" {
+		return nil, ErrInvalidMode
+	}
+
 	if limit <= 0 {
 		limit = defaultLimit
 	}
@@ -30,14 +45,5 @@ func (s *Service) GetDailyLeaderboard(ctx context.Context, limit int, offset int
 		offset = 0
 	}
 
-	entries, err := s.Repository.GetDailyLeaderboard(ctx, limit, offset)
-	if err != nil {
-		return nil, err
-	}
-
-	for i := range entries {
-		entries[i].Rank = offset + i + 1
-	}
-
-	return entries, nil
+	return s.Repository.GetLeaderboard(ctx, mode, glicko2.ProvisionalRD, limit, offset)
 }
