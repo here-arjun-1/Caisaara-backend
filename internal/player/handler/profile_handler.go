@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,6 +18,7 @@ type ProfileService interface {
 	GetPublicProfile(ctx context.Context, username string) (*dto.PublicProfileResponse, error)
 	UpdateMyProfile(ctx context.Context, userID int64, req dto.UpdateProfileData) (*dto.MyProfileResponse, error)
 	GetModeStats(ctx context.Context, username string, mode string, statsRange string) (*dto.ModeStatsResponse, error)
+	GetPlayerGames(ctx context.Context, username string, mode string, limit int) ([]dto.RecentGameResponse, error)
 	SearchPlayers(ctx context.Context, query string) ([]dto.PlayerSearchResult, error)
 }
 
@@ -122,11 +124,32 @@ func writeError(c *gin.Context, err error) {
 }
 
 func (h *ProfileHandler) GetModeStats(c *gin.Context) {
-	stats, err := h.ProfileService.GetModeStats(c.Request.Context(), c.Param("username"), c.Param("mode"), c.Query("range"))
+	mode := c.Param("mode")
+	if mode == "" {
+		mode = "rapid"
+	}
+	stats, err := h.ProfileService.GetModeStats(c.Request.Context(), c.Param("username"), mode, c.Query("range"))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 
 	response.Success(c, http.StatusOK, "mode stats fetched successfully", stats)
+}
+
+func (h *ProfileHandler) GetPlayerGames(c *gin.Context) {
+	limit := 20
+	if l := c.Query("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 && parsed <= 50 {
+			limit = parsed
+		}
+	}
+
+	games, err := h.ProfileService.GetPlayerGames(c.Request.Context(), c.Param("username"), c.Query("mode"), limit)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "games fetched successfully", gin.H{"games": games})
 }

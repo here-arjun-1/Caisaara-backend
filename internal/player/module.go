@@ -37,8 +37,11 @@ func (m *Module) RegisterRoutes(r *gin.Engine, protected *gin.RouterGroup) {
 	avatarListLimiter := middleware.NewTokenBucketLimiter(60, time.Minute)
 	searchLimiter := middleware.NewTokenBucketLimiter(60, time.Minute)
 
+	r.GET("/players/search", searchLimiter.Limit, m.profileHandler.SearchPlayers)
 	r.GET("/players/:username", publicProfileLimiter.Limit, m.profileHandler.GetPublicProfile)
+	r.GET("/players/:username/stats", publicProfileLimiter.Limit, m.profileHandler.GetModeStats)
 	r.GET("/players/:username/stats/:mode", publicProfileLimiter.Limit, m.profileHandler.GetModeStats)
+	r.GET("/players/:username/games", publicProfileLimiter.Limit, m.profileHandler.GetPlayerGames)
 	r.GET("/avatars", avatarListLimiter.Limit, m.avatarHandler.ListDefaultAvatars)
 
 	protected.GET("/profile", getProfileLimiter.Limit, m.profileHandler.GetMyProfile)
@@ -46,5 +49,9 @@ func (m *Module) RegisterRoutes(r *gin.Engine, protected *gin.RouterGroup) {
 	protected.POST("/profile/avatar", avatarUploadLimiter.Limit, middleware.RequireRegisteredUser(), m.avatarHandler.UploadPhoto)
 	protected.PUT("/profile/avatar/default", avatarUpdateLimiter.Limit, middleware.RequireRegisteredUser(), m.avatarHandler.ChooseDefault)
 	protected.DELETE("/profile/avatar", avatarUpdateLimiter.Limit, middleware.RequireRegisteredUser(), m.avatarHandler.RemoveAvatar)
-	protected.GET("/players/search", searchLimiter.Limit, middleware.RequireRegisteredUser(), m.profileHandler.SearchPlayers)
+	protected.GET("/players/search", searchLimiter.Limit, m.profileHandler.SearchPlayers)
+	protected.GET("/players/:username", publicProfileLimiter.Limit, m.profileHandler.GetPublicProfile)
+	protected.GET("/players/:username/stats", publicProfileLimiter.Limit, m.profileHandler.GetModeStats)
+	protected.GET("/players/:username/stats/:mode", publicProfileLimiter.Limit, m.profileHandler.GetModeStats)
+	protected.GET("/players/:username/games", publicProfileLimiter.Limit, m.profileHandler.GetPlayerGames)
 }
