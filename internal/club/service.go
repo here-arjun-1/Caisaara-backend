@@ -46,7 +46,9 @@ type ClubService interface {
 	UnblockMember(ctx context.Context, clubID string, userID int64, targetID int64) error
 	GetBlockedList(ctx context.Context, clubID string, userID int64) ([]BlockedUser, error)
 	GetMyClubs(ctx context.Context, userID int64) ([]MyClub, error)
+	GetClubByShareCode(ctx context.Context, shareCode string) (*Club, error)
 	JoinClubByCode(ctx context.Context, shareCode string, userID int64) (*Club, error)
+	RegenerateShareCode(ctx context.Context, clubID string, userID int64) (*Club, error)
 	DeleteClub(ctx context.Context, clubID string, userID int64) error
 }
 
@@ -80,11 +82,14 @@ func (s *Service) CreateClub(ctx context.Context, ownerID int64, name string, de
 		return nil, err
 	}
 
+	expiresAt := time.Now().Add(7 * 24 * time.Hour)
 	club := &Club{
-		Name:        name,
-		Description: description,
-		OwnerID:     ownerID,
-		ShareCode:   shareCode,
+		Name:               name,
+		Description:        description,
+		OwnerID:            ownerID,
+		ShareCode:          shareCode,
+		ShareCodeExpiresAt: &expiresAt,
+		Link:               "https://caisaara.duckdns.org/club/" + shareCode,
 	}
 
 	if err := s.Repository.CreateClub(ctx, club); err != nil {
@@ -383,6 +388,52 @@ func (s *Service) JoinClubByCode(ctx context.Context, shareCode string, userID i
 	}
 
 	club.MemberCount++
+	club.Link = "https://caisaara.duckdns.org/club/" + club.ShareCode
+	return club, nil
+}
+
+func (s *Service) GetClubByShareCode(ctx context.Context, shareCode string) (*Club, error) {
+	shareCode = strings.ToUpper(strings.TrimSpace(shareCode))
+	if len(shareCode) != shareCodeLength {
+		return nil, ErrClubNotFound
+	}
+
+	club, err := s.Repository.FindClubByShareCode(ctx, shareCode)
+	if err != nil {
+		return nil, err
+	}
+
+	club.Link = "https://caisaara.duckdns.org/club/" + club.ShareCode
+	return club, nil
+}
+
+func (s *Service) RegenerateShareCode(ctx context.Context, clubID string, userID int64) (*Club, error) {
+	myRole, err := s.getRole(ctx, clubID, userID)
+	if err != nil {
+		return nil, err
+	}
+	if myRole != RoleOwner && myRole != RoleAdmin {
+		return nil, ErrNotAllowed
+	}
+
+	shareCode, err := generateShareCode()
+	if err != nil {
+		return nil, err
+	}
+
+	expiresAt := time.Now().Add(7 * 24 * time.Hour)
+	if err := s.Repository.UpdateShareCode(ctx, clubID, shareCode, expiresAt); err != nil {
+		return nil, err
+	}
+
+	club, err := s.Repository.FindClubByID(ctx, clubID)
+	if err != nil {
+		return nil, err
+	}
+	club.ShareCode = shareCode
+	club.ShareCodeExpiresAt = &expiresAt
+	club.Link = "https://caisaara.duckdns.org/club/" + shareCode
+
 	return club, nil
 }
 

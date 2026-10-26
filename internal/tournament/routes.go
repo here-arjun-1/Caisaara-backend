@@ -10,6 +10,7 @@ func RegisterRoutes(handler *Handler, protected *gin.RouterGroup, public ...*gin
 	protected.POST("/tournaments/invite/:code/join", handler.JoinTournamentByInviteCode)
 	protected.GET("/tournaments/:id/my-games", handler.GetMyGames)
 	protected.POST("/tournaments/:id/end", handler.EndTournament)
+	protected.POST("/tournaments/:id/regenerate-invite", handler.RegenerateInviteCode)
 
 	prefix := "/tournaments"
 	targetGroup := protected
@@ -25,4 +26,6 @@ func RegisterRoutes(handler *Handler, protected *gin.RouterGroup, public ...*gin
 	targetGroup.GET(prefix+"/:id/rounds/:roundNumber", handler.GetRounds)
 	targetGroup.GET(prefix+"/:id/games", handler.GetGames)
 	targetGroup.GET(prefix+"/invite/:code", handler.GetTournamentByInviteCode)
+	targetGroup.GET("/tournaments/invite/:code", handler.GetTournamentByInviteCode)
+	targetGroup.GET("/tournament/:code", handler.GetTournamentByInviteCode)
 }
