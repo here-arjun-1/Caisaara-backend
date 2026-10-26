@@ -31,6 +31,7 @@ type ClubRepository interface {
 	ListBlocked(ctx context.Context, clubID string) ([]BlockedUser, error)
 	ListMyClubs(ctx context.Context, userID int64) ([]MyClub, error)
 	FindClubByShareCode(ctx context.Context, shareCode string) (*Club, error)
+	UpdateShareCode(ctx context.Context, clubID string, newCode string, expiresAt time.Time) error
 	DeleteClub(ctx context.Context, clubID string) error
 }
 
@@ -58,14 +59,15 @@ func (r *Repository) CreateClub(ctx context.Context, club *Club) error {
 
 	err = tx.QueryRow(
 		ctx,
-		`INSERT INTO clubs (id, name, description, owner_id, share_code)
-		VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO clubs (id, name, description, owner_id, share_code, share_code_expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING created_at`,
 		club.ID,
 		club.Name,
 		club.Description,
 		club.OwnerID,
 		club.ShareCode,
+		club.ShareCodeExpiresAt,
 	).Scan(&club.CreatedAt)
 
 	if err != nil {
@@ -113,6 +115,7 @@ func (r *Repository) FindClubByID(ctx context.Context, clubID string) (*Club, er
 			c.description,
 			c.owner_id,
 			c.share_code,
+			c.share_code_expires_at,
 			(SELECT COUNT(*) FROM club_members WHERE club_id = c.id) AS member_count,
 			c.created_at
 		FROM clubs c
@@ -124,6 +127,7 @@ func (r *Repository) FindClubByID(ctx context.Context, clubID string) (*Club, er
 		&club.Description,
 		&club.OwnerID,
 		&club.ShareCode,
+		&club.ShareCodeExpiresAt,
 		&club.MemberCount,
 		&club.CreatedAt,
 	)
@@ -134,6 +138,10 @@ func (r *Repository) FindClubByID(ctx context.Context, clubID string) (*Club, er
 	if err != nil {
 		slog.ErrorContext(ctx, "find club failed", "club_id", clubID, "error", err)
 		return nil, err
+	}
+
+	if club.ShareCode != "" {
+		club.Link = "https://caisaara.duckdns.org/club/" + club.ShareCode
 	}
 
 	return &club, nil
@@ -148,6 +156,7 @@ func (r *Repository) ListClubs(ctx context.Context, search string, limit int, of
 			c.description,
 			c.owner_id,
 			c.share_code,
+			c.share_code_expires_at,
 			(SELECT COUNT(*) FROM club_members WHERE club_id = c.id) AS member_count,
 			c.created_at
 		FROM clubs c
@@ -173,12 +182,16 @@ func (r *Repository) ListClubs(ctx context.Context, search string, limit int, of
 			&club.Description,
 			&club.OwnerID,
 			&club.ShareCode,
+			&club.ShareCodeExpiresAt,
 			&club.MemberCount,
 			&club.CreatedAt,
 		)
 		if err != nil {
 			slog.ErrorContext(ctx, "scan club failed", "error", err)
 			return nil, err
+		}
+		if club.ShareCode != "" {
+			club.Link = "https://caisaara.duckdns.org/club/" + club.ShareCode
 		}
 		clubs = append(clubs, club)
 	}
@@ -564,6 +577,7 @@ func (r *Repository) ListMyClubs(ctx context.Context, userID int64) ([]MyClub, e
 			c.description,
 			c.owner_id,
 			c.share_code,
+			c.share_code_expires_at,
 			(SELECT COUNT(*) FROM club_members WHERE club_id = c.id) AS member_count,
 			c.created_at,
 			m.role
@@ -588,6 +602,7 @@ func (r *Repository) ListMyClubs(ctx context.Context, userID int64) ([]MyClub, e
 			&club.Description,
 			&club.OwnerID,
 			&club.ShareCode,
+			&club.ShareCodeExpiresAt,
 			&club.MemberCount,
 			&club.CreatedAt,
 			&club.Role,
@@ -595,6 +610,9 @@ func (r *Repository) ListMyClubs(ctx context.Context, userID int64) ([]MyClub, e
 		if err != nil {
 			slog.ErrorContext(ctx, "scan my club failed", "user_id", userID, "error", err)
 			return nil, err
+		}
+		if club.ShareCode != "" {
+			club.Link = "https://caisaara.duckdns.org/club/" + club.ShareCode
 		}
 		clubs = append(clubs, club)
 	}
@@ -612,6 +630,7 @@ func (r *Repository) FindClubByShareCode(ctx context.Context, shareCode string) 
 			c.description,
 			c.owner_id,
 			c.share_code,
+			c.share_code_expires_at,
 			(SELECT COUNT(*) FROM club_members WHERE club_id = c.id) AS member_count,
 			c.created_at
 		FROM clubs c
@@ -623,6 +642,7 @@ func (r *Repository) FindClubByShareCode(ctx context.Context, shareCode string) 
 		&club.Description,
 		&club.OwnerID,
 		&club.ShareCode,
+		&club.ShareCodeExpiresAt,
 		&club.MemberCount,
 		&club.CreatedAt,
 	)
@@ -635,7 +655,30 @@ func (r *Repository) FindClubByShareCode(ctx context.Context, shareCode string) 
 		return nil, err
 	}
 
+	if club.ShareCodeExpiresAt != nil && time.Now().After(*club.ShareCodeExpiresAt) {
+		return nil, ErrShareCodeExpired
+	}
+
+	if club.ShareCode != "" {
+		club.Link = "https://caisaara.duckdns.org/club/" + club.ShareCode
+	}
+
 	return &club, nil
+}
+
+func (r *Repository) UpdateShareCode(ctx context.Context, clubID string, newCode string, expiresAt time.Time) error {
+	_, err := r.DB.Exec(
+		ctx,
+		`UPDATE clubs SET share_code = $1, share_code_expires_at = $2 WHERE id = $3`,
+		newCode,
+		expiresAt,
+		clubID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "update share code failed", "club_id", clubID, "error", err)
+		return err
+	}
+	return nil
 }
 
 func (r *Repository) DeleteClub(ctx context.Context, clubID string) error {

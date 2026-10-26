@@ -16,13 +16,15 @@ const (
 )
 
 type Club struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	OwnerID     int64     `json:"owner_id"`
-	ShareCode   string    `json:"share_code"`
-	MemberCount int       `json:"member_count"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID                 string     `json:"id"`
+	Name               string     `json:"name"`
+	Description        string     `json:"description"`
+	OwnerID            int64      `json:"owner_id"`
+	ShareCode          string     `json:"share_code"`
+	ShareCodeExpiresAt *time.Time `json:"-"`
+	Link               string     `json:"link,omitempty"`
+	MemberCount        int        `json:"member_count"`
+	CreatedAt          time.Time  `json:"created_at"`
 }
 
 type MyClub struct {

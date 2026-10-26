@@ -24,6 +24,7 @@ type Service interface {
 	GetTournamentByInviteCode(ctx context.Context, code string) (*TournamentWithPlayerCount, error)
 	JoinTournament(ctx context.Context, tournamentID int64, userID int64, inviteCode string) (*TournamentPlayer, error)
 	JoinTournamentByInviteCode(ctx context.Context, code string, userID int64) (*TournamentPlayer, error)
+	RegenerateInviteCode(ctx context.Context, tournamentID int64, userID int64) (*TournamentWithPlayerCount, error)
 	LeaveTournament(ctx context.Context, tournamentID int64, userID int64) error
 	StartTournament(ctx context.Context, tournamentID int64, userID int64) (*TournamentWithPlayerCount, error)
 	EndTournament(ctx context.Context, tournamentID int64, userID int64) (*int64, error)
@@ -122,6 +123,7 @@ func (s *TournamentService) CreateTournament(ctx context.Context, userID int64, 
 	}
 
 	inviteCode := generateInviteCode()
+	expiresAt := time.Now().Add(7 * 24 * time.Hour)
 
 	now := time.Now()
 	startAt := now
@@ -130,22 +132,23 @@ func (s *TournamentService) CreateTournament(ctx context.Context, userID int64, 
 	}
 
 	tournament := &Tournament{
-		Name:         name,
-		Description:  strings.TrimSpace(req.Description),
-		Format:       req.Format,
-		TimeControl:  timeControl,
-		MinPlayers:   minPlayers,
-		MaxPlayers:   req.MaxPlayers,
-		Visibility:   visibility,
-		InviteCode:   &inviteCode,
-		Status:       StatusRegistration,
-		TotalRounds:  totalRounds,
-		CurrentRound: 0,
-		CreatedBy:    userID,
-		StartAt:      startAt,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-		MinRating:    req.MinRating,
+		Name:                name,
+		Description:         strings.TrimSpace(req.Description),
+		Format:              req.Format,
+		TimeControl:         timeControl,
+		MinPlayers:          minPlayers,
+		MaxPlayers:          req.MaxPlayers,
+		Visibility:          visibility,
+		InviteCode:          &inviteCode,
+		InviteCodeExpiresAt: &expiresAt,
+		Status:              StatusRegistration,
+		TotalRounds:         totalRounds,
+		CurrentRound:        0,
+		CreatedBy:           userID,
+		StartAt:             startAt,
+		CreatedAt:           now,
+		UpdatedAt:           now,
+		MinRating:           req.MinRating,
 	}
 
 	if err := s.Repo.CreateTournament(ctx, tournament); err != nil {
@@ -172,7 +175,14 @@ func (s *TournamentService) GetTournamentByInviteCode(ctx context.Context, code 
 	if trimmedCode == "" {
 		return nil, ErrTournamentNotFound
 	}
-	return s.Repo.FindByInviteCode(ctx, trimmedCode)
+	tw, err := s.Repo.FindByInviteCode(ctx, trimmedCode)
+	if err != nil {
+		return nil, err
+	}
+	if tw.Status != StatusCompleted && tw.InviteCodeExpiresAt != nil && time.Now().After(*tw.InviteCodeExpiresAt) {
+		return nil, ErrInviteCodeExpired
+	}
+	return tw, nil
 }
 
 func (s *TournamentService) JoinTournament(ctx context.Context, tournamentID int64, userID int64, inviteCode string) (*TournamentPlayer, error) {
@@ -193,6 +203,9 @@ func (s *TournamentService) JoinTournament(ctx context.Context, tournamentID int
 		trimmedCode := strings.TrimSpace(inviteCode)
 		if trimmedCode == "" || t.InviteCode == nil || !strings.EqualFold(trimmedCode, *t.InviteCode) {
 			return nil, ErrInvalidInviteCode
+		}
+		if t.InviteCodeExpiresAt != nil && time.Now().After(*t.InviteCodeExpiresAt) {
+			return nil, ErrInviteCodeExpired
 		}
 	}
 
@@ -242,6 +255,27 @@ func (s *TournamentService) JoinTournamentByInviteCode(ctx context.Context, code
 		return nil, err
 	}
 	return s.JoinTournament(ctx, tw.ID, userID, code)
+}
+
+func (s *TournamentService) RegenerateInviteCode(ctx context.Context, tournamentID int64, userID int64) (*TournamentWithPlayerCount, error) {
+	t, err := s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
+	if err != nil {
+		return nil, err
+	}
+	if t.CreatedBy != userID {
+		return nil, ErrNotCreator
+	}
+
+	newCode := generateInviteCode()
+	expiresAt := time.Now().Add(7 * 24 * time.Hour)
+
+	if err := s.Repo.UpdateInviteCode(ctx, tournamentID, newCode, expiresAt); err != nil {
+		return nil, err
+	}
+
+	t.InviteCode = &newCode
+	t.InviteCodeExpiresAt = &expiresAt
+	return t, nil
 }
 
 func (s *TournamentService) LeaveTournament(ctx context.Context, tournamentID int64, userID int64) error {
