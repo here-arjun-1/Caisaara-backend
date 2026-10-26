@@ -132,7 +132,7 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	if errors.Is(err, ErrLevelNotPicked) || errors.Is(err, ErrPlayerBlocked) {
+	if errors.Is(err, ErrLevelNotPicked) || errors.Is(err, ErrPlayerBlocked) || (err != nil && err.Error() == "not allowed by privacy settings") {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": err.Error(),
 		})
@@ -282,7 +282,7 @@ func (h *Handler) Join(c *gin.Context) {
 		return
 	}
 
-	if errors.Is(err, ErrNotYourChallenge) || errors.Is(err, ErrLevelNotPicked) || errors.Is(err, ErrPlayerBlocked) {
+	if errors.Is(err, ErrNotYourChallenge) || errors.Is(err, ErrLevelNotPicked) || errors.Is(err, ErrPlayerBlocked) || (err != nil && err.Error() == "not allowed by privacy settings") {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": err.Error(),
 		})

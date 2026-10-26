@@ -92,6 +92,8 @@ func (h *Handler) SendMessage(c *gin.Context) {
 			response.Error(c, http.StatusNotFound, err.Error())
 		case "rate limit exceeded, please wait":
 			response.Error(c, http.StatusTooManyRequests, err.Error())
+		case "not allowed by privacy settings":
+			response.Error(c, http.StatusForbidden, err.Error())
 		default:
 			response.Error(c, http.StatusInternalServerError, "failed to send message")
 		}

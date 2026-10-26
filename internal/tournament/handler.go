@@ -193,6 +193,13 @@ func (h *Handler) JoinTournament(c *gin.Context) {
 			return
 		}
 
+		if err != nil && err.Error() == "not allowed by privacy settings" {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
 		if errors.Is(err, ErrNotRegistration) ||
 			errors.Is(err, ErrTournamentFull) ||
 			errors.Is(err, ErrAlreadyJoined) ||
@@ -237,6 +244,13 @@ func (h *Handler) JoinTournamentByInviteCode(c *gin.Context) {
 		if errors.Is(err, ErrTournamentNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
 				"error": "tournament not found",
+			})
+			return
+		}
+
+		if err != nil && err.Error() == "not allowed by privacy settings" {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": err.Error(),
 			})
 			return
 		}

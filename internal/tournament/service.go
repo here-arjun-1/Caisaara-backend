@@ -36,12 +36,22 @@ type Service interface {
 	DeleteOldTournaments(ctx context.Context, olderThan time.Duration) (int64, error)
 	RemoveUserFromTournaments(ctx context.Context, userID int64) error
 	SetBroadcaster(b Broadcaster)
+	SetPrivacyChecker(checker PrivacyChecker)
+}
+
+type PrivacyChecker interface {
+	CheckTournamentJoin(ctx context.Context, joinerID, creatorID int64) error
 }
 
 type TournamentService struct {
-	Repo        TournamentRepository
-	GameRepo    game.GameRepository
-	Broadcaster Broadcaster
+	Repo           TournamentRepository
+	GameRepo       game.GameRepository
+	Broadcaster    Broadcaster
+	PrivacyChecker PrivacyChecker
+}
+
+func (s *TournamentService) SetPrivacyChecker(checker PrivacyChecker) {
+	s.PrivacyChecker = checker
 }
 
 func NewService(repo TournamentRepository, gameRepo game.GameRepository, broadcaster ...Broadcaster) *TournamentService {
@@ -189,6 +199,12 @@ func (s *TournamentService) JoinTournament(ctx context.Context, tournamentID int
 	t, err := s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
 	if err != nil {
 		return nil, err
+	}
+
+	if s.PrivacyChecker != nil {
+		if err := s.PrivacyChecker.CheckTournamentJoin(ctx, userID, t.CreatedBy); err != nil {
+			return nil, err
+		}
 	}
 
 	if t.Status != StatusRegistration {
