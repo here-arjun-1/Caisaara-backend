@@ -28,7 +28,7 @@ type TournamentResponse struct {
 	MaxPlayers   int       `json:"max_players"`
 	Visibility   string    `json:"visibility"`
 	InviteCode   string    `json:"invite_code,omitempty"`
-	InviteLink   string    `json:"invite_link,omitempty"`
+	Link         string    `json:"link,omitempty"`
 	Status       string    `json:"status"`
 	TotalRounds  int       `json:"total_rounds"`
 	CurrentRound int       `json:"current_round"`
@@ -50,7 +50,7 @@ type TournamentDetailsResponse struct {
 	MaxPlayers   int       `json:"max_players"`
 	Visibility   string    `json:"visibility"`
 	InviteCode   string    `json:"invite_code,omitempty"`
-	InviteLink   string    `json:"invite_link,omitempty"`
+	Link         string    `json:"link,omitempty"`
 	Status       string    `json:"status"`
 	CurrentRound int       `json:"current_round"`
 	TotalRounds  int       `json:"total_rounds"`
@@ -94,10 +94,10 @@ type EndTournamentResponse struct {
 
 func ToTournamentResponse(t *Tournament) *TournamentResponse {
 	inviteCode := ""
-	inviteLink := ""
+	link := ""
 	if t.InviteCode != nil && *t.InviteCode != "" {
 		inviteCode = *t.InviteCode
-		inviteLink = "/tournaments/invite/" + inviteCode
+		link = "https://caisaara.duckdns.org/tournaments/invite/" + inviteCode
 	}
 	return &TournamentResponse{
 		ID:           strconv.FormatInt(t.ID, 10),
@@ -109,7 +109,7 @@ func ToTournamentResponse(t *Tournament) *TournamentResponse {
 		MaxPlayers:   t.MaxPlayers,
 		Visibility:   t.Visibility,
 		InviteCode:   inviteCode,
-		InviteLink:   inviteLink,
+		Link:         link,
 		Status:       t.Status,
 		TotalRounds:  t.TotalRounds,
 		CurrentRound: t.CurrentRound,
@@ -123,10 +123,10 @@ func ToTournamentResponse(t *Tournament) *TournamentResponse {
 
 func ToTournamentDetailsResponse(tw *TournamentWithPlayerCount) *TournamentDetailsResponse {
 	inviteCode := ""
-	inviteLink := ""
+	link := ""
 	if tw.Visibility != VisibilityPrivate && tw.InviteCode != nil && *tw.InviteCode != "" {
 		inviteCode = *tw.InviteCode
-		inviteLink = "/tournaments/invite/" + inviteCode
+		link = "https://caisaara.duckdns.org/tournaments/invite/" + inviteCode
 	}
 	return &TournamentDetailsResponse{
 		ID:           strconv.FormatInt(tw.ID, 10),
@@ -139,7 +139,7 @@ func ToTournamentDetailsResponse(tw *TournamentWithPlayerCount) *TournamentDetai
 		MaxPlayers:   tw.MaxPlayers,
 		Visibility:   tw.Visibility,
 		InviteCode:   inviteCode,
-		InviteLink:   inviteLink,
+		Link:         link,
 		Status:       tw.Status,
 		TotalRounds:  tw.TotalRounds,
 		CurrentRound: tw.CurrentRound,

@@ -209,6 +209,7 @@ func handleError(c *gin.Context, err error) {
 		errors.Is(err, ErrEmptyMessage),
 		errors.Is(err, ErrMessageTooLong),
 		errors.Is(err, ErrTargetNotAdmin),
+		errors.Is(err, ErrShareCodeExpired),
 		errors.Is(err, ErrInvalidMode):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:
@@ -374,6 +375,16 @@ func (h *Handler) GetMyClubs(c *gin.Context) {
 	c.JSON(http.StatusOK, clubs)
 }
 
+func (h *Handler) GetClubByShareCode(c *gin.Context) {
+	club, err := h.Service.GetClubByShareCode(c.Request.Context(), c.Param("code"))
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, club)
+}
+
 func (h *Handler) JoinClubByCode(c *gin.Context) {
 	userID, ok := middleware.GetUserID(c)
 	if !ok {
@@ -406,4 +417,21 @@ func (h *Handler) DeleteClub(c *gin.Context) {
 	h.Hub.CloseRoom("club:" + clubID)
 
 	c.JSON(http.StatusOK, gin.H{"message": "club deleted"})
+}
+
+func (h *Handler) RegenerateShareCode(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "user not authenticated"})
+		return
+	}
+
+	clubID := c.Param("clubID")
+	club, err := h.Service.RegenerateShareCode(c.Request.Context(), clubID, userID)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, club)
 }

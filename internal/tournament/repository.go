@@ -26,6 +26,7 @@ type TournamentRepository interface {
 	ListPublicTournaments(ctx context.Context) ([]*TournamentWithPlayerCount, error)
 	FindByIDWithPlayerCount(ctx context.Context, id int64) (*TournamentWithPlayerCount, error)
 	FindByInviteCode(ctx context.Context, code string) (*TournamentWithPlayerCount, error)
+	UpdateInviteCode(ctx context.Context, tournamentID int64, newCode string, expiresAt time.Time) error
 	IsPlayerJoined(ctx context.Context, tournamentID int64, userID int64) (bool, error)
 	AddPlayer(ctx context.Context, player *TournamentPlayer) error
 	RemovePlayer(ctx context.Context, tournamentID int64, userID int64) error
@@ -101,6 +102,7 @@ func (r *Repository) CreateTournament(ctx context.Context, tournament *Tournamen
 			max_players,
 			visibility,
 			invite_code,
+			invite_code_expires_at,
 			status,
 			total_rounds,
 			current_round,
@@ -109,7 +111,7 @@ func (r *Repository) CreateTournament(ctx context.Context, tournament *Tournamen
 			created_at,
 			updated_at,
 			min_rating
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 		RETURNING id, created_at, updated_at`,
 		tournament.Name,
 		tournament.Description,
@@ -119,6 +121,7 @@ func (r *Repository) CreateTournament(ctx context.Context, tournament *Tournamen
 		tournament.MaxPlayers,
 		tournament.Visibility,
 		tournament.InviteCode,
+		tournament.InviteCodeExpiresAt,
 		tournament.Status,
 		tournament.TotalRounds,
 		tournament.CurrentRound,
@@ -150,6 +153,7 @@ func (r *Repository) FindByID(ctx context.Context, id int64) (*Tournament, error
 			max_players,
 			visibility,
 			invite_code,
+			invite_code_expires_at,
 			status,
 			total_rounds,
 			current_round,
@@ -174,6 +178,7 @@ func (r *Repository) FindByID(ctx context.Context, id int64) (*Tournament, error
 		&t.MaxPlayers,
 		&t.Visibility,
 		&t.InviteCode,
+		&t.InviteCodeExpiresAt,
 		&t.Status,
 		&t.TotalRounds,
 		&t.CurrentRound,
@@ -207,6 +212,7 @@ func (r *Repository) ListPublicTournaments(ctx context.Context) ([]*TournamentWi
 			t.max_players,
 			t.visibility,
 			t.invite_code,
+			t.invite_code_expires_at,
 			t.status,
 			t.total_rounds,
 			t.current_round,
@@ -241,6 +247,7 @@ func (r *Repository) ListPublicTournaments(ctx context.Context) ([]*TournamentWi
 			&tw.MaxPlayers,
 			&tw.Visibility,
 			&tw.InviteCode,
+			&tw.InviteCodeExpiresAt,
 			&tw.Status,
 			&tw.TotalRounds,
 			&tw.CurrentRound,
@@ -274,6 +281,7 @@ func (r *Repository) FindByIDWithPlayerCount(ctx context.Context, id int64) (*To
 			t.max_players,
 			t.visibility,
 			t.invite_code,
+			t.invite_code_expires_at,
 			t.status,
 			t.total_rounds,
 			t.current_round,
@@ -301,6 +309,7 @@ func (r *Repository) FindByIDWithPlayerCount(ctx context.Context, id int64) (*To
 		&tw.MaxPlayers,
 		&tw.Visibility,
 		&tw.InviteCode,
+		&tw.InviteCodeExpiresAt,
 		&tw.Status,
 		&tw.TotalRounds,
 		&tw.CurrentRound,
@@ -335,6 +344,7 @@ func (r *Repository) FindByInviteCode(ctx context.Context, code string) (*Tourna
 			t.max_players,
 			t.visibility,
 			t.invite_code,
+			t.invite_code_expires_at,
 			t.status,
 			t.total_rounds,
 			t.current_round,
@@ -362,6 +372,7 @@ func (r *Repository) FindByInviteCode(ctx context.Context, code string) (*Tourna
 		&tw.MaxPlayers,
 		&tw.Visibility,
 		&tw.InviteCode,
+		&tw.InviteCodeExpiresAt,
 		&tw.Status,
 		&tw.TotalRounds,
 		&tw.CurrentRound,
@@ -1276,4 +1287,19 @@ func (r *Repository) UndoStartTournament(ctx context.Context, tournamentID int64
 	}
 
 	return tx.Commit(ctx)
+}
+
+func (r *Repository) UpdateInviteCode(ctx context.Context, tournamentID int64, newCode string, expiresAt time.Time) error {
+	_, err := r.DB.Exec(
+		ctx,
+		`UPDATE tournaments SET invite_code = $1, invite_code_expires_at = $2, updated_at = NOW() WHERE id = $3`,
+		newCode,
+		expiresAt,
+		tournamentID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "update invite code failed", "tournament_id", tournamentID, "error", err)
+		return err
+	}
+	return nil
 }
