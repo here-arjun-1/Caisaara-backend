@@ -116,7 +116,7 @@ func (h *Handler) GetTournamentDetails(c *gin.Context) {
 	userID, ok := middleware.GetUserID(c)
 	if ok && userID == tw.CreatedBy && tw.InviteCode != nil {
 		res.InviteCode = *tw.InviteCode
-		res.InviteLink = "/tournaments/invite/" + *tw.InviteCode
+		res.Link = "https://caisaara.duckdns.org/tournaments/invite/" + *tw.InviteCode
 	}
 
 	c.JSON(http.StatusOK, res)
@@ -134,6 +134,12 @@ func (h *Handler) GetTournamentByInviteCode(c *gin.Context) {
 			})
 			return
 		}
+		if errors.Is(err, ErrInviteCodeExpired) {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
 
 		slog.ErrorContext(ctx, "get tournament by invite code handler failed", "code", code, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -142,7 +148,13 @@ func (h *Handler) GetTournamentByInviteCode(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, ToTournamentDetailsResponse(tw))
+	res := ToTournamentDetailsResponse(tw)
+	if tw.InviteCode != nil && *tw.InviteCode != "" {
+		res.InviteCode = *tw.InviteCode
+		res.Link = "https://caisaara.duckdns.org/tournaments/invite/" + *tw.InviteCode
+	}
+
+	c.JSON(http.StatusOK, res)
 }
 
 func (h *Handler) JoinTournament(c *gin.Context) {
@@ -185,6 +197,7 @@ func (h *Handler) JoinTournament(c *gin.Context) {
 			errors.Is(err, ErrTournamentFull) ||
 			errors.Is(err, ErrAlreadyJoined) ||
 			errors.Is(err, ErrInvalidInviteCode) ||
+			errors.Is(err, ErrInviteCodeExpired) ||
 			errors.Is(err, ErrRatingTooLow) {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
@@ -232,6 +245,7 @@ func (h *Handler) JoinTournamentByInviteCode(c *gin.Context) {
 			errors.Is(err, ErrTournamentFull) ||
 			errors.Is(err, ErrAlreadyJoined) ||
 			errors.Is(err, ErrInvalidInviteCode) ||
+			errors.Is(err, ErrInviteCodeExpired) ||
 			errors.Is(err, ErrRatingTooLow) {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
@@ -518,6 +532,55 @@ func (h *Handler) GetMyGames(c *gin.Context) {
 		slog.ErrorContext(ctx, "get my games handler failed", "id", id, "user_id", userID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return
+	}
+
+	c.JSON(http.StatusOK, res)
+}
+
+func (h *Handler) RegenerateInviteCode(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "user not authenticated",
+		})
+		return
+	}
+
+	idParam := c.Param("id")
+	id, err := strconv.ParseInt(idParam, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "invalid tournament id",
+		})
+		return
+	}
+
+	tw, err := h.Service.RegenerateInviteCode(c.Request.Context(), id, userID)
+	if err != nil {
+		if errors.Is(err, ErrTournamentNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error": "tournament not found",
+			})
+			return
+		}
+		if errors.Is(err, ErrNotCreator) {
+			c.JSON(http.StatusForbidden, gin.H{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		slog.ErrorContext(c.Request.Context(), "regenerate invite code handler failed", "id", id, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
+		})
+		return
+	}
+
+	res := ToTournamentDetailsResponse(tw)
+	if tw.InviteCode != nil && *tw.InviteCode != "" {
+		res.InviteCode = *tw.InviteCode
+		res.Link = "https://caisaara.duckdns.org/tournaments/invite/" + *tw.InviteCode
 	}
 
 	c.JSON(http.StatusOK, res)

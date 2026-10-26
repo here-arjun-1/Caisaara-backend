@@ -20,4 +20,5 @@ var (
 	ErrBannedFromClub     = errors.New("you are banned from this club")
 	ErrUserNotFound       = errors.New("player not found")
 	ErrInvalidMode        = errors.New("mode must be bullet, blitz, rapid or daily")
+	ErrShareCodeExpired   = errors.New("invite link has expired")
 )

@@ -23,4 +23,5 @@ var (
 	ErrInvalidMinRating     = errors.New("min_rating cannot be negative")
 	ErrRatingTooLow         = errors.New("your rating is below the minimum rating for this tournament")
 	ErrNotOngoing           = errors.New("tournament is not ongoing")
+	ErrInviteCodeExpired    = errors.New("invite link has expired")
 )
