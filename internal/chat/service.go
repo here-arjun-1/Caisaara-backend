@@ -19,12 +19,22 @@ type ChatService interface {
 	SendDirectMessage(ctx context.Context, senderID, receiverID int64, message string) (*DirectMessage, error)
 	GetDirectMessages(ctx context.Context, currentUserID, otherUserID int64) ([]DirectMessage, error)
 	GetConversations(ctx context.Context, userID int64) ([]Conversation, error)
+	SetPrivacyChecker(checker PrivacyChecker)
+}
+
+type PrivacyChecker interface {
+	CheckDirectMessage(ctx context.Context, senderID, receiverID int64) error
 }
 
 type Service struct {
-	ChatRepo    ChatRepository
-	GameRepo    game.GameRepository
-	RateLimiter RateLimiter
+	ChatRepo       ChatRepository
+	GameRepo       game.GameRepository
+	RateLimiter    RateLimiter
+	PrivacyChecker PrivacyChecker
+}
+
+func (s *Service) SetPrivacyChecker(checker PrivacyChecker) {
+	s.PrivacyChecker = checker
 }
 
 func NewService(chatRepo ChatRepository, gameRepo game.GameRepository, rateLimiter ...RateLimiter) ChatService {
@@ -152,6 +162,12 @@ func (s *Service) SendDirectMessage(ctx context.Context, senderID, receiverID in
 	}
 	if !exists {
 		return nil, errors.New("recipient user not found")
+	}
+
+	if s.PrivacyChecker != nil {
+		if err := s.PrivacyChecker.CheckDirectMessage(ctx, senderID, receiverID); err != nil {
+			return nil, err
+		}
 	}
 
 	msg := &DirectMessage{

@@ -197,7 +197,8 @@ func handleError(c *gin.Context, err error) {
 	case errors.Is(err, ErrNotMember),
 		errors.Is(err, ErrNotAllowed),
 		errors.Is(err, ErrKickedRecently),
-		errors.Is(err, ErrBannedFromClub):
+		errors.Is(err, ErrBannedFromClub),
+		err != nil && err.Error() == "not allowed by privacy settings":
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 	case errors.Is(err, ErrClubNameTaken), errors.Is(err, ErrAlreadyMember):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})

@@ -23,6 +23,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/nearby"
 	"github.com/here-arjun-1/Caisaara-backend/internal/notification"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
+	"github.com/here-arjun-1/Caisaara-backend/internal/privacy"
 	"github.com/here-arjun-1/Caisaara-backend/internal/puzzle"
 	"github.com/here-arjun-1/Caisaara-backend/internal/response"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tilt"
@@ -50,7 +51,8 @@ func New(
 	leaderboardHandler *leaderboard.Handler,
 	notificationHandler *notification.Handler,
 	accountHandler *account.Handler,
-	tournamentHandler ...*tournament.Handler,
+	tournamentHandler *tournament.Handler,
+	privacyHandler ...*privacy.Handler,
 ) (*gin.Engine, error) {
 	r := gin.New()
 	r.Use(gin.LoggerWithConfig(gin.LoggerConfig{
@@ -152,8 +154,8 @@ func New(
 		puzzle.RegisterRoutes(puzzleHandler, r, middleware.JWTMiddleware(jwtSecret, authModule.UserRepository))
 	}
 
-	if len(tournamentHandler) > 0 && tournamentHandler[0] != nil {
-		tournament.RegisterRoutes(tournamentHandler[0], protected, public)
+	if tournamentHandler != nil {
+		tournament.RegisterRoutes(tournamentHandler, protected, public)
 	}
 
 	if wsHandler != nil {
@@ -175,6 +177,10 @@ func New(
 
 	if accountHandler != nil {
 		account.RegisterRoutes(accountHandler, protected)
+	}
+
+	if len(privacyHandler) > 0 && privacyHandler[0] != nil {
+		privacy.RegisterRoutes(privacyHandler[0], protected)
 	}
 
 	return r, nil
