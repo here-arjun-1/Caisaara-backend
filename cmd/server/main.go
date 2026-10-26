@@ -157,6 +157,7 @@ func run() error {
 	chatHandler := chat.NewHandler(chatService, wsHandler.BroadcastChatMessage)
 	chatHandler.SetDirectBroadcaster(wsHandler.BroadcastDirectMessage)
 	notificationService.SetBroadcaster(wsHandler.BroadcastNotification)
+	notificationService.SetOnlineChecker(wsHandler.IsUserOnline)
 
 	tournamentRepo := tournament.NewRepository(conn)
 	tournamentService := tournament.NewService(tournamentRepo, gameRepository, wsHandler)
@@ -219,6 +220,19 @@ func run() error {
 
 	asynqServer := worker.StartEmailServer(asynqRedisOpt, email.NewSender(cfg.SMTP))
 	analysisServer := analysis.StartAnalysisServer(asynqRedisOpt, analysisProcessor, 2)
+
+	var pushServer *asynq.Server
+	if cfg.FirebaseCredentials != "" {
+		pushSender, err := notification.NewPushSender(context.Background(), cfg.FirebaseCredentials)
+		if err != nil {
+			return fmt.Errorf("setup firebase: %w", err)
+		}
+		notificationService.SetTaskClient(taskDistributor)
+		pushServer = notification.StartPushServer(asynqRedisOpt, notification.NewPushTaskProcessor(notificationRepository, pushSender))
+	} else {
+		slog.Info("FIREBASE_CREDENTIALS_BASE64 not set, push notifications are off")
+	}
+
 	worker.StartSessionCleanup(appCtx, authModule.SessionRepository, 1*time.Hour)
 	matcher.Start(appCtx)
 	tournament.StartTournamentCleanup(appCtx, tournamentRepo, 24*time.Hour)
@@ -272,6 +286,9 @@ func run() error {
 	}
 	if analysisServer != nil {
 		analysisServer.Stop()
+	}
+	if pushServer != nil {
+		pushServer.Stop()
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

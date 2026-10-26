@@ -99,3 +99,11 @@ func (h *Handler) BroadcastNotification(userID int64, n *notification.Notificati
 		"notification": n,
 	})
 }
+
+func (h *Handler) IsUserOnline(userID int64) bool {
+	if h.Hub == nil {
+		return false
+	}
+	room := h.Hub.GetRoom("notif:" + strconv.FormatInt(userID, 10))
+	return room != nil && room.HasClient(userID)
+}

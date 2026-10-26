@@ -105,3 +105,66 @@ func (r *Repository) MarkAllRead(ctx context.Context, userID int64) error {
 	}
 	return nil
 }
+
+func (r *Repository) SaveDeviceToken(ctx context.Context, userID int64, token string, platform string) error {
+	_, err := r.DB.Exec(ctx,
+		`INSERT INTO device_tokens (user_id, token, platform) VALUES ($1, $2, $3)
+		ON CONFLICT (token) DO UPDATE SET user_id = EXCLUDED.user_id, platform = EXCLUDED.platform, updated_at = NOW()`,
+		userID, token, platform,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "save device token failed", "user_id", userID, "error", err)
+		return err
+	}
+	return nil
+}
+
+func (r *Repository) DeleteDeviceToken(ctx context.Context, userID int64, token string) error {
+	_, err := r.DB.Exec(ctx,
+		`DELETE FROM device_tokens WHERE token = $1 AND user_id = $2`,
+		token, userID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete device token failed", "user_id", userID, "error", err)
+		return err
+	}
+	return nil
+}
+
+func (r *Repository) DeleteDeadToken(ctx context.Context, token string) error {
+	_, err := r.DB.Exec(ctx, `DELETE FROM device_tokens WHERE token = $1`, token)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete dead device token failed", "error", err)
+		return err
+	}
+	return nil
+}
+
+func (r *Repository) FindDeviceTokens(ctx context.Context, userID int64) ([]string, error) {
+	rows, err := r.DB.Query(ctx,
+		`SELECT token FROM device_tokens WHERE user_id = $1`,
+		userID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "find device tokens failed", "user_id", userID, "error", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	tokens := []string{}
+	for rows.Next() {
+		var token string
+		if err := rows.Scan(&token); err != nil {
+			slog.ErrorContext(ctx, "scan device token failed", "user_id", userID, "error", err)
+			return nil, err
+		}
+		tokens = append(tokens, token)
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "device tokens rows iteration error", "user_id", userID, "error", err)
+		return nil, err
+	}
+
+	return tokens, nil
+}
