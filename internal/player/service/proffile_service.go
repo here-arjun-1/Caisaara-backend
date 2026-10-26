@@ -49,6 +49,7 @@ type ProfileRepository interface {
 	FindStartRating(ctx context.Context, userID int64, mode string, since time.Time) (*int, error)
 	FindLowestRating(ctx context.Context, userID int64, mode string) (*model.LowestRating, error)
 	FindGameResults(ctx context.Context, userID int64, mode string) ([]model.GameResult, error)
+	FindPlayerGames(ctx context.Context, userID int64, mode string, limit int) ([]model.RecentGame, error)
 	SearchByUsername(ctx context.Context, prefix string, limit int) ([]model.Profile, error)
 }
 
@@ -112,6 +113,43 @@ func (h *ProfileService) GetPublicProfile(ctx context.Context, username string) 
 		Ratings:     toModeRatings(p),
 		JoinedAt:    p.CreatedAt,
 	}, nil
+}
+
+func (h *ProfileService) GetPlayerGames(ctx context.Context, username string, mode string, limit int) ([]dto.RecentGameResponse, error) {
+	username = strings.ToLower(strings.TrimSpace(username))
+	p, err := h.ProfileRepository.FindByUsername(ctx, username)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if id, parseErr := strconv.ParseInt(username, 10, 64); parseErr == nil && id > 0 {
+			p, err = h.ProfileRepository.FindByUserID(ctx, id)
+		}
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrUserNotFound
+	}
+	if err != nil {
+		slog.Error("find profile failed", "error", err)
+		return nil, ErrInternal
+	}
+
+	games, err := h.ProfileRepository.FindPlayerGames(ctx, p.UserID, mode, limit)
+	if err != nil {
+		slog.Error("find player games failed", "error", err)
+		return nil, ErrInternal
+	}
+
+	recentGames := make([]dto.RecentGameResponse, 0, len(games))
+	for _, g := range games {
+		recentGames = append(recentGames, dto.RecentGameResponse{
+			GameID:           g.GameID,
+			OpponentUsername: g.OpponentUsername,
+			Color:            g.Color,
+			Outcome:          gameOutcome(g.Color, g.Result),
+			EndReason:        g.EndReason,
+			EndedAt:          g.EndedAt,
+		})
+	}
+
+	return recentGames, nil
 }
 
 func (h *ProfileService) SearchPlayers(ctx context.Context, query string) ([]dto.PlayerSearchResult, error) {
@@ -243,6 +281,11 @@ func (h *ProfileService) GetModeStats(ctx context.Context, username string, mode
 	username = strings.ToLower(strings.TrimSpace(username))
 
 	p, err := h.ProfileRepository.FindByUsername(ctx, username)
+	if errors.Is(err, pgx.ErrNoRows) {
+		if id, parseErr := strconv.ParseInt(username, 10, 64); parseErr == nil && id > 0 {
+			p, err = h.ProfileRepository.FindByUserID(ctx, id)
+		}
+	}
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrUserNotFound
 	}

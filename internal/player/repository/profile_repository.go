@@ -262,6 +262,58 @@ func (r *ProfileRepository) FindRecentGamesByMode(ctx context.Context, userID in
 	return games, rows.Err()
 }
 
+func (r *ProfileRepository) FindPlayerGames(ctx context.Context, userID int64, mode string, limit int) ([]model.RecentGame, error) {
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	rows, err := r.DB.Query(
+		ctx,
+		`SELECT
+			g.id::text,
+			opp.username,
+			CASE WHEN g.white_player_id = $1 THEN 'white' ELSE 'black' END,
+			COALESCE(g.result, ''),
+			g.end_reason,
+			g.ended_at
+		FROM games g
+		JOIN users opp ON opp.id = CASE
+			WHEN g.white_player_id = $1 THEN g.black_player_id
+			ELSE g.white_player_id
+		END
+		WHERE (g.white_player_id = $1 OR g.black_player_id = $1)
+		  AND ($2 = '' OR g.time_control_mode = $2)
+		  AND g.status = 'finished'
+		ORDER BY g.ended_at DESC NULLS LAST
+		LIMIT $3`,
+		userID,
+		mode,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var games []model.RecentGame
+	for rows.Next() {
+		var g model.RecentGame
+		err := rows.Scan(
+			&g.GameID,
+			&g.OpponentUsername,
+			&g.Color,
+			&g.Result,
+			&g.EndReason,
+			&g.EndedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		games = append(games, g)
+	}
+
+	return games, rows.Err()
+}
+
 func (r *ProfileRepository) FindRatingHistory(ctx context.Context, userID int64, mode string, since time.Time) ([]model.RatingPoint, error) {
 	rows, err := r.DB.Query(
 		ctx,
