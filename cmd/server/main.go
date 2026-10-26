@@ -28,6 +28,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/leaderboard"
 	"github.com/here-arjun-1/Caisaara-backend/internal/matchmaking"
 	"github.com/here-arjun-1/Caisaara-backend/internal/nearby"
+	"github.com/here-arjun-1/Caisaara-backend/internal/notification"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
 	"github.com/here-arjun-1/Caisaara-backend/internal/puzzle"
 	"github.com/here-arjun-1/Caisaara-backend/internal/rating"
@@ -111,6 +112,10 @@ func run() error {
 	friendsService := friends.NewService(friendsRepository)
 	friendsHandler := friends.NewHandler(friendsService)
 
+	notificationRepository := notification.NewRepository(conn)
+	notificationService := notification.NewService(notificationRepository)
+	notificationHandler := notification.NewHandler(notificationService)
+
 	inviteRepo := invitation.NewRedisInviteRepository(redisClient)
 	invitationService := invitation.NewService(
 		inviteRepo,
@@ -151,6 +156,7 @@ func run() error {
 	botHandler.SetHub(wsHub)
 	chatHandler := chat.NewHandler(chatService, wsHandler.BroadcastChatMessage)
 	chatHandler.SetDirectBroadcaster(wsHandler.BroadcastDirectMessage)
+	notificationService.SetBroadcaster(wsHandler.BroadcastNotification)
 
 	tournamentRepo := tournament.NewRepository(conn)
 	tournamentService := tournament.NewService(tournamentRepo, gameRepository, wsHandler)
@@ -201,6 +207,7 @@ func run() error {
 		friendsHandler,
 		puzzleHandler,
 		leaderboardHandler,
+		notificationHandler,
 		tournamentHandler,
 	)
 	if err != nil {

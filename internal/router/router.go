@@ -20,6 +20,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/matchmaking"
 	"github.com/here-arjun-1/Caisaara-backend/internal/metrics"
 	"github.com/here-arjun-1/Caisaara-backend/internal/nearby"
+	"github.com/here-arjun-1/Caisaara-backend/internal/notification"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
 	"github.com/here-arjun-1/Caisaara-backend/internal/puzzle"
 	"github.com/here-arjun-1/Caisaara-backend/internal/response"
@@ -46,6 +47,7 @@ func New(
 	friendsHandler *friends.Handler,
 	puzzleHandler *puzzle.Handler,
 	leaderboardHandler *leaderboard.Handler,
+	notificationHandler *notification.Handler,
 	tournamentHandler ...*tournament.Handler,
 ) (*gin.Engine, error) {
 	r := gin.New()
@@ -157,11 +159,16 @@ func New(
 		r.GET("/ws/tournament/:tournamentID", wsHandler.ConnectTournament)
 		r.GET("/ws/watch/:code", wsHandler.ConnectSpectator)
 		r.GET("/ws/messages", wsHandler.ConnectDirectMessages)
+		r.GET("/ws/notifications", wsHandler.ConnectNotifications)
 		protected.GET("/games/:gameID/ws", wsHandler.Connect)
 	}
 
 	if leaderboardHandler != nil {
 		leaderboard.RegisterRoutes(leaderboardHandler, protected)
+	}
+
+	if notificationHandler != nil {
+		notification.RegisterRoutes(notificationHandler, protected)
 	}
 
 	return r, nil
