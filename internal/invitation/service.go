@@ -259,7 +259,9 @@ func (s *Service) JoinInvite(
 	}
 
 	defer func() {
-		if releaseErr := s.InviteRepo.ReleaseLock(ctx, code); releaseErr != nil {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if releaseErr := s.InviteRepo.ReleaseLock(releaseCtx, code, player2ID); releaseErr != nil {
 			slog.ErrorContext(ctx, "release invite lock failed", "error", releaseErr)
 		}
 	}()

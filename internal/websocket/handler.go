@@ -312,9 +312,7 @@ func (h *Handler) ConnectSpectator(c *gin.Context) {
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		slog.ErrorContext(ctx, "spectator websocket upgrade failed", "game_id", gameID, "error", err)
-		if room.IsEmpty() {
-			h.Hub.RemoveRoom(gameID)
-		}
+		h.Hub.RemoveRoomIfEmpty(gameID)
 		return
 	}
 
@@ -344,9 +342,7 @@ func (h *Handler) spectatorReadPump(ctx context.Context, client *Client, room *R
 
 		h.broadcastSpectatorCount(room)
 
-		if room.IsEmpty() {
-			h.Hub.RemoveRoom(room.GameID)
-		}
+		h.Hub.RemoveRoomIfEmpty(room.GameID)
 	}()
 
 	client.Conn.SetReadLimit(maxMessageSize)
@@ -469,9 +465,7 @@ func (h *Handler) readPump(
 
 		h.handlePlayerDisconnect(client.GameID, client.UserID, room)
 
-		if room.IsEmpty() {
-			h.Hub.RemoveRoom(room.GameID)
-		}
+		h.Hub.RemoveRoomIfEmpty(room.GameID)
 	}()
 
 	client.Conn.SetReadLimit(maxMessageSize)
@@ -876,9 +870,7 @@ func (h *Handler) ConnectDirectMessages(c *gin.Context) {
 	defer func() {
 		room.RemoveClient(client.UserID, client)
 		client.Close()
-		if room.Count() == 0 {
-			h.Hub.RemoveRoom(roomKey)
-		}
+		h.Hub.RemoveRoomIfEmpty(roomKey)
 	}()
 
 	go h.writePump(ctx, client)
@@ -1106,9 +1098,7 @@ func (h *Handler) ConnectTournament(c *gin.Context) {
 	go func() {
 		defer func() {
 			room.RemoveClient(client.UserID, client)
-			if room.Count() == 0 {
-				h.Hub.RemoveRoom(roomKey)
-			}
+			h.Hub.RemoveRoomIfEmpty(roomKey)
 			client.Close()
 		}()
 

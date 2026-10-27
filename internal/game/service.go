@@ -260,6 +260,12 @@ func (s *Service) notifyGameCompleted(ctx context.Context, g *Game) {
 		g.WhiteProvisional = updated.WhiteProvisional
 		g.BlackProvisional = updated.BlackProvisional
 	}
+	if g != nil {
+		time.AfterFunc(30*time.Second, func() {
+			s.gameLocks.Delete(g.ID)
+			s.drawOffers.Delete(g.ID)
+		})
+	}
 }
 
 func (s *Service) SetGameStateUpdatedListener(listener func(ctx context.Context, g *Game)) {
@@ -658,21 +664,23 @@ func (s *Service) ResignGame(
 ) (*Game, error) {
 	mu := s.getGameLock(gameID)
 	mu.Lock()
-	defer mu.Unlock()
 
 	s.drawOffers.Delete(gameID)
 	s.waitForPendingMoves(gameID)
 
 	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
 	if err != nil {
+		mu.Unlock()
 		return nil, err
 	}
 
 	if currentGame.Status != StatusActive {
+		mu.Unlock()
 		return nil, errors.New("game is already finished")
 	}
 
 	if playerID != currentGame.WhitePlayerID && playerID != currentGame.BlackPlayerID {
+		mu.Unlock()
 		return nil, errors.New("player is not part of this game")
 	}
 
@@ -700,6 +708,7 @@ func (s *Service) ResignGame(
 		&now,
 	)
 	if err != nil {
+		mu.Unlock()
 		return nil, err
 	}
 
@@ -707,6 +716,7 @@ func (s *Service) ResignGame(
 	currentGame.Result = result
 	currentGame.EndReason = endReason
 	currentGame.TurnStartedAt = &now
+	mu.Unlock()
 
 	s.notifyGameCompleted(ctx, currentGame)
 	s.notifyGameStateUpdated(ctx, currentGame)
@@ -721,21 +731,23 @@ func (s *Service) DrawGame(
 ) (*Game, error) {
 	mu := s.getGameLock(gameID)
 	mu.Lock()
-	defer mu.Unlock()
 
 	s.drawOffers.Delete(gameID)
 	s.waitForPendingMoves(gameID)
 
 	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
 	if err != nil {
+		mu.Unlock()
 		return nil, err
 	}
 
 	if currentGame.Status != StatusActive {
+		mu.Unlock()
 		return nil, errors.New("game is already finished")
 	}
 
 	if playerID != currentGame.WhitePlayerID && playerID != currentGame.BlackPlayerID {
+		mu.Unlock()
 		return nil, errors.New("player is not part of this game")
 	}
 
@@ -757,6 +769,7 @@ func (s *Service) DrawGame(
 		&now,
 	)
 	if err != nil {
+		mu.Unlock()
 		return nil, err
 	}
 
@@ -764,6 +777,7 @@ func (s *Service) DrawGame(
 	currentGame.Result = result
 	currentGame.EndReason = endReason
 	currentGame.TurnStartedAt = &now
+	mu.Unlock()
 
 	s.notifyGameCompleted(ctx, currentGame)
 	s.notifyGameStateUpdated(ctx, currentGame)
@@ -911,21 +925,23 @@ func (s *Service) EndGameOnDisconnect(
 ) (*Game, error) {
 	mu := s.getGameLock(gameID)
 	mu.Lock()
-	defer mu.Unlock()
 
 	s.drawOffers.Delete(gameID)
 	s.waitForPendingMoves(gameID)
 
 	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
 	if err != nil {
+		mu.Unlock()
 		return nil, err
 	}
 
 	if currentGame.Status != StatusActive {
+		mu.Unlock()
 		return currentGame, nil
 	}
 
 	if disconnectedPlayerID != currentGame.WhitePlayerID && disconnectedPlayerID != currentGame.BlackPlayerID {
+		mu.Unlock()
 		return nil, errors.New("player is not part of this game")
 	}
 
@@ -986,6 +1002,7 @@ func (s *Service) EndGameOnDisconnect(
 		&now,
 	)
 	if err != nil {
+		mu.Unlock()
 		return nil, err
 	}
 
@@ -995,6 +1012,7 @@ func (s *Service) EndGameOnDisconnect(
 	currentGame.WhiteTimeMs = newWhiteTimeMs
 	currentGame.BlackTimeMs = newBlackTimeMs
 	currentGame.TurnStartedAt = &now
+	mu.Unlock()
 
 	s.notifyGameCompleted(ctx, currentGame)
 	s.notifyGameStateUpdated(ctx, currentGame)

@@ -63,9 +63,7 @@ func (h *Handler) Connect(c *gin.Context) {
 	room.AddClient(cl)
 	defer func() {
 		room.RemoveClient(cl.UserID, cl)
-		if room.Count() == 0 {
-			h.Hub.RemoveRoom(roomKey)
-		}
+		h.Hub.RemoveRoomIfEmpty(roomKey)
 	}()
 
 	go cl.WritePump()

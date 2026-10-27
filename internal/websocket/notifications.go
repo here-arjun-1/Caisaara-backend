@@ -61,9 +61,7 @@ func (h *Handler) ConnectNotifications(c *gin.Context) {
 	defer func() {
 		room.RemoveClient(client.UserID, client)
 		client.Close()
-		if room.Count() == 0 {
-			h.Hub.RemoveRoom(roomKey)
-		}
+		h.Hub.RemoveRoomIfEmpty(roomKey)
 	}()
 
 	go h.writePump(ctx, client)
