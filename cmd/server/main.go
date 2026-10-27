@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/here-arjun-1/Caisaara-backend/internal/account"
 	"github.com/here-arjun-1/Caisaara-backend/internal/analysis"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/database"
@@ -178,6 +179,17 @@ func run() error {
 	leaderboardService := leaderboard.NewService(leaderboardRepository)
 	leaderboardHandler := leaderboard.NewHandler(leaderboardService)
 
+	accountRepository := account.NewRepository(conn)
+	accountService := account.NewService(
+		accountRepository,
+		gameService,
+		botService,
+		tournamentService,
+		matchmakingService,
+		wsHub,
+	)
+	accountHandler := account.NewHandler(accountService)
+
 	gameService.SetGameCompletionListener(func(ctx context.Context, gameID string, result string) {
 		if err := ratingService.UpdateRatingsAfterGame(ctx, gameID); err != nil {
 			slog.ErrorContext(ctx, "update ratings failed", "game_id", gameID, "error", err)
@@ -211,6 +223,7 @@ func run() error {
 		puzzleHandler,
 		leaderboardHandler,
 		notificationHandler,
+		accountHandler,
 		tournamentHandler,
 	)
 	if err != nil {
