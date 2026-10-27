@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/gin-gonic/gin"
+	"github.com/here-arjun-1/Caisaara-backend/internal/account"
 	"github.com/here-arjun-1/Caisaara-backend/internal/analysis"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
@@ -48,6 +49,7 @@ func New(
 	puzzleHandler *puzzle.Handler,
 	leaderboardHandler *leaderboard.Handler,
 	notificationHandler *notification.Handler,
+	accountHandler *account.Handler,
 	tournamentHandler ...*tournament.Handler,
 ) (*gin.Engine, error) {
 	r := gin.New()
@@ -169,6 +171,10 @@ func New(
 
 	if notificationHandler != nil {
 		notification.RegisterRoutes(notificationHandler, protected)
+	}
+
+	if accountHandler != nil {
+		account.RegisterRoutes(accountHandler, protected)
 	}
 
 	return r, nil
