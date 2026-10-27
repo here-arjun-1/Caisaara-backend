@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/chat"
+	"github.com/here-arjun-1/Caisaara-backend/internal/config"
 )
 
 const (
@@ -99,7 +100,7 @@ func (s *Service) CreateClub(ctx context.Context, ownerID int64, name string, de
 		OwnerID:            ownerID,
 		ShareCode:          shareCode,
 		ShareCodeExpiresAt: &expiresAt,
-		Link:               "https://caisaara.duckdns.org/club/" + shareCode,
+		Link:               config.AppBaseURL + "/club/" + shareCode,
 	}
 
 	if err := s.Repository.CreateClub(ctx, club); err != nil {
@@ -138,13 +139,17 @@ func (s *Service) JoinClub(ctx context.Context, clubID string, userID int64) err
 		return err
 	}
 
-	if s.PrivacyChecker != nil {
+	return s.joinClub(ctx, club, userID, true)
+}
+
+func (s *Service) joinClub(ctx context.Context, club *Club, userID int64, checkPrivacy bool) error {
+	if checkPrivacy && s.PrivacyChecker != nil {
 		if err := s.PrivacyChecker.CheckClubJoin(ctx, userID, club.OwnerID); err != nil {
 			return err
 		}
 	}
 
-	blocked, blockedUntil, err := s.Repository.IsBlocked(ctx, clubID, userID)
+	blocked, blockedUntil, err := s.Repository.IsBlocked(ctx, club.ID, userID)
 	if err != nil {
 		return err
 	}
@@ -155,7 +160,7 @@ func (s *Service) JoinClub(ctx context.Context, clubID string, userID int64) err
 		return ErrKickedRecently
 	}
 
-	return s.Repository.AddMember(ctx, clubID, userID)
+	return s.Repository.AddMember(ctx, club.ID, userID)
 }
 
 func (s *Service) LeaveClub(ctx context.Context, clubID string, userID int64) error {
@@ -399,13 +404,16 @@ func (s *Service) JoinClubByCode(ctx context.Context, shareCode string, userID i
 	if err != nil {
 		return nil, err
 	}
+	if club.ShareCodeExpiresAt != nil && time.Now().After(*club.ShareCodeExpiresAt) {
+		return nil, ErrShareCodeExpired
+	}
 
-	if err := s.JoinClub(ctx, club.ID, userID); err != nil {
+	if err := s.joinClub(ctx, club, userID, false); err != nil {
 		return nil, err
 	}
 
 	club.MemberCount++
-	club.Link = "https://caisaara.duckdns.org/club/" + club.ShareCode
+	club.Link = config.AppBaseURL + "/club/" + club.ShareCode
 	return club, nil
 }
 
@@ -419,8 +427,11 @@ func (s *Service) GetClubByShareCode(ctx context.Context, shareCode string) (*Cl
 	if err != nil {
 		return nil, err
 	}
+	if club.ShareCodeExpiresAt != nil && time.Now().After(*club.ShareCodeExpiresAt) {
+		return nil, ErrShareCodeExpired
+	}
 
-	club.Link = "https://caisaara.duckdns.org/club/" + club.ShareCode
+	club.Link = config.AppBaseURL + "/club/" + club.ShareCode
 	return club, nil
 }
 
@@ -449,7 +460,7 @@ func (s *Service) RegenerateShareCode(ctx context.Context, clubID string, userID
 	}
 	club.ShareCode = shareCode
 	club.ShareCodeExpiresAt = &expiresAt
-	club.Link = "https://caisaara.duckdns.org/club/" + shareCode
+	club.Link = config.AppBaseURL + "/club/" + shareCode
 
 	return club, nil
 }

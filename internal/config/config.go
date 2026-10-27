@@ -9,11 +9,14 @@ import (
 	"github.com/joho/godotenv"
 )
 
+const AppBaseURL = "https://caisaara.duckdns.org"
+
 type Config struct {
 	Port                string
 	DatabaseURL         string
 	RedisURL            string
 	JWTSecret           string
+	AppBaseURL          string
 	SMTP                SMTPConfig
 	S3                  S3Config
 	StockfishPath       string
@@ -43,6 +46,7 @@ func Load() (*Config, error) {
 		DatabaseURL:         os.Getenv("dbURL"),
 		RedisURL:            getEnv("REDIS_URL", "localhost:6379"),
 		JWTSecret:           os.Getenv("JWT_SECRET"),
+		AppBaseURL:          getEnv("APP_BASE_URL", AppBaseURL),
 		StockfishPath:       getEnv("STOCKFISH_PATH", "stockfish"),
 		FirebaseCredentials: os.Getenv("FIREBASE_CREDENTIALS_BASE64"),
 		SMTP: SMTPConfig{

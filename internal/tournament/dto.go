@@ -3,6 +3,8 @@ package tournament
 import (
 	"strconv"
 	"time"
+
+	"github.com/here-arjun-1/Caisaara-backend/internal/config"
 )
 
 type CreateTournamentRequest struct {
@@ -97,7 +99,7 @@ func ToTournamentResponse(t *Tournament) *TournamentResponse {
 	link := ""
 	if t.InviteCode != nil && *t.InviteCode != "" {
 		inviteCode = *t.InviteCode
-		link = "https://caisaara.duckdns.org/tournaments/invite/" + inviteCode
+		link = config.AppBaseURL + "/tournaments/invite/" + inviteCode
 	}
 	return &TournamentResponse{
 		ID:           strconv.FormatInt(t.ID, 10),
@@ -126,7 +128,7 @@ func ToTournamentDetailsResponse(tw *TournamentWithPlayerCount) *TournamentDetai
 	link := ""
 	if tw.Visibility != VisibilityPrivate && tw.InviteCode != nil && *tw.InviteCode != "" {
 		inviteCode = *tw.InviteCode
-		link = "https://caisaara.duckdns.org/tournaments/invite/" + inviteCode
+		link = config.AppBaseURL + "/tournaments/invite/" + inviteCode
 	}
 	return &TournamentDetailsResponse{
 		ID:           strconv.FormatInt(tw.ID, 10),

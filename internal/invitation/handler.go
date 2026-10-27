@@ -9,6 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
+	"github.com/here-arjun-1/Caisaara-backend/internal/config"
+	"github.com/here-arjun-1/Caisaara-backend/internal/privacy"
 )
 
 type CreateInviteRequest struct {
@@ -132,7 +134,7 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	if errors.Is(err, ErrLevelNotPicked) || errors.Is(err, ErrPlayerBlocked) || (err != nil && err.Error() == "not allowed by privacy settings") {
+	if errors.Is(err, ErrLevelNotPicked) || errors.Is(err, ErrPlayerBlocked) || errors.Is(err, privacy.ErrNotAllowed) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": err.Error(),
 		})
@@ -156,7 +158,7 @@ func (h *Handler) Create(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{
 		"invite_code":          invite.Code,
 		"game_id":              invite.GameID,
-		"link":                 "https://caisaara.duckdns.org/play/" + invite.Code,
+		"link":                 config.AppBaseURL + "/play/" + invite.Code,
 		"time_control_minutes": invite.TimeControlMinutes,
 		"increment_seconds":    invite.IncrementSeconds,
 		"color":                invite.Color,
@@ -282,7 +284,7 @@ func (h *Handler) Join(c *gin.Context) {
 		return
 	}
 
-	if errors.Is(err, ErrNotYourChallenge) || errors.Is(err, ErrLevelNotPicked) || errors.Is(err, ErrPlayerBlocked) || (err != nil && err.Error() == "not allowed by privacy settings") {
+	if errors.Is(err, ErrNotYourChallenge) || errors.Is(err, ErrLevelNotPicked) || errors.Is(err, ErrPlayerBlocked) || errors.Is(err, privacy.ErrNotAllowed) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"error": err.Error(),
 		})
@@ -407,6 +409,6 @@ func (h *Handler) CreateWatchInvite(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"watch_code": invite.Code,
 		"game_id":    invite.GameID,
-		"link":       "https://caisaara.duckdns.org/watch/" + invite.Code,
+		"link":       config.AppBaseURL + "/watch/" + invite.Code,
 	})
 }
