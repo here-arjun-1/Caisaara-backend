@@ -40,6 +40,16 @@ func (h *Hub) RemoveRoom(gameID string) {
 	delete(h.Rooms, gameID)
 }
 
+func (h *Hub) RemoveRoomIfEmpty(gameID string) {
+	h.Mutex.Lock()
+	defer h.Mutex.Unlock()
+
+	room, exists := h.Rooms[gameID]
+	if exists && room != nil && room.IsEmpty() {
+		delete(h.Rooms, gameID)
+	}
+}
+
 func (h *Hub) GetRoom(gameID string) *Room {
 	h.Mutex.RLock()
 	defer h.Mutex.RUnlock()

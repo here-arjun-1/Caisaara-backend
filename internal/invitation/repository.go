@@ -3,6 +3,7 @@ package invitation
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"time"
 
@@ -15,7 +16,7 @@ type InviteRepository interface {
 	GetInviteByGameID(ctx context.Context, gameID string) (*Invite, error)
 	DeleteInvite(ctx context.Context, code string) error
 	AcquireLock(ctx context.Context, code string, holder int64, ttl time.Duration) (bool, error)
-	ReleaseLock(ctx context.Context, code string) error
+	ReleaseLock(ctx context.Context, code string, holder int64) error
 	AddChallenge(ctx context.Context, opponentID int64, code string, ttl time.Duration) error
 	GetChallengeCodes(ctx context.Context, userID int64) ([]string, error)
 	RemoveChallenge(ctx context.Context, userID int64, code string) error
@@ -114,8 +115,25 @@ func (r *RedisInviteRepository) AcquireLock(ctx context.Context, code string, ho
 	return r.Client.SetNX(ctx, lockKey(code), holder, ttl).Result()
 }
 
-func (r *RedisInviteRepository) ReleaseLock(ctx context.Context, code string) error {
-	return r.Client.Del(ctx, lockKey(code)).Err()
+func (r *RedisInviteRepository) ReleaseLock(ctx context.Context, code string, holder int64) error {
+	key := lockKey(code)
+	return r.Client.Watch(ctx, func(tx *redis.Tx) error {
+		val, err := tx.Get(ctx, key).Int64()
+		if err != nil {
+			if errors.Is(err, redis.Nil) {
+				return nil
+			}
+			return err
+		}
+		if val != holder {
+			return nil
+		}
+		_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+			pipe.Del(ctx, key)
+			return nil
+		})
+		return err
+	}, key)
 }
 
 func (r *RedisInviteRepository) AddChallenge(ctx context.Context, opponentID int64, code string, ttl time.Duration) error {
