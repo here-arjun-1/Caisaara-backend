@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
+	"github.com/here-arjun-1/Caisaara-backend/internal/notification"
 	"github.com/jackc/pgx/v5"
 	"github.com/redis/go-redis/v9"
 )
@@ -22,6 +23,10 @@ type UserFinder interface {
 
 type BlockChecker interface {
 	IsBlockedEitherWay(ctx context.Context, userID int64, otherID int64) (bool, error)
+}
+
+type Notifier interface {
+	Send(ctx context.Context, userID int64, notificationType string, title string, body string, data map[string]any) error
 }
 
 type InvitationService interface {
@@ -42,6 +47,7 @@ type Service struct {
 	GameRepository game.GameRepository
 	UserFinder     UserFinder
 	BlockChecker   BlockChecker
+	Notifier       Notifier
 }
 
 func NewService(
@@ -56,6 +62,10 @@ func NewService(
 		UserFinder:     userFinder,
 		BlockChecker:   blockChecker,
 	}
+}
+
+func (s *Service) SetNotifier(notifier Notifier) {
+	s.Notifier = notifier
 }
 
 func generateInviteCode() (string, error) {
@@ -157,9 +167,32 @@ func (s *Service) CreateInvite(
 			slog.ErrorContext(ctx, "save challenge failed", "error", err, "opponent_id", opponentID)
 			return nil, ErrInternal
 		}
+
+		s.notifyChallenge(ctx, invite)
 	}
 
 	return invite, nil
+}
+
+func (s *Service) notifyChallenge(ctx context.Context, invite *Invite) {
+	if s.Notifier == nil {
+		return
+	}
+
+	creator, err := s.UserFinder.FindUserByID(ctx, invite.CreatorID)
+	if err != nil {
+		return
+	}
+
+	timeControl := fmt.Sprintf("%d+%d", invite.TimeControlMinutes, invite.IncrementSeconds)
+	err = s.Notifier.Send(ctx, invite.OpponentID, notification.TypeGameChallenge,
+		"New challenge",
+		creator.Username+" challenged you to a "+timeControl+" game",
+		map[string]any{"code": invite.Code, "game_id": invite.GameID, "user_id": invite.CreatorID, "username": creator.Username},
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "send challenge notification failed", "opponent_id", invite.OpponentID, "error", err)
+	}
 }
 
 func (s *Service) GetInvite(

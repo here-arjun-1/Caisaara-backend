@@ -115,6 +115,7 @@ func run() error {
 	notificationRepository := notification.NewRepository(conn)
 	notificationService := notification.NewService(notificationRepository)
 	notificationHandler := notification.NewHandler(notificationService)
+	friendsService.SetNotifier(notificationService)
 
 	inviteRepo := invitation.NewRedisInviteRepository(redisClient)
 	invitationService := invitation.NewService(
@@ -123,6 +124,7 @@ func run() error {
 		authModule.UserRepository,
 		friendsRepository,
 	)
+	invitationService.SetNotifier(notificationService)
 	invitationHandler := invitation.NewHandler(invitationService)
 
 	tiltRepository := tilt.NewRepository(conn)

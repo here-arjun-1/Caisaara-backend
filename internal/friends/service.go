@@ -2,17 +2,29 @@ package friends
 
 import (
 	"context"
+	"log/slog"
 	"strings"
+
+	"github.com/here-arjun-1/Caisaara-backend/internal/notification"
 )
+
+type Notifier interface {
+	Send(ctx context.Context, userID int64, notificationType string, title string, body string, data map[string]any) error
+}
 
 type Service struct {
 	Repository *Repository
+	Notifier   Notifier
 }
 
 func NewService(repository *Repository) *Service {
 	return &Service{
 		Repository: repository,
 	}
+}
+
+func (s *Service) SetNotifier(notifier Notifier) {
+	s.Notifier = notifier
 }
 
 func (s *Service) SendRequest(ctx context.Context, senderID int64, receiverUsername string) (int64, error) {
@@ -34,7 +46,33 @@ func (s *Service) SendRequest(ctx context.Context, senderID int64, receiverUsern
 		return 0, ErrUserBlocked
 	}
 
-	return s.Repository.CreateRequest(ctx, senderID, receiverID)
+	requestID, err := s.Repository.CreateRequest(ctx, senderID, receiverID)
+	if err != nil {
+		return 0, err
+	}
+
+	s.notifyFriendRequest(ctx, senderID, receiverID, requestID)
+	return requestID, nil
+}
+
+func (s *Service) notifyFriendRequest(ctx context.Context, senderID int64, receiverID int64, requestID int64) {
+	if s.Notifier == nil {
+		return
+	}
+
+	senderUsername, err := s.Repository.FindUsernameByID(ctx, senderID)
+	if err != nil {
+		return
+	}
+
+	err = s.Notifier.Send(ctx, receiverID, notification.TypeFriendRequest,
+		"New friend request",
+		senderUsername+" sent you a friend request",
+		map[string]any{"request_id": requestID, "user_id": senderID, "username": senderUsername},
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "send friend request notification failed", "receiver_id", receiverID, "error", err)
+	}
 }
 
 func (s *Service) GetPendingRequests(ctx context.Context, userID int64) ([]FriendRequest, error) {
@@ -53,7 +91,34 @@ func (s *Service) AcceptRequest(ctx context.Context, userID int64, requestID int
 	if !found {
 		return ErrRequestNotFound
 	}
+
+	s.notifyRequestAccepted(ctx, userID, requestID)
 	return nil
+}
+
+func (s *Service) notifyRequestAccepted(ctx context.Context, userID int64, requestID int64) {
+	if s.Notifier == nil {
+		return
+	}
+
+	senderID, err := s.Repository.FindRequestSenderID(ctx, requestID)
+	if err != nil {
+		return
+	}
+
+	username, err := s.Repository.FindUsernameByID(ctx, userID)
+	if err != nil {
+		return
+	}
+
+	err = s.Notifier.Send(ctx, senderID, notification.TypeFriendAccepted,
+		"Friend request accepted",
+		username+" accepted your friend request",
+		map[string]any{"user_id": userID, "username": username},
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "send friend accepted notification failed", "sender_id", senderID, "error", err)
+	}
 }
 
 func (s *Service) RejectRequest(ctx context.Context, userID int64, requestID int64) error {
