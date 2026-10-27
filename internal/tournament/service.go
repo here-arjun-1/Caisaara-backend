@@ -201,14 +201,14 @@ func (s *TournamentService) JoinTournament(ctx context.Context, tournamentID int
 		return nil, err
 	}
 
-	if s.PrivacyChecker != nil {
+	if t.Status != StatusRegistration {
+		return nil, ErrNotRegistration
+	}
+
+	if t.Visibility != VisibilityPublic && s.PrivacyChecker != nil {
 		if err := s.PrivacyChecker.CheckTournamentJoin(ctx, userID, t.CreatedBy); err != nil {
 			return nil, err
 		}
-	}
-
-	if t.Status != StatusRegistration {
-		return nil, ErrNotRegistration
 	}
 
 	if t.Players >= t.MaxPlayers {
