@@ -42,6 +42,9 @@ type TournamentRepository interface {
 	GetRoundWinners(ctx context.Context, tournamentID int64, roundID int64) ([]int64, error)
 	DeleteOldTournaments(ctx context.Context, olderThan time.Duration) (int64, error)
 	GetPlayerRating(ctx context.Context, userID int64, mode string) (int, error)
+	RemoveUserFromTournaments(ctx context.Context, userID int64) ([]int64, error)
+	GetWithdrawnPlayers(ctx context.Context, tournamentID int64) (map[int64]bool, error)
+	FinishRoundIfNoGames(ctx context.Context, tournamentID int64, roundNumber int) (bool, error)
 }
 
 type Repository struct {

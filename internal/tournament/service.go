@@ -33,6 +33,7 @@ type Service interface {
 	GetRounds(ctx context.Context, tournamentID int64, roundNumber ...int) (*TournamentRoundsResponse, error)
 	GetGames(ctx context.Context, tournamentID int64, userID ...int64) (*TournamentGamesResponse, error)
 	DeleteOldTournaments(ctx context.Context, olderThan time.Duration) (int64, error)
+	RemoveUserFromTournaments(ctx context.Context, userID int64) error
 	SetBroadcaster(b Broadcaster)
 }
 
@@ -383,11 +384,12 @@ func (s *TournamentService) EndTournament(ctx context.Context, tournamentID int6
 		return nil, err
 	}
 
-	var winnerID *int64
-	if len(standings) > 0 {
-		wID := standings[0].PlayerID
-		winnerID = &wID
+	withdrawn, err := s.Repo.GetWithdrawnPlayers(ctx, tournamentID)
+	if err != nil {
+		return nil, err
 	}
+
+	winnerID := pickWinner(standings, withdrawn)
 
 	if s.Broadcaster != nil {
 		s.Broadcaster.BroadcastTournamentEvent(tournamentID, map[string]interface{}{
@@ -399,7 +401,7 @@ func (s *TournamentService) EndTournament(ctx context.Context, tournamentID int6
 	return winnerID, nil
 }
 
-func (s *TournamentService) generateNextPairings(ctx context.Context, tournamentID int64, t *TournamentWithPlayerCount, swissPlayers []*SwissPlayer) ([]SwissPairingResult, error) {
+func (s *TournamentService) generateNextPairings(ctx context.Context, tournamentID int64, t *TournamentWithPlayerCount, swissPlayers []*SwissPlayer, withdrawn map[int64]bool) ([]SwissPairingResult, error) {
 	switch t.Format {
 	case FormatRoundRobin:
 		playerIDs := make([]int64, len(swissPlayers))
@@ -410,7 +412,7 @@ func (s *TournamentService) generateNextPairings(ctx context.Context, tournament
 		if err != nil {
 			return nil, err
 		}
-		return schedule[t.CurrentRound], nil
+		return removeWithdrawnFromPairings(schedule[t.CurrentRound], withdrawn), nil
 	case FormatKnockout:
 		prevRoundNumber := t.CurrentRound - 1
 		if prevRoundNumber <= 0 {
@@ -428,10 +430,79 @@ func (s *TournamentService) generateNextPairings(ctx context.Context, tournament
 		if err != nil || len(winners) == 0 {
 			return nil, errors.New("no round winners found")
 		}
-		return GenerateKnockoutNextRound(winners)
+
+		activeWinners := make([]int64, 0, len(winners))
+		for _, id := range winners {
+			if !withdrawn[id] {
+				activeWinners = append(activeWinners, id)
+			}
+		}
+		if len(activeWinners) < 2 {
+			return byePairings(activeWinners), nil
+		}
+		return GenerateKnockoutNextRound(activeWinners)
 	default:
-		return GenerateSwissPairings(swissPlayers)
+		activePlayers := make([]*SwissPlayer, 0, len(swissPlayers))
+		activeIDs := make([]int64, 0, len(swissPlayers))
+		for _, p := range swissPlayers {
+			if !withdrawn[p.UserID] {
+				activePlayers = append(activePlayers, p)
+				activeIDs = append(activeIDs, p.UserID)
+			}
+		}
+		if len(activePlayers) < 2 {
+			return byePairings(activeIDs), nil
+		}
+		return GenerateSwissPairings(activePlayers)
 	}
+}
+
+func removeWithdrawnFromPairings(pairings []SwissPairingResult, withdrawn map[int64]bool) []SwissPairingResult {
+	result := make([]SwissPairingResult, 0, len(pairings))
+	for _, p := range pairings {
+		whiteOut := p.WhitePlayerID != nil && withdrawn[*p.WhitePlayerID]
+		blackOut := p.BlackPlayerID != nil && withdrawn[*p.BlackPlayerID]
+
+		if p.IsBye {
+			if !whiteOut {
+				result = append(result, p)
+			}
+			continue
+		}
+
+		if whiteOut && blackOut {
+			continue
+		}
+		if whiteOut {
+			result = append(result, SwissPairingResult{WhitePlayerID: p.BlackPlayerID, IsBye: true})
+			continue
+		}
+		if blackOut {
+			result = append(result, SwissPairingResult{WhitePlayerID: p.WhitePlayerID, IsBye: true})
+			continue
+		}
+		result = append(result, p)
+	}
+	return result
+}
+
+func byePairings(playerIDs []int64) []SwissPairingResult {
+	pairings := make([]SwissPairingResult, 0, len(playerIDs))
+	for _, id := range playerIDs {
+		playerID := id
+		pairings = append(pairings, SwissPairingResult{WhitePlayerID: &playerID, IsBye: true})
+	}
+	return pairings
+}
+
+func pickWinner(standings []*StandingsPlayerResponse, withdrawn map[int64]bool) *int64 {
+	for _, p := range standings {
+		if !withdrawn[p.PlayerID] {
+			winnerID := p.PlayerID
+			return &winnerID
+		}
+	}
+	return nil
 }
 
 func (s *TournamentService) GenerateRoundPairings(ctx context.Context, tournamentID int64, userID int64) ([]*TournamentPairing, error) {
@@ -453,7 +524,12 @@ func (s *TournamentService) GenerateRoundPairings(ctx context.Context, tournamen
 		return nil, err
 	}
 
-	pairingsResult, err := s.generateNextPairings(ctx, tournamentID, t, swissPlayers)
+	withdrawn, err := s.Repo.GetWithdrawnPlayers(ctx, tournamentID)
+	if err != nil {
+		return nil, err
+	}
+
+	pairingsResult, err := s.generateNextPairings(ctx, tournamentID, t, swissPlayers, withdrawn)
 	if err != nil {
 		return nil, err
 	}
@@ -479,7 +555,20 @@ func (s *TournamentService) OnGameCompleted(ctx context.Context, gameID string, 
 	}
 
 	if roundCompleted {
+		return s.startNextRound(ctx, tournamentID)
+	}
+
+	return nil
+}
+
+func (s *TournamentService) startNextRound(ctx context.Context, tournamentID int64) error {
+	for {
 		t, err := s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
+		if err != nil {
+			return err
+		}
+
+		withdrawn, err := s.Repo.GetWithdrawnPlayers(ctx, tournamentID)
 		if err != nil {
 			return err
 		}
@@ -487,39 +576,62 @@ func (s *TournamentService) OnGameCompleted(ctx context.Context, gameID string, 
 		if t.Status == StatusCompleted {
 			if s.Broadcaster != nil {
 				standings, _ := s.Repo.GetStandings(ctx, tournamentID)
-				var winnerID *int64
-				if len(standings) > 0 {
-					wID := standings[0].PlayerID
-					winnerID = &wID
-				}
 				s.Broadcaster.BroadcastTournamentEvent(tournamentID, map[string]interface{}{
 					"type":      "tournament_completed",
-					"winner_id": winnerID,
+					"winner_id": pickWinner(standings, withdrawn),
 				})
 			}
-		} else if t.Status == StatusOngoing && t.CurrentRound <= t.TotalRounds {
-			swissPlayers, err := s.Repo.GetSwissPlayers(ctx, tournamentID)
-			if err != nil {
-				return err
-			}
+			return nil
+		}
 
-			pairingsResult, err := s.generateNextPairings(ctx, tournamentID, t, swissPlayers)
-			if err != nil {
-				return err
-			}
+		if t.Status != StatusOngoing || t.CurrentRound > t.TotalRounds {
+			return nil
+		}
 
-			savedPairings, err := s.Repo.SaveRoundPairings(ctx, tournamentID, t.CurrentRound, pairingsResult, s.GameRepo)
-			if err != nil {
-				return err
-			}
+		swissPlayers, err := s.Repo.GetSwissPlayers(ctx, tournamentID)
+		if err != nil {
+			return err
+		}
 
-			if s.Broadcaster != nil {
-				s.Broadcaster.BroadcastTournamentEvent(tournamentID, map[string]interface{}{
-					"type":     "tournament_round_started",
-					"round":    t.CurrentRound,
-					"pairings": savedPairings,
-				})
-			}
+		pairingsResult, err := s.generateNextPairings(ctx, tournamentID, t, swissPlayers, withdrawn)
+		if err != nil {
+			return err
+		}
+
+		savedPairings, err := s.Repo.SaveRoundPairings(ctx, tournamentID, t.CurrentRound, pairingsResult, s.GameRepo)
+		if err != nil {
+			return err
+		}
+
+		if s.Broadcaster != nil {
+			s.Broadcaster.BroadcastTournamentEvent(tournamentID, map[string]interface{}{
+				"type":     "tournament_round_started",
+				"round":    t.CurrentRound,
+				"pairings": savedPairings,
+			})
+		}
+
+		finished, err := s.Repo.FinishRoundIfNoGames(ctx, tournamentID, t.CurrentRound)
+		if err != nil {
+			return err
+		}
+		if !finished {
+			return nil
+		}
+	}
+}
+
+func (s *TournamentService) RemoveUserFromTournaments(ctx context.Context, userID int64) error {
+	cancelledIDs, err := s.Repo.RemoveUserFromTournaments(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	if s.Broadcaster != nil {
+		for _, id := range cancelledIDs {
+			s.Broadcaster.BroadcastTournamentEvent(id, map[string]interface{}{
+				"type": "tournament_cancelled",
+			})
 		}
 	}
 
