@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -8,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
+	"github.com/here-arjun-1/Caisaara-backend/internal/privacy"
 	"github.com/here-arjun-1/Caisaara-backend/internal/response"
 )
 
@@ -85,6 +87,10 @@ func (h *Handler) SendMessage(c *gin.Context) {
 	msg, err := h.Service.SendDirectMessage(ctx, userID, receiverID, strings.TrimSpace(req.Message))
 	if err != nil {
 		slog.WarnContext(ctx, "send direct message failed", "sender_id", userID, "receiver_id", receiverID, "error", err)
+		if errors.Is(err, privacy.ErrNotAllowed) {
+			response.Error(c, http.StatusForbidden, err.Error())
+			return
+		}
 		switch err.Error() {
 		case "cannot send message to yourself", "message cannot be empty", "message exceeds maximum length of 500 characters":
 			response.Error(c, http.StatusBadRequest, err.Error())
@@ -92,8 +98,6 @@ func (h *Handler) SendMessage(c *gin.Context) {
 			response.Error(c, http.StatusNotFound, err.Error())
 		case "rate limit exceeded, please wait":
 			response.Error(c, http.StatusTooManyRequests, err.Error())
-		case "not allowed by privacy settings":
-			response.Error(c, http.StatusForbidden, err.Error())
 		default:
 			response.Error(c, http.StatusInternalServerError, "failed to send message")
 		}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/here-arjun-1/Caisaara-backend/internal/config"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -141,7 +142,7 @@ func (r *Repository) FindClubByID(ctx context.Context, clubID string) (*Club, er
 	}
 
 	if club.ShareCode != "" {
-		club.Link = "https://caisaara.duckdns.org/club/" + club.ShareCode
+		club.Link = config.AppBaseURL + "/club/" + club.ShareCode
 	}
 
 	return &club, nil
@@ -191,7 +192,7 @@ func (r *Repository) ListClubs(ctx context.Context, search string, limit int, of
 			return nil, err
 		}
 		if club.ShareCode != "" {
-			club.Link = "https://caisaara.duckdns.org/club/" + club.ShareCode
+			club.Link = config.AppBaseURL + "/club/" + club.ShareCode
 		}
 		clubs = append(clubs, club)
 	}
@@ -612,7 +613,7 @@ func (r *Repository) ListMyClubs(ctx context.Context, userID int64) ([]MyClub, e
 			return nil, err
 		}
 		if club.ShareCode != "" {
-			club.Link = "https://caisaara.duckdns.org/club/" + club.ShareCode
+			club.Link = config.AppBaseURL + "/club/" + club.ShareCode
 		}
 		clubs = append(clubs, club)
 	}
@@ -655,12 +656,8 @@ func (r *Repository) FindClubByShareCode(ctx context.Context, shareCode string) 
 		return nil, err
 	}
 
-	if club.ShareCodeExpiresAt != nil && time.Now().After(*club.ShareCodeExpiresAt) {
-		return nil, ErrShareCodeExpired
-	}
-
 	if club.ShareCode != "" {
-		club.Link = "https://caisaara.duckdns.org/club/" + club.ShareCode
+		club.Link = config.AppBaseURL + "/club/" + club.ShareCode
 	}
 
 	return &club, nil

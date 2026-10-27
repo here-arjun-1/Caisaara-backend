@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
+	"github.com/here-arjun-1/Caisaara-backend/internal/privacy"
 	"github.com/here-arjun-1/Caisaara-backend/internal/websocket"
 )
 
@@ -198,7 +199,7 @@ func handleError(c *gin.Context, err error) {
 		errors.Is(err, ErrNotAllowed),
 		errors.Is(err, ErrKickedRecently),
 		errors.Is(err, ErrBannedFromClub),
-		err != nil && err.Error() == "not allowed by privacy settings":
+		errors.Is(err, privacy.ErrNotAllowed):
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 	case errors.Is(err, ErrClubNameTaken), errors.Is(err, ErrAlreadyMember):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})

@@ -287,7 +287,7 @@ func (s *Service) JoinInvite(
 		return "", ErrPlayerBlocked
 	}
 
-	if s.PrivacyChecker != nil {
+	if invite.OpponentID != 0 && s.PrivacyChecker != nil {
 		if err := s.PrivacyChecker.CheckInviteFriend(ctx, player2ID, invite.CreatorID); err != nil {
 			return "", err
 		}

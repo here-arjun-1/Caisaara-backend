@@ -4,11 +4,17 @@ import (
 	"context"
 )
 
-type Service struct {
-	repo *Repository
+type PrivacyRepository interface {
+	GetSettings(ctx context.Context, userID int64) (*Settings, error)
+	UpsertSettings(ctx context.Context, userID int64, s Settings) (*Settings, error)
+	AreFriends(ctx context.Context, user1ID, user2ID int64) (bool, error)
 }
 
-func NewService(repo *Repository) *Service {
+type Service struct {
+	repo PrivacyRepository
+}
+
+func NewService(repo PrivacyRepository) *Service {
 	return &Service{repo: repo}
 }
 

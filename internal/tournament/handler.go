@@ -9,6 +9,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
+	"github.com/here-arjun-1/Caisaara-backend/internal/config"
+	"github.com/here-arjun-1/Caisaara-backend/internal/privacy"
 )
 
 type Handler struct {
@@ -116,7 +118,7 @@ func (h *Handler) GetTournamentDetails(c *gin.Context) {
 	userID, ok := middleware.GetUserID(c)
 	if ok && userID == tw.CreatedBy && tw.InviteCode != nil {
 		res.InviteCode = *tw.InviteCode
-		res.Link = "https://caisaara.duckdns.org/tournaments/invite/" + *tw.InviteCode
+		res.Link = config.AppBaseURL + "/tournaments/invite/" + *tw.InviteCode
 	}
 
 	c.JSON(http.StatusOK, res)
@@ -151,7 +153,7 @@ func (h *Handler) GetTournamentByInviteCode(c *gin.Context) {
 	res := ToTournamentDetailsResponse(tw)
 	if tw.InviteCode != nil && *tw.InviteCode != "" {
 		res.InviteCode = *tw.InviteCode
-		res.Link = "https://caisaara.duckdns.org/tournaments/invite/" + *tw.InviteCode
+		res.Link = config.AppBaseURL + "/tournaments/invite/" + *tw.InviteCode
 	}
 
 	c.JSON(http.StatusOK, res)
@@ -193,7 +195,7 @@ func (h *Handler) JoinTournament(c *gin.Context) {
 			return
 		}
 
-		if err != nil && err.Error() == "not allowed by privacy settings" {
+		if errors.Is(err, privacy.ErrNotAllowed) {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": err.Error(),
 			})
@@ -248,7 +250,7 @@ func (h *Handler) JoinTournamentByInviteCode(c *gin.Context) {
 			return
 		}
 
-		if err != nil && err.Error() == "not allowed by privacy settings" {
+		if errors.Is(err, privacy.ErrNotAllowed) {
 			c.JSON(http.StatusForbidden, gin.H{
 				"error": err.Error(),
 			})
@@ -594,7 +596,7 @@ func (h *Handler) RegenerateInviteCode(c *gin.Context) {
 	res := ToTournamentDetailsResponse(tw)
 	if tw.InviteCode != nil && *tw.InviteCode != "" {
 		res.InviteCode = *tw.InviteCode
-		res.Link = "https://caisaara.duckdns.org/tournaments/invite/" + *tw.InviteCode
+		res.Link = config.AppBaseURL + "/tournaments/invite/" + *tw.InviteCode
 	}
 
 	c.JSON(http.StatusOK, res)
