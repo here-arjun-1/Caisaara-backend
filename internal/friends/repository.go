@@ -332,3 +332,29 @@ func (r *Repository) IsBlockedEitherWay(ctx context.Context, userID int64, other
 	}
 	return blocked, nil
 }
+
+func (r *Repository) FindUsernameByID(ctx context.Context, userID int64) (string, error) {
+	var username string
+	err := r.DB.QueryRow(ctx, `SELECT username FROM users WHERE id = $1`, userID).Scan(&username)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", ErrUserNotFound
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "find username by id failed", "user_id", userID, "error", err)
+		return "", err
+	}
+	return username, nil
+}
+
+func (r *Repository) FindRequestSenderID(ctx context.Context, requestID int64) (int64, error) {
+	var senderID int64
+	err := r.DB.QueryRow(ctx, `SELECT sender_id FROM friend_requests WHERE id = $1`, requestID).Scan(&senderID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, ErrRequestNotFound
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "find friend request sender failed", "request_id", requestID, "error", err)
+		return 0, err
+	}
+	return senderID, nil
+}

@@ -5,7 +5,7 @@ import "time"
 const (
 	TypeFriendRequest  = "friend_request"
 	TypeFriendAccepted = "friend_accepted"
-	TypeGameInvite     = "game_invite"
+	TypeGameChallenge  = "game_challenge"
 )
 
 type Notification struct {
