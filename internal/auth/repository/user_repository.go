@@ -23,7 +23,7 @@ func (r *UserRepository) FindUserByID(ctx context.Context, id int64) (*model.Use
 			skill_level,
 			COALESCE(password_version, 1)
 		FROM users
-		WHERE id = $1`,
+		WHERE id = $1 AND deleted_at IS NULL`,
 		id,
 	).Scan(
 		&user.ID,
@@ -91,7 +91,7 @@ func (r *UserRepository) FindUserByUsername(ctx context.Context, username string
 			skill_level,
 			COALESCE(password_version, 1)
 		FROM users
-		WHERE username = $1`,
+		WHERE username = $1 AND deleted_at IS NULL`,
 		username,
 	).Scan(
 		&user.ID,
@@ -121,7 +121,7 @@ func (r *UserRepository) FindUserByEmail(ctx context.Context, email string) (*mo
 			skill_level,
 			COALESCE(password_version, 1)
 		FROM users
-		WHERE email = $1`,
+		WHERE email = $1 AND deleted_at IS NULL`,
 		email,
 	).Scan(
 		&user.ID,

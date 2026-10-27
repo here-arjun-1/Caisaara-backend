@@ -26,7 +26,7 @@ func (r *Repository) GetLeaderboard(ctx context.Context, mode string, maxRD floa
 			pr.rating
 		FROM player_ratings pr
 		JOIN users u ON u.id = pr.user_id
-		WHERE pr.mode = $1 AND pr.rating_deviation <= $2
+		WHERE pr.mode = $1 AND pr.rating_deviation <= $2 AND u.deleted_at IS NULL
 		ORDER BY pr.rating DESC, LOWER(u.username) ASC, u.id ASC
 		LIMIT $3 OFFSET $4`,
 		mode,

@@ -186,7 +186,7 @@ func (r *Repository) FindSentRequests(ctx context.Context, userID int64) ([]Sent
 
 func (r *Repository) FindUserIDByUsername(ctx context.Context, username string) (int64, error) {
 	var userID int64
-	err := r.DB.QueryRow(ctx, `SELECT id FROM users WHERE username = $1`, username).Scan(&userID)
+	err := r.DB.QueryRow(ctx, `SELECT id FROM users WHERE username = $1 AND deleted_at IS NULL`, username).Scan(&userID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, ErrUserNotFound
 	}
