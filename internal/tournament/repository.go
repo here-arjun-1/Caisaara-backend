@@ -1277,3 +1277,159 @@ func (r *Repository) UndoStartTournament(ctx context.Context, tournamentID int64
 
 	return tx.Commit(ctx)
 }
+
+func (r *Repository) RemoveUserFromTournaments(ctx context.Context, userID int64) ([]int64, error) {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	rows, err := tx.Query(
+		ctx,
+		`UPDATE tournaments
+		SET status = 'cancelled', updated_at = NOW()
+		WHERE created_by = $1 AND status IN ('registration', 'upcoming')
+		RETURNING id`,
+		userID,
+	)
+
+	if err != nil {
+		slog.ErrorContext(ctx, "cancel user tournaments failed", "user_id", userID, "error", err)
+		return nil, err
+	}
+
+	cancelledIDs := []int64{}
+	for rows.Next() {
+		var id int64
+		err := rows.Scan(&id)
+		if err != nil {
+			rows.Close()
+			return nil, err
+		}
+		cancelledIDs = append(cancelledIDs, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	_, err = tx.Exec(
+		ctx,
+		`DELETE FROM tournament_players tp
+		USING tournaments t
+		WHERE t.id = tp.tournament_id AND tp.user_id = $1 AND t.status IN ('registration', 'upcoming')`,
+		userID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "remove user from not started tournaments failed", "user_id", userID, "error", err)
+		return nil, err
+	}
+
+	_, err = tx.Exec(
+		ctx,
+		`UPDATE tournament_players tp
+		SET withdrawn = TRUE
+		FROM tournaments t
+		WHERE t.id = tp.tournament_id AND tp.user_id = $1 AND t.status = 'ongoing'`,
+		userID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "mark user withdrawn failed", "user_id", userID, "error", err)
+		return nil, err
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return cancelledIDs, nil
+}
+
+func (r *Repository) GetWithdrawnPlayers(ctx context.Context, tournamentID int64) (map[int64]bool, error) {
+	rows, err := r.DB.Query(
+		ctx,
+		`SELECT user_id FROM tournament_players WHERE tournament_id = $1 AND withdrawn = TRUE`,
+		tournamentID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "get withdrawn players failed", "tournament_id", tournamentID, "error", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	withdrawn := make(map[int64]bool)
+	for rows.Next() {
+		var userID int64
+		if err := rows.Scan(&userID); err != nil {
+			return nil, err
+		}
+		withdrawn[userID] = true
+	}
+
+	return withdrawn, rows.Err()
+}
+
+func (r *Repository) FinishRoundIfNoGames(ctx context.Context, tournamentID int64, roundNumber int) (bool, error) {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var roundID int64
+	var roundStatus string
+	err = tx.QueryRow(
+		ctx,
+		`SELECT id, status FROM tournament_rounds WHERE tournament_id = $1 AND round_number = $2 FOR UPDATE`,
+		tournamentID,
+		roundNumber,
+	).Scan(&roundID, &roundStatus)
+	if err != nil {
+		slog.ErrorContext(ctx, "find round failed", "tournament_id", tournamentID, "round", roundNumber, "error", err)
+		return false, err
+	}
+	if roundStatus == RoundStatusCompleted {
+		return false, nil
+	}
+
+	var pendingCount int
+	err = tx.QueryRow(ctx, `SELECT COUNT(*) FROM tournament_pairings WHERE round_id = $1 AND status != 'completed'`, roundID).Scan(&pendingCount)
+	if err != nil {
+		return false, err
+	}
+	if pendingCount > 0 {
+		return false, nil
+	}
+
+	_, err = tx.Exec(ctx, `UPDATE tournament_rounds SET status = 'completed', completed_at = NOW() WHERE id = $1`, roundID)
+	if err != nil {
+		return false, err
+	}
+
+	var currentRound, totalRounds int
+	err = tx.QueryRow(ctx, `SELECT current_round, total_rounds FROM tournaments WHERE id = $1 FOR UPDATE`, tournamentID).Scan(&currentRound, &totalRounds)
+	if err != nil {
+		return false, err
+	}
+
+	if currentRound >= totalRounds {
+		_, err = tx.Exec(ctx, `UPDATE tournaments SET status = 'completed', updated_at = NOW() WHERE id = $1`, tournamentID)
+	} else {
+		_, err = tx.Exec(ctx, `UPDATE tournaments SET current_round = current_round + 1, updated_at = NOW() WHERE id = $1`, tournamentID)
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "move tournament to next round failed", "tournament_id", tournamentID, "error", err)
+		return false, err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
