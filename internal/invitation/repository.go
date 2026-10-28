@@ -20,6 +20,9 @@ type InviteRepository interface {
 	AddChallenge(ctx context.Context, opponentID int64, code string, ttl time.Duration) error
 	GetChallengeCodes(ctx context.Context, userID int64) ([]string, error)
 	RemoveChallenge(ctx context.Context, userID int64, code string) error
+	AddSentChallenge(ctx context.Context, creatorID int64, code string, ttl time.Duration) error
+	GetSentChallengeCodes(ctx context.Context, userID int64) ([]string, error)
+	RemoveSentChallenge(ctx context.Context, userID int64, code string) error
 	SaveWatchInvite(ctx context.Context, invite *WatchInvite, ttl time.Duration) error
 	GetWatchInvite(ctx context.Context, code string) (*WatchInvite, error)
 	GetWatchInviteByGameID(ctx context.Context, gameID string) (*WatchInvite, error)
@@ -50,6 +53,10 @@ func lockKey(code string) string {
 
 func challengesKey(userID int64) string {
 	return "invite:challenges:" + strconv.FormatInt(userID, 10)
+}
+
+func sentChallengesKey(userID int64) string {
+	return "invite:sent_challenges:" + strconv.FormatInt(userID, 10)
 }
 
 func watchKey(code string) string {
@@ -150,6 +157,22 @@ func (r *RedisInviteRepository) GetChallengeCodes(ctx context.Context, userID in
 
 func (r *RedisInviteRepository) RemoveChallenge(ctx context.Context, userID int64, code string) error {
 	return r.Client.SRem(ctx, challengesKey(userID), code).Err()
+}
+
+func (r *RedisInviteRepository) AddSentChallenge(ctx context.Context, creatorID int64, code string, ttl time.Duration) error {
+	pipe := r.Client.Pipeline()
+	pipe.SAdd(ctx, sentChallengesKey(creatorID), code)
+	pipe.Expire(ctx, sentChallengesKey(creatorID), ttl)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+func (r *RedisInviteRepository) GetSentChallengeCodes(ctx context.Context, userID int64) ([]string, error) {
+	return r.Client.SMembers(ctx, sentChallengesKey(userID)).Result()
+}
+
+func (r *RedisInviteRepository) RemoveSentChallenge(ctx context.Context, userID int64, code string) error {
+	return r.Client.SRem(ctx, sentChallengesKey(userID), code).Err()
 }
 
 func (r *RedisInviteRepository) SaveWatchInvite(ctx context.Context, invite *WatchInvite, ttl time.Duration) error {
