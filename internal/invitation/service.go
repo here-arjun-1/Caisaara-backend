@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/model"
+	"github.com/here-arjun-1/Caisaara-backend/internal/config"
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
 	"github.com/here-arjun-1/Caisaara-backend/internal/notification"
 	"github.com/jackc/pgx/v5"
@@ -40,7 +41,9 @@ type InvitationService interface {
 	JoinInvite(ctx context.Context, code string, player2ID int64) (string, error)
 	FindInviteCreator(ctx context.Context, creatorID int64) (*model.User, error)
 	GetMyChallenges(ctx context.Context, userID int64) ([]Challenge, error)
+	GetMySentChallenges(ctx context.Context, userID int64) ([]Challenge, error)
 	DeclineChallenge(ctx context.Context, userID int64, code string) error
+	CancelChallenge(ctx context.Context, userID int64, code string) error
 	CreateWatchInvite(ctx context.Context, userID int64, gameID string) (*WatchInvite, error)
 	GetWatchInvite(ctx context.Context, code string) (*WatchInvite, error)
 	DeleteWatchInvite(ctx context.Context, gameID string) error
@@ -106,12 +109,17 @@ func (s *Service) CreateInvite(
 		return nil, ErrInvalidColor
 	}
 
+	isRated := true
+	if len(rated) > 0 {
+		isRated = rated[0]
+	}
+
 	if opponentID != 0 {
 		if opponentID == userID {
 			return nil, ErrChallengeYourself
 		}
 
-		_, err := s.UserFinder.FindUserByID(ctx, opponentID)
+		opponent, err := s.UserFinder.FindUserByID(ctx, opponentID)
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrOpponentNotFound
 		}
@@ -128,17 +136,24 @@ func (s *Service) CreateInvite(
 		if blocked {
 			return nil, ErrPlayerBlocked
 		}
-
 		if s.PrivacyChecker != nil {
 			if err := s.PrivacyChecker.CheckInviteFriend(ctx, userID, opponentID); err != nil {
 				return nil, err
 			}
 		}
-	}
 
-	isRated := true
-	if len(rated) > 0 {
-		isRated = rated[0]
+		if isRated && opponent.SkillLevel == nil {
+			return nil, ErrLevelNotPicked
+		}
+
+		existingCodes, _ := s.InviteRepo.GetChallengeCodes(ctx, opponentID)
+		for _, exCode := range existingCodes {
+			if exInvite, exErr := s.InviteRepo.GetInvite(ctx, exCode); exErr == nil && exInvite != nil {
+				if exInvite.CreatorID == userID && exInvite.Status != "active" {
+					return nil, ErrChallengeAlreadySent
+				}
+			}
+		}
 	}
 
 	if isRated {
@@ -185,6 +200,8 @@ func (s *Service) CreateInvite(
 			return nil, ErrInternal
 		}
 
+		_ = s.InviteRepo.AddSentChallenge(ctx, userID, code, 10*time.Minute)
+
 		s.notifyChallenge(ctx, invite)
 	}
 
@@ -205,7 +222,13 @@ func (s *Service) notifyChallenge(ctx context.Context, invite *Invite) {
 	err = s.Notifier.Send(ctx, invite.OpponentID, notification.TypeGameChallenge,
 		"New challenge",
 		creator.Username+" challenged you to a "+timeControl+" game",
-		map[string]any{"code": invite.Code, "game_id": invite.GameID, "user_id": invite.CreatorID, "username": creator.Username},
+		map[string]any{
+			"code":     invite.Code,
+			"game_id":  invite.GameID,
+			"link":     config.AppBaseURL + "/play/" + invite.Code,
+			"user_id":  invite.CreatorID,
+			"username": creator.Username,
+		},
 	)
 	if err != nil {
 		slog.ErrorContext(ctx, "send challenge notification failed", "opponent_id", invite.OpponentID, "error", err)
@@ -380,10 +403,9 @@ func (s *Service) JoinInvite(
 	_ = s.InviteRepo.SaveInvite(ctx, invite, 2*time.Minute)
 
 	if invite.OpponentID != 0 {
-		err = s.InviteRepo.RemoveChallenge(ctx, invite.OpponentID, code)
-		if err != nil {
-			slog.ErrorContext(ctx, "remove challenge after join failed", "error", err, "code", code)
-		}
+		_ = s.InviteRepo.RemoveChallenge(ctx, invite.OpponentID, code)
+		_ = s.InviteRepo.RemoveSentChallenge(ctx, invite.CreatorID, code)
+		s.notifyChallengeAccepted(ctx, invite, player2ID)
 	}
 
 	slog.InfoContext(ctx, "invite joined successfully",
@@ -473,34 +495,158 @@ func (s *Service) DeclineChallenge(ctx context.Context, userID int64, code strin
 		return ErrInternal
 	}
 
-	err = s.InviteRepo.RemoveChallenge(ctx, userID, code)
-	if err != nil {
-		slog.ErrorContext(ctx, "remove declined challenge failed", "error", err, "code", code)
-		return ErrInternal
-	}
+	_ = s.InviteRepo.RemoveChallenge(ctx, userID, code)
+	_ = s.InviteRepo.RemoveSentChallenge(ctx, invite.CreatorID, code)
 
-	s.notifyChallengeDeclined(ctx, invite)
+	s.notifyChallengeDeclined(ctx, invite, userID)
+
 	return nil
 }
 
-func (s *Service) notifyChallengeDeclined(ctx context.Context, invite *Invite) {
+func (s *Service) CancelChallenge(ctx context.Context, userID int64, code string) error {
+	invite, err := s.InviteRepo.GetInvite(ctx, code)
+	if errors.Is(err, redis.Nil) {
+		return ErrInviteNotFound
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "get invite for cancel failed", "error", err, "code", code)
+		return ErrInternal
+	}
+
+	if invite.CreatorID != userID {
+		return ErrNotYourChallenge
+	}
+
+	if invite.Status == "active" {
+		return ErrInviteUsed
+	}
+
+	err = s.InviteRepo.DeleteInvite(ctx, code)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete cancelled invite failed", "error", err, "code", code)
+		return ErrInternal
+	}
+
+	_ = s.InviteRepo.RemoveSentChallenge(ctx, userID, code)
+
+	if invite.OpponentID != 0 {
+		_ = s.InviteRepo.RemoveChallenge(ctx, invite.OpponentID, code)
+		s.notifyChallengeCancelled(ctx, invite)
+	}
+
+	return nil
+}
+
+func (s *Service) GetMySentChallenges(ctx context.Context, userID int64) ([]Challenge, error) {
+	codes, err := s.InviteRepo.GetSentChallengeCodes(ctx, userID)
+	if err != nil {
+		slog.ErrorContext(ctx, "get sent challenge codes failed", "error", err, "user_id", userID)
+		return nil, ErrInternal
+	}
+
+	user, _ := s.UserFinder.FindUserByID(ctx, userID)
+	username := ""
+	if user != nil {
+		username = user.Username
+	}
+
+	challenges := []Challenge{}
+	for _, code := range codes {
+		invite, err := s.InviteRepo.GetInvite(ctx, code)
+		if errors.Is(err, redis.Nil) {
+			_ = s.InviteRepo.RemoveSentChallenge(ctx, userID, code)
+			continue
+		}
+		if err != nil {
+			slog.ErrorContext(ctx, "get sent challenge invite failed", "error", err, "code", code)
+			return nil, ErrInternal
+		}
+
+		if invite.Status == "active" {
+			_ = s.InviteRepo.RemoveSentChallenge(ctx, userID, code)
+			continue
+		}
+
+		challenges = append(challenges, Challenge{
+			Code:               invite.Code,
+			GameID:             invite.GameID,
+			ChallengerID:       invite.CreatorID,
+			ChallengerUsername: username,
+			ChallengerColor:    invite.Color,
+			TimeControlMinutes: invite.TimeControlMinutes,
+			IncrementSeconds:   invite.IncrementSeconds,
+			Rated:              invite.Rated,
+		})
+	}
+
+	return challenges, nil
+}
+
+func (s *Service) notifyChallengeAccepted(ctx context.Context, invite *Invite, player2ID int64) {
 	if s.Notifier == nil {
 		return
 	}
+	player2, _ := s.UserFinder.FindUserByID(ctx, player2ID)
+	p2Name := ""
+	if player2 != nil {
+		p2Name = player2.Username
+	}
+	_ = s.Notifier.Send(ctx, invite.CreatorID, notification.TypeGameChallenge,
+		"Challenge accepted",
+		p2Name+" accepted your challenge!",
+		map[string]any{
+			"action":   "accepted",
+			"code":     invite.Code,
+			"game_id":  invite.GameID,
+			"link":     config.AppBaseURL + "/play/" + invite.Code,
+			"user_id":  player2ID,
+			"username": p2Name,
+		},
+	)
+}
 
-	opponent, err := s.UserFinder.FindUserByID(ctx, invite.OpponentID)
-	if err != nil {
+func (s *Service) notifyChallengeDeclined(ctx context.Context, invite *Invite, userID int64) {
+	if s.Notifier == nil {
 		return
 	}
-
-	err = s.Notifier.Send(ctx, invite.CreatorID, notification.TypeChallengeDeclined,
-		"Challenge declined",
-		opponent.Username+" declined your challenge",
-		map[string]any{"code": invite.Code, "user_id": invite.OpponentID, "username": opponent.Username},
-	)
-	if err != nil {
-		slog.ErrorContext(ctx, "send challenge declined notification failed", "creator_id", invite.CreatorID, "error", err)
+	decliner, _ := s.UserFinder.FindUserByID(ctx, userID)
+	dName := ""
+	if decliner != nil {
+		dName = decliner.Username
 	}
+	_ = s.Notifier.Send(ctx, invite.CreatorID, notification.TypeGameChallenge,
+		"Challenge declined",
+		dName+" declined your challenge",
+		map[string]any{
+			"action":   "declined",
+			"code":     invite.Code,
+			"game_id":  invite.GameID,
+			"user_id":  userID,
+			"username": dName,
+		},
+	)
+}
+
+func (s *Service) notifyChallengeCancelled(ctx context.Context, invite *Invite) {
+	if s.Notifier == nil {
+		return
+	}
+	creator, _ := s.UserFinder.FindUserByID(ctx, invite.CreatorID)
+	cName := ""
+	if creator != nil {
+		cName = creator.Username
+	}
+	_ = s.Notifier.Send(ctx, invite.OpponentID, notification.TypeGameChallenge,
+		"Challenge cancelled",
+		cName+" cancelled the challenge",
+		map[string]any{
+			"action":   "cancelled",
+			"code":     invite.Code,
+			"game_id":  invite.GameID,
+			"user_id":  invite.CreatorID,
+			"username": cName,
+		},
+	)
 }
 
 func (s *Service) CreateWatchInvite(ctx context.Context, userID int64, gameID string) (*WatchInvite, error) {
