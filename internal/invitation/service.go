@@ -101,7 +101,7 @@ func (s *Service) CreateInvite(
 	rated ...bool,
 ) (*Invite, error) {
 
-	if timeControlMinutes <= 0 && incrementSeconds <= 0 {
+	if timeControlMinutes < 0 || incrementSeconds < 0 || (timeControlMinutes == 0 && incrementSeconds == 0) || timeControlMinutes > 180 || incrementSeconds > 60 {
 		return nil, ErrInvalidTimeControl
 	}
 
@@ -146,13 +146,9 @@ func (s *Service) CreateInvite(
 			return nil, ErrLevelNotPicked
 		}
 
-		existingCodes, _ := s.InviteRepo.GetChallengeCodes(ctx, opponentID)
-		for _, exCode := range existingCodes {
-			if exInvite, exErr := s.InviteRepo.GetInvite(ctx, exCode); exErr == nil && exInvite != nil {
-				if exInvite.CreatorID == userID && exInvite.Status != "active" {
-					return nil, ErrChallengeAlreadySent
-				}
-			}
+		sentCodes, err := s.InviteRepo.GetSentChallengeCodes(ctx, userID)
+		if err == nil && len(sentCodes) >= 10 {
+			return nil, ErrTooManyChallenges
 		}
 	}
 
@@ -173,6 +169,17 @@ func (s *Service) CreateInvite(
 		return nil, ErrInternal
 	}
 
+	if opponentID != 0 {
+		ok, err := s.InviteRepo.SetPendingDirectChallenge(ctx, userID, opponentID, code, 10*time.Minute)
+		if err != nil {
+			slog.ErrorContext(ctx, "set pending direct challenge failed", "error", err)
+			return nil, ErrInternal
+		}
+		if !ok {
+			return nil, ErrChallengeAlreadySent
+		}
+	}
+
 	gameID := uuid.New().String()
 
 	invite := &Invite{
@@ -189,6 +196,9 @@ func (s *Service) CreateInvite(
 
 	err = s.InviteRepo.SaveInvite(ctx, invite, 10*time.Minute)
 	if err != nil {
+		if opponentID != 0 {
+			_ = s.InviteRepo.DeletePendingDirectChallenge(ctx, userID, opponentID)
+		}
 		slog.ErrorContext(ctx, "save invite failed", "error", err)
 		return nil, fmt.Errorf("failed to store invite: %w", err)
 	}
@@ -196,6 +206,7 @@ func (s *Service) CreateInvite(
 	if opponentID != 0 {
 		err = s.InviteRepo.AddChallenge(ctx, opponentID, code, 10*time.Minute)
 		if err != nil {
+			_ = s.InviteRepo.DeletePendingDirectChallenge(ctx, userID, opponentID)
 			slog.ErrorContext(ctx, "save challenge failed", "error", err, "opponent_id", opponentID)
 			return nil, ErrInternal
 		}
@@ -214,7 +225,7 @@ func (s *Service) notifyChallenge(ctx context.Context, invite *Invite) {
 	}
 
 	creator, err := s.UserFinder.FindUserByID(ctx, invite.CreatorID)
-	if err != nil {
+	if err != nil || creator == nil {
 		return
 	}
 
@@ -403,6 +414,7 @@ func (s *Service) JoinInvite(
 	_ = s.InviteRepo.SaveInvite(ctx, invite, 2*time.Minute)
 
 	if invite.OpponentID != 0 {
+		_ = s.InviteRepo.DeletePendingDirectChallenge(ctx, invite.CreatorID, invite.OpponentID)
 		_ = s.InviteRepo.RemoveChallenge(ctx, invite.OpponentID, code)
 		_ = s.InviteRepo.RemoveSentChallenge(ctx, invite.CreatorID, code)
 		s.notifyChallengeAccepted(ctx, invite, player2ID)
@@ -437,6 +449,7 @@ func (s *Service) GetMyChallenges(ctx context.Context, userID int64) ([]Challeng
 		}
 
 		if invite.Status == "active" {
+			_ = s.InviteRepo.RemoveChallenge(ctx, userID, code)
 			continue
 		}
 
@@ -471,6 +484,20 @@ func (s *Service) GetMyChallenges(ctx context.Context, userID int64) ([]Challeng
 }
 
 func (s *Service) DeclineChallenge(ctx context.Context, userID int64, code string) error {
+	locked, err := s.InviteRepo.AcquireLock(ctx, code, userID, 5*time.Second)
+	if err != nil {
+		slog.ErrorContext(ctx, "acquire invite lock failed", "error", err)
+		return ErrInternal
+	}
+	if !locked {
+		return ErrAlreadyJoining
+	}
+	defer func() {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = s.InviteRepo.ReleaseLock(releaseCtx, code, userID)
+	}()
+
 	invite, err := s.InviteRepo.GetInvite(ctx, code)
 	if errors.Is(err, redis.Nil) {
 		_ = s.InviteRepo.RemoveChallenge(ctx, userID, code)
@@ -495,6 +522,7 @@ func (s *Service) DeclineChallenge(ctx context.Context, userID int64, code strin
 		return ErrInternal
 	}
 
+	_ = s.InviteRepo.DeletePendingDirectChallenge(ctx, invite.CreatorID, invite.OpponentID)
 	_ = s.InviteRepo.RemoveChallenge(ctx, userID, code)
 	_ = s.InviteRepo.RemoveSentChallenge(ctx, invite.CreatorID, code)
 
@@ -504,6 +532,20 @@ func (s *Service) DeclineChallenge(ctx context.Context, userID int64, code strin
 }
 
 func (s *Service) CancelChallenge(ctx context.Context, userID int64, code string) error {
+	locked, err := s.InviteRepo.AcquireLock(ctx, code, userID, 5*time.Second)
+	if err != nil {
+		slog.ErrorContext(ctx, "acquire invite lock failed", "error", err)
+		return ErrInternal
+	}
+	if !locked {
+		return ErrAlreadyJoining
+	}
+	defer func() {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = s.InviteRepo.ReleaseLock(releaseCtx, code, userID)
+	}()
+
 	invite, err := s.InviteRepo.GetInvite(ctx, code)
 	if errors.Is(err, redis.Nil) {
 		return ErrInviteNotFound
@@ -527,12 +569,13 @@ func (s *Service) CancelChallenge(ctx context.Context, userID int64, code string
 		return ErrInternal
 	}
 
-	_ = s.InviteRepo.RemoveSentChallenge(ctx, userID, code)
-
 	if invite.OpponentID != 0 {
+		_ = s.InviteRepo.DeletePendingDirectChallenge(ctx, invite.CreatorID, invite.OpponentID)
 		_ = s.InviteRepo.RemoveChallenge(ctx, invite.OpponentID, code)
 		s.notifyChallengeCancelled(ctx, invite)
 	}
+
+	_ = s.InviteRepo.RemoveSentChallenge(ctx, userID, code)
 
 	return nil
 }

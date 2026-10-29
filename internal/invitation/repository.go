@@ -23,6 +23,8 @@ type InviteRepository interface {
 	AddSentChallenge(ctx context.Context, creatorID int64, code string, ttl time.Duration) error
 	GetSentChallengeCodes(ctx context.Context, userID int64) ([]string, error)
 	RemoveSentChallenge(ctx context.Context, userID int64, code string) error
+	SetPendingDirectChallenge(ctx context.Context, creatorID, opponentID int64, code string, ttl time.Duration) (bool, error)
+	DeletePendingDirectChallenge(ctx context.Context, creatorID, opponentID int64) error
 	SaveWatchInvite(ctx context.Context, invite *WatchInvite, ttl time.Duration) error
 	GetWatchInvite(ctx context.Context, code string) (*WatchInvite, error)
 	GetWatchInviteByGameID(ctx context.Context, gameID string) (*WatchInvite, error)
@@ -57,6 +59,10 @@ func challengesKey(userID int64) string {
 
 func sentChallengesKey(userID int64) string {
 	return "invite:sent_challenges:" + strconv.FormatInt(userID, 10)
+}
+
+func pendingDirectKey(creatorID, opponentID int64) string {
+	return "invite:direct:" + strconv.FormatInt(creatorID, 10) + ":" + strconv.FormatInt(opponentID, 10)
 }
 
 func watchKey(code string) string {
@@ -173,6 +179,14 @@ func (r *RedisInviteRepository) GetSentChallengeCodes(ctx context.Context, userI
 
 func (r *RedisInviteRepository) RemoveSentChallenge(ctx context.Context, userID int64, code string) error {
 	return r.Client.SRem(ctx, sentChallengesKey(userID), code).Err()
+}
+
+func (r *RedisInviteRepository) SetPendingDirectChallenge(ctx context.Context, creatorID, opponentID int64, code string, ttl time.Duration) (bool, error) {
+	return r.Client.SetNX(ctx, pendingDirectKey(creatorID, opponentID), code, ttl).Result()
+}
+
+func (r *RedisInviteRepository) DeletePendingDirectChallenge(ctx context.Context, creatorID, opponentID int64) error {
+	return r.Client.Del(ctx, pendingDirectKey(creatorID, opponentID)).Err()
 }
 
 func (r *RedisInviteRepository) SaveWatchInvite(ctx context.Context, invite *WatchInvite, ttl time.Duration) error {
