@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"log/slog"
 	"math/big"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/chat"
 	"github.com/here-arjun-1/Caisaara-backend/internal/config"
+	"github.com/here-arjun-1/Caisaara-backend/internal/notification"
 )
 
 const (
@@ -52,20 +54,30 @@ type ClubService interface {
 	RegenerateShareCode(ctx context.Context, clubID string, userID int64) (*Club, error)
 	DeleteClub(ctx context.Context, clubID string, userID int64) error
 	SetPrivacyChecker(checker PrivacyChecker)
+	SetNotifier(notifier Notifier)
 }
 
 type PrivacyChecker interface {
 	CheckClubJoin(ctx context.Context, joinerID, ownerID int64) error
 }
 
+type Notifier interface {
+	Send(ctx context.Context, userID int64, notificationType string, title string, body string, data map[string]any) error
+}
+
 type Service struct {
 	Repository     ClubRepository
 	RateLimiter    chat.RateLimiter
 	PrivacyChecker PrivacyChecker
+	Notifier       Notifier
 }
 
 func (s *Service) SetPrivacyChecker(checker PrivacyChecker) {
 	s.PrivacyChecker = checker
+}
+
+func (s *Service) SetNotifier(notifier Notifier) {
+	s.Notifier = notifier
 }
 
 func NewService(repository ClubRepository, rateLimiter chat.RateLimiter) ClubService {
@@ -281,7 +293,12 @@ func (s *Service) PromoteToAdmin(ctx context.Context, clubID string, leaderID in
 		return ErrNotAllowed
 	}
 
-	return s.Repository.UpdateMemberRole(ctx, clubID, targetID, RoleAdmin)
+	if err := s.Repository.UpdateMemberRole(ctx, clubID, targetID, RoleAdmin); err != nil {
+		return err
+	}
+
+	s.notifyMember(ctx, clubID, targetID, notification.TypeClubPromoted, "You are now an admin", "You are now an admin of ")
+	return nil
 }
 
 func (s *Service) RemoveAdmin(ctx context.Context, clubID string, leaderID int64, targetID int64) error {
@@ -299,7 +316,12 @@ func (s *Service) RemoveAdmin(ctx context.Context, clubID string, leaderID int64
 	if targetRole != RoleAdmin {
 		return ErrNotAllowed
 	}
-	return s.Repository.UpdateMemberRole(ctx, clubID, targetID, RoleMember)
+	if err := s.Repository.UpdateMemberRole(ctx, clubID, targetID, RoleMember); err != nil {
+		return err
+	}
+
+	s.notifyMember(ctx, clubID, targetID, notification.TypeClubDemoted, "Admin role removed", "You are no longer an admin of ")
+	return nil
 }
 
 func (s *Service) KickMember(ctx context.Context, clubID string, userID int64, targetID int64) error {
@@ -320,7 +342,12 @@ func (s *Service) KickMember(ctx context.Context, clubID string, userID int64, t
 	}
 
 	blockedUntil := time.Now().Add(kickBlockDuration)
-	return s.Repository.BlockUser(ctx, clubID, targetID, userID, &blockedUntil)
+	if err := s.Repository.BlockUser(ctx, clubID, targetID, userID, &blockedUntil); err != nil {
+		return err
+	}
+
+	s.notifyMember(ctx, clubID, targetID, notification.TypeClubKicked, "Removed from club", "You were removed from ")
+	return nil
 }
 
 func (s *Service) TransferLeadership(ctx context.Context, clubID string, leaderID int64, targetID int64) error {
@@ -341,7 +368,12 @@ func (s *Service) TransferLeadership(ctx context.Context, clubID string, leaderI
 	if targetRole != RoleAdmin {
 		return ErrTargetNotAdmin
 	}
-	return s.Repository.TransferOwnership(ctx, clubID, leaderID, targetID)
+	if err := s.Repository.TransferOwnership(ctx, clubID, leaderID, targetID); err != nil {
+		return err
+	}
+
+	s.notifyMember(ctx, clubID, targetID, notification.TypeClubNewOwner, "You are now the owner", "You are now the owner of ")
+	return nil
 }
 
 func (s *Service) BanMember(ctx context.Context, clubID string, userID int64, targetID int64) error {
@@ -363,7 +395,34 @@ func (s *Service) BanMember(ctx context.Context, clubID string, userID int64, ta
 		return ErrNotAllowed
 	}
 
-	return s.Repository.BlockUser(ctx, clubID, targetID, userID, nil)
+	if err := s.Repository.BlockUser(ctx, clubID, targetID, userID, nil); err != nil {
+		return err
+	}
+
+	if targetRole != "" {
+		s.notifyMember(ctx, clubID, targetID, notification.TypeClubBanned, "Banned from club", "You were banned from ")
+	}
+	return nil
+}
+
+func (s *Service) notifyMember(ctx context.Context, clubID string, userID int64, notificationType string, title string, message string) {
+	if s.Notifier == nil {
+		return
+	}
+
+	club, err := s.Repository.FindClubByID(ctx, clubID)
+	if err != nil {
+		return
+	}
+
+	err = s.Notifier.Send(ctx, userID, notificationType,
+		title,
+		message+club.Name,
+		map[string]any{"club_id": clubID, "club_name": club.Name},
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "send club notification failed", "club_id", clubID, "user_id", userID, "error", err)
+	}
 }
 
 func (s *Service) UnblockMember(ctx context.Context, clubID string, userID int64, targetID int64) error {

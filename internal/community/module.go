@@ -12,6 +12,8 @@ import (
 )
 
 type Module struct {
+	postService    *service.PostService
+	commentService *service.CommentService
 	postHandler    *handler.PostHandler
 	commentHandler *handler.CommentHandler
 }
@@ -25,9 +27,16 @@ func NewModule(db *pgxpool.Pool) *Module {
 	commentService := service.NewCommentService(commentRepository, postRepository)
 
 	return &Module{
+		postService:    postService,
+		commentService: commentService,
 		postHandler:    handler.NewPostHandler(postService),
 		commentHandler: handler.NewCommentHandler(commentService),
 	}
+}
+
+func (m *Module) SetNotifier(notifier service.Notifier) {
+	m.postService.SetNotifier(notifier)
+	m.commentService.SetNotifier(notifier)
 }
 
 func (m *Module) RegisterRoutes(public *gin.RouterGroup, protected *gin.RouterGroup) {

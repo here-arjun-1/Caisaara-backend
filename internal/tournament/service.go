@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/rand"
 	"errors"
+	"fmt"
+	"log/slog"
 	"math/big"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
+	"github.com/here-arjun-1/Caisaara-backend/internal/notification"
 )
 
 type Broadcaster interface {
@@ -37,10 +40,15 @@ type Service interface {
 	RemoveUserFromTournaments(ctx context.Context, userID int64) error
 	SetBroadcaster(b Broadcaster)
 	SetPrivacyChecker(checker PrivacyChecker)
+	SetNotifier(notifier Notifier)
 }
 
 type PrivacyChecker interface {
 	CheckTournamentJoin(ctx context.Context, joinerID, creatorID int64) error
+}
+
+type Notifier interface {
+	Send(ctx context.Context, userID int64, notificationType string, title string, body string, data map[string]any) error
 }
 
 type TournamentService struct {
@@ -48,10 +56,15 @@ type TournamentService struct {
 	GameRepo       game.GameRepository
 	Broadcaster    Broadcaster
 	PrivacyChecker PrivacyChecker
+	Notifier       Notifier
 }
 
 func (s *TournamentService) SetPrivacyChecker(checker PrivacyChecker) {
 	s.PrivacyChecker = checker
+}
+
+func (s *TournamentService) SetNotifier(notifier Notifier) {
+	s.Notifier = notifier
 }
 
 func NewService(repo TournamentRepository, gameRepo game.GameRepository, broadcaster ...Broadcaster) *TournamentService {
@@ -350,6 +363,7 @@ func (s *TournamentService) StartTournament(ctx context.Context, tournamentID in
 			"pairings": pairings,
 		})
 	}
+	s.notifyRoundStarted(ctx, tournamentID, t.Name, 1, pairings)
 
 	return s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
 }
@@ -447,6 +461,7 @@ func (s *TournamentService) EndTournament(ctx context.Context, tournamentID int6
 			"winner_id": winnerID,
 		})
 	}
+	s.notifyFinished(ctx, tournamentID, t.Name, standings, withdrawn)
 
 	return winnerID, nil
 }
@@ -624,13 +639,14 @@ func (s *TournamentService) startNextRound(ctx context.Context, tournamentID int
 		}
 
 		if t.Status == StatusCompleted {
+			standings, _ := s.Repo.GetStandings(ctx, tournamentID)
 			if s.Broadcaster != nil {
-				standings, _ := s.Repo.GetStandings(ctx, tournamentID)
 				s.Broadcaster.BroadcastTournamentEvent(tournamentID, map[string]interface{}{
 					"type":      "tournament_completed",
 					"winner_id": pickWinner(standings, withdrawn),
 				})
 			}
+			s.notifyFinished(ctx, tournamentID, t.Name, standings, withdrawn)
 			return nil
 		}
 
@@ -660,6 +676,7 @@ func (s *TournamentService) startNextRound(ctx context.Context, tournamentID int
 				"pairings": savedPairings,
 			})
 		}
+		s.notifyRoundStarted(ctx, tournamentID, t.Name, t.CurrentRound, savedPairings)
 
 		finished, err := s.Repo.FinishRoundIfNoGames(ctx, tournamentID, t.CurrentRound)
 		if err != nil {
@@ -685,7 +702,92 @@ func (s *TournamentService) RemoveUserFromTournaments(ctx context.Context, userI
 		}
 	}
 
+	for _, id := range cancelledIDs {
+		s.notifyCancelled(ctx, id)
+	}
+
 	return nil
+}
+
+func (s *TournamentService) notifyRoundStarted(ctx context.Context, tournamentID int64, name string, round int, pairings []*TournamentPairing) {
+	if s.Notifier == nil {
+		return
+	}
+
+	for _, p := range pairings {
+		data := map[string]any{"tournament_id": tournamentID, "round": round}
+
+		if p.IsBye {
+			if p.WhitePlayerID != nil {
+				s.sendTournamentNotification(ctx, *p.WhitePlayerID, notification.TypeTournamentRound,
+					fmt.Sprintf("Round %d started", round),
+					fmt.Sprintf("You have a bye in round %d of %s", round, name),
+					data,
+				)
+			}
+			continue
+		}
+
+		if p.GameID != nil {
+			data["game_id"] = *p.GameID
+		}
+		body := fmt.Sprintf("Round %d of %s has started. Your game is ready", round, name)
+
+		if p.WhitePlayerID != nil {
+			s.sendTournamentNotification(ctx, *p.WhitePlayerID, notification.TypeTournamentRound, fmt.Sprintf("Round %d started", round), body, data)
+		}
+		if p.BlackPlayerID != nil {
+			s.sendTournamentNotification(ctx, *p.BlackPlayerID, notification.TypeTournamentRound, fmt.Sprintf("Round %d started", round), body, data)
+		}
+	}
+}
+
+func (s *TournamentService) notifyFinished(ctx context.Context, tournamentID int64, name string, standings []*StandingsPlayerResponse, withdrawn map[int64]bool) {
+	if s.Notifier == nil {
+		return
+	}
+
+	for _, p := range standings {
+		if withdrawn[p.PlayerID] {
+			continue
+		}
+		s.sendTournamentNotification(ctx, p.PlayerID, notification.TypeTournamentFinished,
+			"Tournament finished",
+			fmt.Sprintf("%s has ended. You finished #%d", name, p.Rank),
+			map[string]any{"tournament_id": tournamentID, "rank": p.Rank},
+		)
+	}
+}
+
+func (s *TournamentService) notifyCancelled(ctx context.Context, tournamentID int64) {
+	if s.Notifier == nil {
+		return
+	}
+
+	t, err := s.Repo.FindByID(ctx, tournamentID)
+	if err != nil {
+		return
+	}
+
+	players, err := s.Repo.GetSwissPlayers(ctx, tournamentID)
+	if err != nil {
+		return
+	}
+
+	for _, p := range players {
+		s.sendTournamentNotification(ctx, p.UserID, notification.TypeTournamentCancelled,
+			"Tournament cancelled",
+			t.Name+" was cancelled",
+			map[string]any{"tournament_id": tournamentID},
+		)
+	}
+}
+
+func (s *TournamentService) sendTournamentNotification(ctx context.Context, userID int64, notificationType string, title string, body string, data map[string]any) {
+	err := s.Notifier.Send(ctx, userID, notificationType, title, body, data)
+	if err != nil {
+		slog.ErrorContext(ctx, "send tournament notification failed", "user_id", userID, "type", notificationType, "error", err)
+	}
 }
 
 func (s *TournamentService) GetStandings(ctx context.Context, tournamentID int64) (*TournamentStandingsResponse, error) {

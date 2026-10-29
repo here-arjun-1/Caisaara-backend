@@ -6,9 +6,11 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
+	"github.com/here-arjun-1/Caisaara-backend/internal/notification"
 )
 
 type ChatService interface {
@@ -20,10 +22,15 @@ type ChatService interface {
 	GetDirectMessages(ctx context.Context, currentUserID, otherUserID int64) ([]DirectMessage, error)
 	GetConversations(ctx context.Context, userID int64) ([]Conversation, error)
 	SetPrivacyChecker(checker PrivacyChecker)
+	SetNotifier(notifier Notifier)
 }
 
 type PrivacyChecker interface {
 	CheckDirectMessage(ctx context.Context, senderID, receiverID int64) error
+}
+
+type Notifier interface {
+	SendPushOnly(ctx context.Context, userID int64, notificationType string, title string, body string, data map[string]any) error
 }
 
 type Service struct {
@@ -31,10 +38,15 @@ type Service struct {
 	GameRepo       game.GameRepository
 	RateLimiter    RateLimiter
 	PrivacyChecker PrivacyChecker
+	Notifier       Notifier
 }
 
 func (s *Service) SetPrivacyChecker(checker PrivacyChecker) {
 	s.PrivacyChecker = checker
+}
+
+func (s *Service) SetNotifier(notifier Notifier) {
+	s.Notifier = notifier
 }
 
 func NewService(chatRepo ChatRepository, gameRepo game.GameRepository, rateLimiter ...RateLimiter) ChatService {
@@ -181,7 +193,33 @@ func (s *Service) SendDirectMessage(ctx context.Context, senderID, receiverID in
 		return nil, err
 	}
 
+	s.notifyDirectMessage(ctx, msg)
 	return msg, nil
+}
+
+func (s *Service) notifyDirectMessage(ctx context.Context, msg *DirectMessage) {
+	if s.Notifier == nil {
+		return
+	}
+
+	senderUsername, err := s.ChatRepo.FindUsernameByID(ctx, msg.SenderID)
+	if err != nil {
+		return
+	}
+
+	body := msg.Message
+	if utf8.RuneCountInString(body) > 100 {
+		body = string([]rune(body)[:100]) + "..."
+	}
+
+	err = s.Notifier.SendPushOnly(ctx, msg.ReceiverID, notification.TypeDirectMessage,
+		senderUsername,
+		body,
+		map[string]any{"message_id": msg.ID, "user_id": msg.SenderID, "username": senderUsername},
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "send direct message notification failed", "receiver_id", msg.ReceiverID, "error", err)
+	}
 }
 
 func (s *Service) GetDirectMessages(ctx context.Context, currentUserID, otherUserID int64) ([]DirectMessage, error) {

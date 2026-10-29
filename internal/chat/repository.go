@@ -20,6 +20,7 @@ type ChatRepository interface {
 	MarkDirectMessagesAsRead(ctx context.Context, receiverID, senderID int64) error
 	GetConversations(ctx context.Context, userID int64) ([]Conversation, error)
 	UserExists(ctx context.Context, userID int64) (bool, error)
+	FindUsernameByID(ctx context.Context, userID int64) (string, error)
 }
 
 type Repository struct {
@@ -219,4 +220,14 @@ func (r *Repository) UserExists(ctx context.Context, userID int64) (bool, error)
 		return false, err
 	}
 	return true, nil
+}
+
+func (r *Repository) FindUsernameByID(ctx context.Context, userID int64) (string, error) {
+	var username string
+	err := r.DB.QueryRow(ctx, `SELECT username FROM users WHERE id = $1`, userID).Scan(&username)
+	if err != nil {
+		slog.ErrorContext(ctx, "find username failed", "user_id", userID, "error", err)
+		return "", err
+	}
+	return username, nil
 }

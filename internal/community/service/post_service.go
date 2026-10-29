@@ -10,6 +10,7 @@ import (
 	"github.com/corentings/chess/v2"
 	"github.com/here-arjun-1/Caisaara-backend/internal/community/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/community/model"
+	"github.com/here-arjun-1/Caisaara-backend/internal/notification"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -29,6 +30,11 @@ type PostRepository interface {
 	CountReactions(ctx context.Context, postIDs []int64) (map[int64]map[string]int, error)
 	SetReaction(ctx context.Context, postID, userID int64, reaction string) error
 	DeleteReaction(ctx context.Context, postID, userID int64) error
+	FindUsernameByID(ctx context.Context, userID int64) (string, error)
+}
+
+type Notifier interface {
+	Send(ctx context.Context, userID int64, notificationType string, title string, body string, data map[string]any) error
 }
 
 type GameRepository interface {
@@ -39,6 +45,7 @@ type GameRepository interface {
 type PostService struct {
 	PostRepository PostRepository
 	GameRepository GameRepository
+	Notifier       Notifier
 }
 
 func NewPostService(postRepository PostRepository, gameRepository GameRepository) *PostService {
@@ -174,6 +181,10 @@ func (s *PostService) DeletePost(ctx context.Context, userID, postID int64) erro
 	return nil
 }
 
+func (s *PostService) SetNotifier(notifier Notifier) {
+	s.Notifier = notifier
+}
+
 func (s *PostService) SetReaction(ctx context.Context, userID, postID int64, reaction string) (*dto.ReactionResponse, error) {
 	err := s.PostRepository.SetReaction(ctx, postID, userID, reaction)
 	if isForeignKeyError(err) {
@@ -184,7 +195,33 @@ func (s *PostService) SetReaction(ctx context.Context, userID, postID int64, rea
 		return nil, ErrInternal
 	}
 
+	s.notifyReaction(ctx, userID, postID)
 	return s.reactionSummary(ctx, postID, &reaction)
+}
+
+func (s *PostService) notifyReaction(ctx context.Context, userID, postID int64) {
+	if s.Notifier == nil {
+		return
+	}
+
+	ownerID, err := s.PostRepository.FindPostOwner(ctx, postID)
+	if err != nil || ownerID == userID {
+		return
+	}
+
+	username, err := s.PostRepository.FindUsernameByID(ctx, userID)
+	if err != nil {
+		return
+	}
+
+	err = s.Notifier.Send(ctx, ownerID, notification.TypePostReaction,
+		"New reaction",
+		username+" reacted to your post",
+		map[string]any{"post_id": postID, "user_id": userID, "username": username},
+	)
+	if err != nil {
+		slog.Error("send reaction notification failed", "owner_id", ownerID, "error", err)
+	}
 }
 
 func (s *PostService) DeleteReaction(ctx context.Context, userID, postID int64) (*dto.ReactionResponse, error) {
