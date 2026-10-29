@@ -45,6 +45,7 @@ func (m *Module) RegisterRoutes(public *gin.RouterGroup, protected *gin.RouterGr
 	commentLimiter := middleware.NewTokenBucketLimiter(20, time.Minute)
 	reactionLimiter := middleware.NewTokenBucketLimiter(30, time.Minute)
 	deleteLimiter := middleware.NewTokenBucketLimiter(20, time.Minute)
+	bookmarkLimiter := middleware.NewTokenBucketLimiter(30, time.Minute)
 
 	public.GET("/posts", readLimiter.Limit, m.postHandler.GetFeed)
 	public.GET("/posts/:id", readLimiter.Limit, m.postHandler.GetPost)
@@ -58,8 +59,12 @@ func (m *Module) RegisterRoutes(public *gin.RouterGroup, protected *gin.RouterGr
 
 		registered.PUT("/posts/:id/reaction", reactionLimiter.Limit, m.postHandler.SetReaction)
 		registered.DELETE("/posts/:id/reaction", reactionLimiter.Limit, m.postHandler.DeleteReaction)
-
 		registered.POST("/posts/:id/comments", commentLimiter.Limit, m.commentHandler.CreateComment)
 		registered.DELETE("/comments/:id", deleteLimiter.Limit, m.commentHandler.DeleteComment)
+
+		registered.GET("/bookmarks", readLimiter.Limit, m.postHandler.GetBookmarks)
+		registered.PUT("/posts/:id/bookmark", bookmarkLimiter.Limit, m.postHandler.AddBookmark)
+		registered.DELETE("/posts/:id/bookmark", bookmarkLimiter.Limit, m.postHandler.RemoveBookmark)
+
 	}
 }

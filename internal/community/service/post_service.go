@@ -30,6 +30,9 @@ type PostRepository interface {
 	CountReactions(ctx context.Context, postIDs []int64) (map[int64]map[string]int, error)
 	SetReaction(ctx context.Context, postID, userID int64, reaction string) error
 	DeleteReaction(ctx context.Context, postID, userID int64) error
+	ListBookmarkedPosts(ctx context.Context, userID, beforeID int64, limit int) ([]*model.Post, error)
+	AddBookmark(ctx context.Context, postID, userID int64) error
+	RemoveBookmark(ctx context.Context, postID, userID int64) error
 	FindUsernameByID(ctx context.Context, userID int64) (string, error)
 }
 
@@ -132,6 +135,22 @@ func (s *PostService) GetFeed(ctx context.Context, viewerID, beforeID int64, lim
 		return nil, ErrInternal
 	}
 
+	return s.buildFeed(ctx, posts, limit)
+}
+
+func (s *PostService) GetBookmarks(ctx context.Context, userID, beforeID int64, limit int) (*dto.FeedResponse, error) {
+	limit = clampLimit(limit)
+
+	posts, err := s.PostRepository.ListBookmarkedPosts(ctx, userID, beforeID, limit)
+	if err != nil {
+		slog.Error("list bookmarked posts failed", "error", err)
+		return nil, ErrInternal
+	}
+
+	return s.buildFeed(ctx, posts, limit)
+}
+
+func (s *PostService) buildFeed(ctx context.Context, posts []*model.Post, limit int) (*dto.FeedResponse, error) {
 	postIDs := make([]int64, 0, len(posts))
 	for _, p := range posts {
 		postIDs = append(postIDs, p.ID)
@@ -195,7 +214,9 @@ func (s *PostService) SetReaction(ctx context.Context, userID, postID int64, rea
 		return nil, ErrInternal
 	}
 
-	s.notifyReaction(ctx, userID, postID)
+	if reaction != "dislike" {
+		s.notifyReaction(ctx, userID, postID)
+	}
 	return s.reactionSummary(ctx, postID, &reaction)
 }
 
@@ -284,6 +305,7 @@ func toPostResponse(p *model.Post) dto.PostResponse {
 		Game:         game,
 		Reactions:    nonNilCounts(p.Reactions),
 		MyReaction:   p.MyReaction,
+		IsBookmarked: p.IsBookmarked,
 		CommentCount: p.CommentCount,
 		CreatedAt:    p.CreatedAt,
 	}
@@ -309,4 +331,34 @@ func clampLimit(limit int) int {
 func isForeignKeyError(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == postgresForeignKeyViolation
+}
+
+func (s *PostService) AddBookmark(ctx context.Context, userID, postID int64) (*dto.BookmarkResponse, error) {
+	err := s.PostRepository.AddBookmark(ctx, postID, userID)
+	if isForeignKeyError(err) {
+		return nil, ErrPostNotFound
+	}
+	if err != nil {
+		slog.Error("add bookmark failed", "error", err)
+		return nil, ErrInternal
+	}
+
+	return &dto.BookmarkResponse{Bookmarked: true}, nil
+}
+
+func (s *PostService) RemoveBookmark(ctx context.Context, userID, postID int64) (*dto.BookmarkResponse, error) {
+	if _, err := s.PostRepository.FindPostOwner(ctx, postID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrPostNotFound
+		}
+		slog.Error("find post owner failed", "error", err)
+		return nil, ErrInternal
+	}
+
+	if err := s.PostRepository.RemoveBookmark(ctx, postID, userID); err != nil {
+		slog.Error("remove bookmark failed", "error", err)
+		return nil, ErrInternal
+	}
+
+	return &dto.BookmarkResponse{Bookmarked: false}, nil
 }

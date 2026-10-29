@@ -39,7 +39,8 @@ const postColumns = `
 	pr.display_name,
 	pr.avatar_url,
 	(SELECT COUNT(*) FROM post_comments c WHERE c.post_id = p.id),
-	(SELECT r.reaction FROM post_reactions r WHERE r.post_id = p.id AND r.user_id = $1)
+	(SELECT r.reaction FROM post_reactions r WHERE r.post_id = p.id AND r.user_id = $1),
+	EXISTS (SELECT 1 FROM post_bookmarks b WHERE b.post_id = p.id AND b.user_id = $1)
 FROM posts p
 JOIN users u ON u.id = p.user_id
 LEFT JOIN player_profiles pr ON pr.user_id = p.user_id`
@@ -71,6 +72,7 @@ func scanPost(row pgx.Row) (*model.Post, error) {
 		&p.Author.AvatarURL,
 		&p.CommentCount,
 		&p.MyReaction,
+		&p.IsBookmarked,
 	)
 	if err != nil {
 		return nil, err
@@ -160,6 +162,30 @@ func (r *PostRepository) ListPosts(ctx context.Context, viewerID, beforeID int64
 	}
 	defer rows.Close()
 
+	return scanPosts(rows)
+}
+
+func (r *PostRepository) ListBookmarkedPosts(ctx context.Context, userID, beforeID int64, limit int) ([]*model.Post, error) {
+	rows, err := r.DB.Query(
+		ctx,
+		`SELECT `+postColumns+`
+		JOIN post_bookmarks pb ON pb.post_id = p.id AND pb.user_id = $1
+		WHERE ($2 = 0 OR p.id < $2)
+		ORDER BY p.id DESC
+		LIMIT $3`,
+		userID,
+		beforeID,
+		limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	return scanPosts(rows)
+}
+
+func scanPosts(rows pgx.Rows) ([]*model.Post, error) {
 	posts := []*model.Post{}
 	for rows.Next() {
 		p, err := scanPost(rows)
@@ -264,4 +290,26 @@ func (r *PostRepository) FindUsernameByID(ctx context.Context, userID int64) (st
 	).Scan(&username)
 
 	return username, err
+}
+
+func (r *PostRepository) AddBookmark(ctx context.Context, postID, userID int64) error {
+	_, err := r.DB.Exec(
+		ctx,
+		`INSERT INTO post_bookmarks (post_id, user_id)
+		VALUES ($1, $2)
+		ON CONFLICT (user_id, post_id) DO NOTHING`,
+		postID,
+		userID,
+	)
+	return err
+}
+
+func (r *PostRepository) RemoveBookmark(ctx context.Context, postID, userID int64) error {
+	_, err := r.DB.Exec(
+		ctx,
+		`DELETE FROM post_bookmarks WHERE post_id = $1 AND user_id = $2`,
+		postID,
+		userID,
+	)
+	return err
 }
