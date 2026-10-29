@@ -9,7 +9,7 @@ import (
 	"github.com/joho/godotenv"
 )
 
-const AppBaseURL = "https://caisaara.duckdns.org"
+const AppBaseURL = "https://caisaara.app"
 
 type Config struct {
 	Port                string
