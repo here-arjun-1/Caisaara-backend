@@ -15,6 +15,7 @@ type Notifier interface {
 type Service struct {
 	Repository *Repository
 	Notifier   Notifier
+	IsOnline   func(userID int64) bool
 }
 
 func NewService(repository *Repository) *Service {
@@ -25,6 +26,10 @@ func NewService(repository *Repository) *Service {
 
 func (s *Service) SetNotifier(notifier Notifier) {
 	s.Notifier = notifier
+}
+
+func (s *Service) SetOnlineChecker(isOnline func(userID int64) bool) {
+	s.IsOnline = isOnline
 }
 
 func (s *Service) SendRequest(ctx context.Context, senderID int64, receiverUsername string) (int64, error) {
@@ -133,7 +138,24 @@ func (s *Service) RejectRequest(ctx context.Context, userID int64, requestID int
 }
 
 func (s *Service) GetFriends(ctx context.Context, userID int64) ([]Friend, error) {
-	return s.Repository.FindFriends(ctx, userID)
+	if s == nil || s.Repository == nil || userID <= 0 {
+		return []Friend{}, nil
+	}
+	friends, err := s.Repository.FindFriends(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if friends == nil {
+		friends = []Friend{}
+	}
+	if s.IsOnline != nil {
+		for i := range friends {
+			if friends[i].UserID > 0 {
+				friends[i].IsOnline = s.IsOnline(friends[i].UserID)
+			}
+		}
+	}
+	return friends, nil
 }
 
 func (s *Service) CancelRequest(ctx context.Context, userID int64, requestID int64) error {

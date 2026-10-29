@@ -87,6 +87,9 @@ func (r *Repository) UpdateRequestStatus(ctx context.Context, requestID int64, r
 }
 
 func (r *Repository) FindFriends(ctx context.Context, userID int64) ([]Friend, error) {
+	if r == nil || r.DB == nil || userID <= 0 {
+		return []Friend{}, nil
+	}
 	rows, err := r.DB.Query(ctx,
 		`SELECT u.id, u.username, u.rating, fr.updated_at
 		FROM friend_requests fr
@@ -96,6 +99,7 @@ func (r *Repository) FindFriends(ctx context.Context, userID int64) ([]Friend, e
 		END
 		WHERE (fr.sender_id = $1 OR fr.receiver_id = $1)
 			AND fr.status = $2
+			AND u.deleted_at IS NULL
 		ORDER BY u.username`,
 		userID, StatusAccepted,
 	)

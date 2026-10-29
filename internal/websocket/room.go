@@ -136,11 +136,14 @@ func (r *Room) RemoveSpectator(userID int64, client *Client) {
 }
 
 func (r *Room) HasClient(userID int64) bool {
+	if r == nil || userID <= 0 {
+		return false
+	}
 	r.Mutex.RLock()
 	defer r.Mutex.RUnlock()
 
-	_, exists := r.Clients[userID]
-	return exists
+	client, exists := r.Clients[userID]
+	return exists && client != nil && !client.closed.Load()
 }
 
 func (r *Room) Count() int {
