@@ -31,6 +31,7 @@ type Friend struct {
 	Username     string    `json:"username"`
 	Rating       int       `json:"rating"`
 	FriendsSince time.Time `json:"friends_since"`
+	IsOnline     bool      `json:"is_online"`
 }
 
 type SentRequest struct {

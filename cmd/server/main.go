@@ -165,6 +165,7 @@ func run() error {
 	chatHandler.SetDirectBroadcaster(wsHandler.BroadcastDirectMessage)
 	notificationService.SetBroadcaster(wsHandler.BroadcastNotification)
 	notificationService.SetOnlineChecker(wsHandler.IsUserOnline)
+	friendsService.SetOnlineChecker(wsHandler.IsUserOnline)
 
 	tournamentRepo := tournament.NewRepository(conn)
 	tournamentService := tournament.NewService(tournamentRepo, gameRepository, wsHandler)
