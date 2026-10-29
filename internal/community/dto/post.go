@@ -14,7 +14,7 @@ type CreateCommentData struct {
 }
 
 type SetReactionData struct {
-	Reaction string `json:"reaction" binding:"required,oneof=like love fire wow"`
+	Reaction string `json:"reaction" binding:"required,oneof=like love fire wow dislike"`
 }
 
 type AuthorResponse struct {
@@ -32,6 +32,7 @@ type PostResponse struct {
 	Game         *PostGameResponse `json:"game"`
 	Reactions    map[string]int    `json:"reactions"`
 	MyReaction   *string           `json:"my_reaction"`
+	IsBookmarked bool              `json:"is_bookmarked"`
 	CommentCount int               `json:"comment_count"`
 	CreatedAt    time.Time         `json:"created_at"`
 }
@@ -56,6 +57,10 @@ type CommentListResponse struct {
 type ReactionResponse struct {
 	Reactions  map[string]int `json:"reactions"`
 	MyReaction *string        `json:"my_reaction"`
+}
+
+type BookmarkResponse struct {
+	Bookmarked bool `json:"bookmarked"`
 }
 
 type PostGameResponse struct {

@@ -19,6 +19,9 @@ type PostService interface {
 	DeletePost(ctx context.Context, userID, postID int64) error
 	SetReaction(ctx context.Context, userID, postID int64, reaction string) (*dto.ReactionResponse, error)
 	DeleteReaction(ctx context.Context, userID, postID int64) (*dto.ReactionResponse, error)
+	GetBookmarks(ctx context.Context, userID, beforeID int64, limit int) (*dto.FeedResponse, error)
+	AddBookmark(ctx context.Context, userID, postID int64) (*dto.BookmarkResponse, error)
+	RemoveBookmark(ctx context.Context, userID, postID int64) (*dto.BookmarkResponse, error)
 }
 
 type PostHandler struct {
@@ -155,6 +158,73 @@ func (h *PostHandler) DeleteReaction(c *gin.Context) {
 	}
 
 	response.Success(c, http.StatusOK, "reaction removed", result)
+}
+
+func (h *PostHandler) GetBookmarks(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	if userID <= 0 {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	beforeID, ok := queryInt(c, "before_id")
+	if !ok {
+		return
+	}
+	limit, ok := queryInt(c, "limit")
+	if !ok {
+		return
+	}
+
+	feed, err := h.PostService.GetBookmarks(c.Request.Context(), userID, beforeID, int(limit))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "bookmarks fetched successfully", feed)
+}
+
+func (h *PostHandler) AddBookmark(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	if userID <= 0 {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	postID, ok := idParam(c, "id")
+	if !ok {
+		return
+	}
+
+	result, err := h.PostService.AddBookmark(c.Request.Context(), userID, postID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "post bookmarked", result)
+}
+
+func (h *PostHandler) RemoveBookmark(c *gin.Context) {
+	userID := c.GetInt64("user_id")
+	if userID <= 0 {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	postID, ok := idParam(c, "id")
+	if !ok {
+		return
+	}
+
+	result, err := h.PostService.RemoveBookmark(c.Request.Context(), userID, postID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "bookmark removed", result)
 }
 
 func idParam(c *gin.Context, name string) (int64, bool) {

@@ -19,6 +19,7 @@ type Post struct {
 	Author       Author
 	CommentCount int
 	MyReaction   *string
+	IsBookmarked bool
 	Reactions    map[string]int
 }
 
