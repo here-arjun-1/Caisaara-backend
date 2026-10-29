@@ -590,6 +590,21 @@ func (r *Repository) EndTournament(ctx context.Context, tournamentID int64) erro
 
 	_, err = tx.Exec(
 		ctx,
+		`UPDATE games
+		SET status = 'finished', end_reason = 'aborted', ended_at = NOW()
+		WHERE id IN (
+			SELECT game_id FROM tournament_pairings
+			WHERE tournament_id = $1 AND game_id IS NOT NULL AND status != 'completed'
+		) AND status = 'active'`,
+		tournamentID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "abort unfinished tournament games failed", "tournament_id", tournamentID, "error", err)
+		return err
+	}
+
+	_, err = tx.Exec(
+		ctx,
 		`UPDATE tournament_pairings
 		SET status = 'completed', completed_at = NOW()
 		WHERE tournament_id = $1 AND status != 'completed'`,
@@ -615,12 +630,12 @@ func (r *Repository) EndTournament(ctx context.Context, tournamentID int64) erro
 	tag, err := tx.Exec(
 		ctx,
 		`UPDATE tournaments
-		SET status = 'completed', updated_at = NOW()
+		SET status = 'cancelled', updated_at = NOW()
 		WHERE id = $1 AND status = 'ongoing'`,
 		tournamentID,
 	)
 	if err != nil {
-		slog.ErrorContext(ctx, "update tournament status to completed failed", "tournament_id", tournamentID, "error", err)
+		slog.ErrorContext(ctx, "update tournament status to cancelled failed", "tournament_id", tournamentID, "error", err)
 		return err
 	}
 	if tag.RowsAffected() == 0 {

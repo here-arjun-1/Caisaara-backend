@@ -443,27 +443,15 @@ func (s *TournamentService) EndTournament(ctx context.Context, tournamentID int6
 		return nil, err
 	}
 
-	standings, err := s.Repo.GetStandings(ctx, tournamentID)
-	if err != nil {
-		return nil, err
-	}
-
-	withdrawn, err := s.Repo.GetWithdrawnPlayers(ctx, tournamentID)
-	if err != nil {
-		return nil, err
-	}
-
-	winnerID := pickWinner(standings, withdrawn)
-
 	if s.Broadcaster != nil {
 		s.Broadcaster.BroadcastTournamentEvent(tournamentID, map[string]interface{}{
-			"type":      "tournament_completed",
-			"winner_id": winnerID,
+			"type":      "tournament_cancelled",
+			"winner_id": nil,
 		})
 	}
-	s.notifyFinished(ctx, tournamentID, t.Name, standings, withdrawn)
+	s.notifyCancelled(ctx, tournamentID)
 
-	return winnerID, nil
+	return nil, nil
 }
 
 func (s *TournamentService) generateNextPairings(ctx context.Context, tournamentID int64, t *TournamentWithPlayerCount, swissPlayers []*SwissPlayer, withdrawn map[int64]bool) ([]SwissPairingResult, error) {

@@ -440,9 +440,9 @@ func (h *Handler) EndTournament(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, EndTournamentResponse{
-		Message:      "tournament ended successfully",
+		Message:      "tournament cancelled successfully",
 		TournamentID: strconv.FormatInt(id, 10),
-		Status:       StatusCompleted,
+		Status:       StatusCancelled,
 		WinnerID:     winnerID,
 	})
 }
