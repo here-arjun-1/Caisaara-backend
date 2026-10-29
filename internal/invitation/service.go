@@ -479,7 +479,28 @@ func (s *Service) DeclineChallenge(ctx context.Context, userID int64, code strin
 		return ErrInternal
 	}
 
+	s.notifyChallengeDeclined(ctx, invite)
 	return nil
+}
+
+func (s *Service) notifyChallengeDeclined(ctx context.Context, invite *Invite) {
+	if s.Notifier == nil {
+		return
+	}
+
+	opponent, err := s.UserFinder.FindUserByID(ctx, invite.OpponentID)
+	if err != nil {
+		return
+	}
+
+	err = s.Notifier.Send(ctx, invite.CreatorID, notification.TypeChallengeDeclined,
+		"Challenge declined",
+		opponent.Username+" declined your challenge",
+		map[string]any{"code": invite.Code, "user_id": invite.OpponentID, "username": opponent.Username},
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "send challenge declined notification failed", "creator_id", invite.CreatorID, "error", err)
+	}
 }
 
 func (s *Service) CreateWatchInvite(ctx context.Context, userID int64, gameID string) (*WatchInvite, error) {

@@ -127,6 +127,7 @@ func run() error {
 		friendsRepository,
 	)
 	invitationService.SetNotifier(notificationService)
+	communityModule.SetNotifier(notificationService)
 	invitationHandler := invitation.NewHandler(invitationService)
 
 	tiltRepository := tilt.NewRepository(conn)
@@ -144,9 +145,11 @@ func run() error {
 	chatRepo := chat.NewRepository(conn)
 	chatLimiter := chat.NewRedisRateLimiter(redisClient, 10, time.Minute)
 	chatService := chat.NewService(chatRepo, gameRepository, chatLimiter)
+	chatService.SetNotifier(notificationService)
 
 	clubRepository := club.NewRepository(conn)
 	clubService := club.NewService(clubRepository, chatLimiter)
+	clubService.SetNotifier(notificationService)
 
 	wsHub := websocket.NewHub()
 	clubHandler := club.NewHandler(clubService, wsHub)
@@ -165,6 +168,7 @@ func run() error {
 
 	tournamentRepo := tournament.NewRepository(conn)
 	tournamentService := tournament.NewService(tournamentRepo, gameRepository, wsHandler)
+	tournamentService.SetNotifier(notificationService)
 	tournamentHandler := tournament.NewHandler(tournamentService)
 	wsHandler.SetTournamentFinder(tournamentService)
 

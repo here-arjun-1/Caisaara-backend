@@ -9,6 +9,7 @@ import (
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/community/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/community/model"
+	"github.com/here-arjun-1/Caisaara-backend/internal/notification"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -22,6 +23,7 @@ type CommentRepository interface {
 type CommentService struct {
 	CommentRepository CommentRepository
 	PostRepository    PostRepository
+	Notifier          Notifier
 }
 
 func NewCommentService(commentRepository CommentRepository, postRepository PostRepository) *CommentService {
@@ -29,6 +31,10 @@ func NewCommentService(commentRepository CommentRepository, postRepository PostR
 		CommentRepository: commentRepository,
 		PostRepository:    postRepository,
 	}
+}
+
+func (s *CommentService) SetNotifier(notifier Notifier) {
+	s.Notifier = notifier
 }
 
 func (s *CommentService) CreateComment(ctx context.Context, userID, postID int64, req dto.CreateCommentData) (*dto.CommentResponse, error) {
@@ -47,8 +53,30 @@ func (s *CommentService) CreateComment(ctx context.Context, userID, postID int64
 		return nil, ErrInternal
 	}
 
+	s.notifyComment(ctx, c)
+
 	response := toCommentResponse(c)
 	return &response, nil
+}
+
+func (s *CommentService) notifyComment(ctx context.Context, c *model.Comment) {
+	if s.Notifier == nil {
+		return
+	}
+
+	ownerID, err := s.PostRepository.FindPostOwner(ctx, c.PostID)
+	if err != nil || ownerID == c.UserID {
+		return
+	}
+
+	err = s.Notifier.Send(ctx, ownerID, notification.TypePostComment,
+		"New comment",
+		c.Author.Username+" commented on your post",
+		map[string]any{"post_id": c.PostID, "comment_id": c.ID, "user_id": c.UserID, "username": c.Author.Username},
+	)
+	if err != nil {
+		slog.Error("send comment notification failed", "owner_id", ownerID, "error", err)
+	}
 }
 
 func (s *CommentService) ListComments(ctx context.Context, postID, afterID int64, limit int) (*dto.CommentListResponse, error) {

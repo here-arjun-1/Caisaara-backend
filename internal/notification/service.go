@@ -53,19 +53,39 @@ func (s *Service) Send(ctx context.Context, userID int64, notificationType strin
 		return nil
 	}
 
-	if s.TaskClient == nil {
+	s.enqueuePush(ctx, n)
+	return nil
+}
+
+func (s *Service) SendPushOnly(ctx context.Context, userID int64, notificationType string, title string, body string, data map[string]any) error {
+	if s.IsOnline != nil && s.IsOnline(userID) {
 		return nil
+	}
+
+	n := &Notification{
+		UserID: userID,
+		Type:   notificationType,
+		Title:  title,
+		Body:   body,
+		Data:   data,
+	}
+	s.enqueuePush(ctx, n)
+	return nil
+}
+
+func (s *Service) enqueuePush(ctx context.Context, n *Notification) {
+	if s.TaskClient == nil {
+		return
 	}
 
 	task, err := NewPushTask(n)
 	if err != nil {
-		slog.ErrorContext(ctx, "create push task failed", "user_id", userID, "error", err)
-		return nil
+		slog.ErrorContext(ctx, "create push task failed", "user_id", n.UserID, "error", err)
+		return
 	}
 	if _, err := s.TaskClient.EnqueueContext(ctx, task); err != nil {
-		slog.ErrorContext(ctx, "enqueue push task failed", "user_id", userID, "error", err)
+		slog.ErrorContext(ctx, "enqueue push task failed", "user_id", n.UserID, "error", err)
 	}
-	return nil
 }
 
 func (s *Service) GetNotifications(ctx context.Context, userID int64, beforeID int64, limit int) ([]Notification, error) {

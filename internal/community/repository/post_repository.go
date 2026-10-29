@@ -253,3 +253,15 @@ func (r *PostRepository) DeleteReaction(ctx context.Context, postID, userID int6
 	)
 	return err
 }
+
+func (r *PostRepository) FindUsernameByID(ctx context.Context, userID int64) (string, error) {
+	var username string
+
+	err := r.DB.QueryRow(
+		ctx,
+		`SELECT username FROM users WHERE id = $1`,
+		userID,
+	).Scan(&username)
+
+	return username, err
+}
