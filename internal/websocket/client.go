@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/here-arjun-1/Caisaara-backend/internal/config"
 )
 
 const (
@@ -17,10 +18,20 @@ const (
 	MaxMessageSize = 4096
 )
 
+var allowedOrigins = map[string]bool{
+	config.AppBaseURL: true,
+}
+
 var Upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
+	CheckOrigin: checkOrigin,
+}
+
+func checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
 		return true
-	},
+	}
+	return allowedOrigins[origin]
 }
 
 type Client struct {
