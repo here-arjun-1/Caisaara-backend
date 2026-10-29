@@ -148,6 +148,13 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
+	if errors.Is(err, ErrTooManyChallenges) {
+		c.JSON(http.StatusTooManyRequests, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
 	if errors.Is(err, ErrOpponentNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": err.Error(),
@@ -360,6 +367,13 @@ func (h *Handler) DeclineChallenge(c *gin.Context) {
 		return
 	}
 
+	if errors.Is(err, ErrAlreadyJoining) {
+		c.JSON(http.StatusConflict, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -405,6 +419,13 @@ func (h *Handler) CancelChallenge(c *gin.Context) {
 
 	if errors.Is(err, ErrNotYourChallenge) {
 		c.JSON(http.StatusForbidden, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	if errors.Is(err, ErrAlreadyJoining) {
+		c.JSON(http.StatusConflict, gin.H{
 			"error": err.Error(),
 		})
 		return

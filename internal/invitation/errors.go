@@ -20,4 +20,5 @@ var (
 	ErrLevelNotPicked       = errors.New("pick your level before playing rated games")
 	ErrPlayerBlocked        = errors.New("you cannot play with this player")
 	ErrChallengeAlreadySent = errors.New("you already have a pending challenge to this player")
+	ErrTooManyChallenges    = errors.New("too many pending challenges, please wait")
 )
