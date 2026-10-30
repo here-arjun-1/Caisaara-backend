@@ -7,7 +7,9 @@ const (
 	TypeFriendAccepted = "friend_accepted"
 	TypeGameChallenge  = "game_challenge"
 
+	TypeChallengeAccepted   = "challenge_accepted"
 	TypeChallengeDeclined   = "challenge_declined"
+	TypeChallengeCancelled  = "challenge_cancelled"
 	TypeTournamentRound     = "tournament_round_started"
 	TypeTournamentFinished  = "tournament_finished"
 	TypeTournamentCancelled = "tournament_cancelled"

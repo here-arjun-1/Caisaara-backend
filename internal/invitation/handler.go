@@ -127,7 +127,7 @@ func (h *Handler) Create(c *gin.Context) {
 		return
 	}
 
-	if errors.Is(err, ErrInvalidTimeControl) || errors.Is(err, ErrInvalidColor) || errors.Is(err, ErrChallengeYourself) {
+	if errors.Is(err, ErrInvalidTimeControl) || errors.Is(err, ErrInvalidColor) || errors.Is(err, ErrChallengeYourself) || errors.Is(err, ErrOpponentLevelNotPicked) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
 		})
@@ -163,8 +163,9 @@ func (h *Handler) Create(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+		slog.ErrorContext(ctx, "create invite failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
 		})
 		return
 	}
@@ -306,8 +307,9 @@ func (h *Handler) Join(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+		slog.ErrorContext(ctx, "join invite failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
 		})
 		return
 	}
@@ -367,7 +369,7 @@ func (h *Handler) DeclineChallenge(c *gin.Context) {
 		return
 	}
 
-	if errors.Is(err, ErrAlreadyJoining) {
+	if errors.Is(err, ErrChallengeBusy) || errors.Is(err, ErrAlreadyJoining) {
 		c.JSON(http.StatusConflict, gin.H{
 			"error": err.Error(),
 		})
@@ -375,8 +377,9 @@ func (h *Handler) DeclineChallenge(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+		slog.ErrorContext(c.Request.Context(), "decline challenge failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
 		})
 		return
 	}
@@ -424,7 +427,7 @@ func (h *Handler) CancelChallenge(c *gin.Context) {
 		return
 	}
 
-	if errors.Is(err, ErrAlreadyJoining) {
+	if errors.Is(err, ErrChallengeBusy) || errors.Is(err, ErrAlreadyJoining) {
 		c.JSON(http.StatusConflict, gin.H{
 			"error": err.Error(),
 		})
@@ -432,8 +435,9 @@ func (h *Handler) CancelChallenge(c *gin.Context) {
 	}
 
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": err.Error(),
+		slog.ErrorContext(c.Request.Context(), "cancel challenge failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "internal server error",
 		})
 		return
 	}

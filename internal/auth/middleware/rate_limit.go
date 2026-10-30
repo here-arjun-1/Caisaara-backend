@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strconv"
 	"sync"
 	"time"
 
@@ -86,9 +87,22 @@ func (l *TokenBucketLimiter) cleanup() {
 }
 
 func (l *TokenBucketLimiter) Limit(c *gin.Context) {
-	if !l.allow(c.ClientIP()) {
+	key := getLimiterKey(c)
+	if !l.allow(key) {
 		response.Abort(c, http.StatusTooManyRequests, "too many requests, please try again later")
 		return
 	}
 	c.Next()
+}
+
+func getLimiterKey(c *gin.Context) string {
+	if uid, ok := GetUserID(c); ok && uid > 0 {
+		return "user:" + strconv.FormatInt(uid, 10)
+	}
+	if guestIDValue, exists := c.Get("guest_id"); exists {
+		if gid, ok := guestIDValue.(string); ok && gid != "" {
+			return "guest:" + gid
+		}
+	}
+	return "ip:" + c.ClientIP()
 }

@@ -8,9 +8,9 @@ import (
 )
 
 func RegisterRoutes(handler *Handler, public *gin.Engine, protected *gin.RouterGroup) {
-	createLimiter := middleware.NewTokenBucketLimiter(15, time.Minute)
-	actionLimiter := middleware.NewTokenBucketLimiter(30, time.Minute)
-	queryLimiter := middleware.NewTokenBucketLimiter(60, time.Minute)
+	createLimiter := middleware.NewTokenBucketLimiter(20, time.Minute)
+	actionLimiter := middleware.NewTokenBucketLimiter(60, time.Minute)
+	queryLimiter := middleware.NewTokenBucketLimiter(180, time.Minute)
 
 	protected.POST("/invite", createLimiter.Limit, handler.Create)
 	protected.POST("/invite/:code/join", actionLimiter.Limit, handler.Join)

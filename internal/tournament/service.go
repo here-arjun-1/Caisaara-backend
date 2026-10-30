@@ -17,6 +17,7 @@ import (
 
 type Broadcaster interface {
 	BroadcastTournamentEvent(tournamentID int64, event interface{})
+	BroadcastGameState(g *game.Game)
 }
 
 type Service interface {
@@ -31,6 +32,7 @@ type Service interface {
 	LeaveTournament(ctx context.Context, tournamentID int64, userID int64) error
 	StartTournament(ctx context.Context, tournamentID int64, userID int64) (*TournamentWithPlayerCount, error)
 	EndTournament(ctx context.Context, tournamentID int64, userID int64) (*int64, error)
+	CancelTournament(ctx context.Context, tournamentID int64, userID int64) error
 	GenerateRoundPairings(ctx context.Context, tournamentID int64, userID int64) ([]*TournamentPairing, error)
 	OnGameCompleted(ctx context.Context, gameID string, result string) error
 	GetStandings(ctx context.Context, tournamentID int64) (*TournamentStandingsResponse, error)
@@ -443,6 +445,57 @@ func (s *TournamentService) EndTournament(ctx context.Context, tournamentID int6
 		return nil, err
 	}
 
+	standings, err := s.Repo.GetStandings(ctx, tournamentID)
+	if err != nil {
+		return nil, err
+	}
+
+	withdrawn, err := s.Repo.GetWithdrawnPlayers(ctx, tournamentID)
+	if err != nil {
+		return nil, err
+	}
+
+	winnerID := pickWinner(standings, withdrawn)
+
+	if s.Broadcaster != nil {
+		s.Broadcaster.BroadcastTournamentEvent(tournamentID, map[string]interface{}{
+			"type":      "tournament_completed",
+			"winner_id": winnerID,
+		})
+	}
+	s.notifyFinished(ctx, tournamentID, t.Name, standings, withdrawn)
+
+	return winnerID, nil
+}
+
+func (s *TournamentService) CancelTournament(ctx context.Context, tournamentID int64, userID int64) error {
+	t, err := s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
+	if err != nil {
+		return err
+	}
+
+	if t.CreatedBy != userID {
+		return ErrNotCreator
+	}
+
+	if t.Status != StatusOngoing {
+		return ErrNotOngoing
+	}
+
+	abortedGameIDs, err := s.Repo.CancelTournament(ctx, tournamentID)
+	if err != nil {
+		return err
+	}
+
+	for _, gameID := range abortedGameIDs {
+		if s.GameRepo != nil {
+			g, err := s.GameRepo.FindGameByID(ctx, gameID)
+			if err == nil && g != nil && s.Broadcaster != nil {
+				s.Broadcaster.BroadcastGameState(g)
+			}
+		}
+	}
+
 	if s.Broadcaster != nil {
 		s.Broadcaster.BroadcastTournamentEvent(tournamentID, map[string]interface{}{
 			"type":      "tournament_cancelled",
@@ -451,7 +504,7 @@ func (s *TournamentService) EndTournament(ctx context.Context, tournamentID int6
 	}
 	s.notifyCancelled(ctx, tournamentID)
 
-	return nil, nil
+	return nil
 }
 
 func (s *TournamentService) generateNextPairings(ctx context.Context, tournamentID int64, t *TournamentWithPlayerCount, swissPlayers []*SwissPlayer, withdrawn map[int64]bool) ([]SwissPairingResult, error) {
