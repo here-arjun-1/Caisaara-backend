@@ -48,7 +48,9 @@ func (p *Pool) ReturnProcess(process *Process) {
 }
 
 func (p *Pool) ReplaceBrokenProcess(process *Process) {
-	process.Close()
+	if process != nil {
+		process.Close()
+	}
 	p.processes <- nil
 }
 

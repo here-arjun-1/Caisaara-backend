@@ -29,6 +29,9 @@ func GenerateKnockoutRound1(players []*SwissPlayer) ([]SwissPairingResult, int, 
 	var pairings []SwissPairingResult
 
 	for i := 0; i < byesCount; i++ {
+		if players[i] == nil {
+			continue
+		}
 		wID := players[i].UserID
 		pairings = append(pairings, SwissPairingResult{
 			WhitePlayerID: &wID,
@@ -40,6 +43,9 @@ func GenerateKnockoutRound1(players []*SwissPlayer) ([]SwissPairingResult, int, 
 	remaining := players[byesCount:]
 	for i := 0; i < len(remaining); i += 2 {
 		if i+1 < len(remaining) {
+			if remaining[i] == nil || remaining[i+1] == nil {
+				continue
+			}
 			wID := remaining[i].UserID
 			bID := remaining[i+1].UserID
 			pairings = append(pairings, SwissPairingResult{

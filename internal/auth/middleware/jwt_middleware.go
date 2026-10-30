@@ -88,9 +88,11 @@ func JWTMiddleware(secret string, userRepo ...*repository.UserRepository) gin.Ha
 func RequireRegisteredUser() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		isGuest, exists := c.Get("is_guest")
-		if exists && isGuest.(bool) {
-			response.Abort(c, http.StatusForbidden, "feature requires a registered account")
-			return
+		if exists {
+			if isGuestBool, ok := isGuest.(bool); ok && isGuestBool {
+				response.Abort(c, http.StatusForbidden, "feature requires a registered account")
+				return
+			}
 		}
 		c.Next()
 	}

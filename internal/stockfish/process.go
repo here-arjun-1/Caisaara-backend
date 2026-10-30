@@ -90,7 +90,10 @@ func (p *Process) WaitForWithContext(ctx context.Context, prefix string) (string
 		return res.line, res.err
 	case <-ctx.Done():
 		p.Kill()
-		<-resultCh
+		select {
+		case <-resultCh:
+		case <-time.After(500 * time.Millisecond):
+		}
 		return "", ctx.Err()
 	}
 }
@@ -123,15 +126,23 @@ func (p *Process) ReadLine() (string, error) {
 }
 
 func (p *Process) Close() {
-	_ = p.stdin.Close()
-	if p.cmd.Process != nil {
-		_ = p.cmd.Process.Kill()
+	if p == nil {
+		return
 	}
-	_ = p.cmd.Wait()
+	if p.stdin != nil {
+		_ = p.stdin.Close()
+	}
+	if p.cmd != nil && p.cmd.Process != nil {
+		_ = p.cmd.Process.Kill()
+		_ = p.cmd.Wait()
+	}
 }
 
 func (p *Process) Kill() {
-	if p.cmd.Process != nil {
+	if p == nil {
+		return
+	}
+	if p.cmd != nil && p.cmd.Process != nil {
 		_ = p.cmd.Process.Kill()
 	}
 }

@@ -305,6 +305,7 @@ func (h *Handler) ConnectSpectator(c *gin.Context) {
 
 	room := h.Hub.GetOrCreateRoom(gameID)
 	if room.SpectatorCount() >= maxSpectatorsPerGame {
+		h.Hub.RemoveRoomIfEmpty(gameID)
 		c.JSON(http.StatusForbidden, gin.H{"error": "too many spectators"})
 		return
 	}
@@ -712,6 +713,9 @@ func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Ga
 	defer room.Mutex.RUnlock()
 
 	for _, client := range room.Clients {
+		if client == nil {
+			continue
+		}
 		msg := baseMsg
 		attachRatingUpdate(&msg, g, client.UserID)
 
@@ -720,10 +724,7 @@ func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Ga
 			continue
 		}
 
-		select {
-		case client.Send <- data:
-		default:
-		}
+		client.SafeSend(data)
 	}
 
 	spectatorData, err := json.Marshal(baseMsg)
@@ -1023,6 +1024,9 @@ func (h *Handler) sendGameStart(ctx context.Context, room *Room, g *game.Game, m
 }
 
 func sendError(ctx context.Context, client *Client, message string) {
+	if client == nil {
+		return
+	}
 	response := game.ErrorMessage{
 		Type:    "error",
 		Message: message,
@@ -1034,7 +1038,7 @@ func sendError(ctx context.Context, client *Client, message string) {
 		return
 	}
 
-	if client != nil && !client.SafeSend(data) {
+	if !client.SafeSend(data) {
 		slog.WarnContext(ctx, "client send buffer full, dropped error message", "user_id", client.UserID)
 	}
 }
@@ -1261,8 +1265,21 @@ func (h *Handler) CheckActiveClients(ctx context.Context) {
 	}
 	h.Hub.Mutex.RUnlock()
 
+	seen := make(map[int64]int)
 	for _, client := range clients {
-		if !h.validateActiveClient(ctx, client) {
+		if client == nil {
+			continue
+		}
+		version, ok := seen[client.UserID]
+		if !ok {
+			var err error
+			version, err = h.UserRepo.GetPasswordVersion(ctx, client.UserID)
+			if err != nil {
+				continue
+			}
+			seen[client.UserID] = version
+		}
+		if client.PasswordVersion != version {
 			sendError(ctx, client, "invalid or revoked token")
 			go func(c *Client) {
 				time.Sleep(20 * time.Millisecond)

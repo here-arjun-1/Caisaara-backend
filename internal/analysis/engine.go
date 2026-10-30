@@ -94,7 +94,7 @@ func (e *AnalysisEngine) Analyze(ctx context.Context, pos PositionOptions, opts 
 
 	stopWatching := context.AfterFunc(ctx, process.Kill)
 
-	result, err := runAnalysis(process, pos, opts)
+	result, err := runAnalysis(ctx, process, pos, opts)
 
 	if !stopWatching() {
 		e.Pool.ReplaceBrokenProcess(process)
@@ -120,7 +120,7 @@ func (e *AnalysisEngine) Close() {
 	e.Pool.Close()
 }
 
-func runAnalysis(process *stockfish.Process, pos PositionOptions, opts AnalysisOptions) (*AnalysisResult, error) {
+func runAnalysis(ctx context.Context, process *stockfish.Process, pos PositionOptions, opts AnalysisOptions) (*AnalysisResult, error) {
 	threads := 1
 	if opts.Threads > 0 {
 		threads = opts.Threads
@@ -157,7 +157,7 @@ func runAnalysis(process *stockfish.Process, pos PositionOptions, opts AnalysisO
 			return nil, err
 		}
 	}
-	if _, err := process.WaitFor("readyok"); err != nil {
+	if _, err := process.WaitFor("readyok", ctx); err != nil {
 		return nil, fmt.Errorf("readyok failed: %w", err)
 	}
 
@@ -183,6 +183,9 @@ func runAnalysis(process *stockfish.Process, pos PositionOptions, opts AnalysisO
 
 	result := &AnalysisResult{}
 	for {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		line, err := process.ReadLine()
 		if err != nil {
 			return nil, err
