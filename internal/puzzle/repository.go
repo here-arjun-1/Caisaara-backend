@@ -232,7 +232,8 @@ func (r *Repository) GetOrCreateUserRating(ctx context.Context, userID int64) (*
 		&u.UpdatedAt,
 	)
 
-	if errors.Is(err, pgx.ErrNoRows) {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
 		insertQuery := `
 			INSERT INTO user_puzzle_ratings (
 				user_id, rating, rating_deviation, rating_volatility, puzzles_solved, puzzles_failed, best_rating, best_rating_at, current_streak, max_streak, updated_at
@@ -271,9 +272,9 @@ func (r *Repository) GetOrCreateUserRating(ctx context.Context, userID int64) (*
 		if err != nil {
 			return nil, err
 		}
-	} else if err != nil {
+	case err != nil:
 		return nil, err
-	} else if u.PuzzlesSolved == 0 && u.PuzzlesFailed == 0 {
+	case u.PuzzlesSolved == 0 && u.PuzzlesFailed == 0:
 		var userStartRating int
 		err := r.DB.QueryRow(ctx, `SELECT COALESCE(start_rating, rating, 1200) FROM users WHERE id = $1`, userID).Scan(&userStartRating)
 		if err == nil && userStartRating > 0 && u.Rating != userStartRating {
