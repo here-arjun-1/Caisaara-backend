@@ -162,6 +162,16 @@ func (r *UserRepository) SetInitialRating(ctx context.Context, userID int64, lev
 	if err != nil {
 		return false, err
 	}
+	if tag.RowsAffected() == 1 {
+		_, _ = r.DB.Exec(
+			ctx,
+			`UPDATE user_puzzle_ratings
+			SET rating = $1, best_rating = $1
+			WHERE user_id = $2 AND puzzles_solved = 0 AND puzzles_failed = 0`,
+			rating,
+			userID,
+		)
+	}
 	return tag.RowsAffected() == 1, nil
 }
 
