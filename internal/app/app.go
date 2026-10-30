@@ -158,6 +158,7 @@ func New(cfg *config.Config) (*App, error) {
 		tournamentService,
 		matchmakingService,
 		wsHub,
+		inf.avatarStorage,
 	)
 	accountHandler := account.NewHandler(accountService)
 
