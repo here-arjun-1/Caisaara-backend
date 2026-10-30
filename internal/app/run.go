@@ -44,7 +44,7 @@ func (a *App) Run() error {
 	tournament.StartTournamentCleanup(appCtx, a.tournamentRepo, 24*time.Hour)
 	a.gameService.StartTimeoutChecker(appCtx, 1*time.Second)
 	a.ratingService.StartMissedRatingsChecker(appCtx, 1*time.Minute)
-	a.wsHandler.StartActiveAuthChecker(appCtx, 5*time.Second)
+	a.wsHandler.StartActiveAuthChecker(appCtx, 30*time.Second)
 
 	srv := newHTTPServer(":"+a.cfg.Port, a.router)
 

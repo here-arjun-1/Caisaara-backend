@@ -63,8 +63,11 @@ func GenerateGuestToken(secret string, guestID string) (string, error) {
 	return token.SignedString([]byte(secret))
 }
 
-func ValidateToken(tokenString string) (*AccessTokenClaims, error) {
+func ValidateToken(tokenString string, secretOpt ...string) (*AccessTokenClaims, error) {
 	secret := os.Getenv("JWT_SECRET")
+	if len(secretOpt) > 0 && secretOpt[0] != "" {
+		secret = secretOpt[0]
+	}
 	if secret == "" {
 		return nil, errors.New("JWT_SECRET is not set")
 	}
