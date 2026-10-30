@@ -14,6 +14,7 @@ func RegisterRoutes(handler *Handler, protected *gin.RouterGroup) {
 	friends.Use(middleware.RequireRegisteredUser())
 
 	friends.GET("", limiter.Limit, handler.GetFriends)
+	friends.GET("/online", limiter.Limit, handler.GetOnlineFriends)
 	friends.POST("/requests", limiter.Limit, handler.SendRequest)
 	friends.GET("/requests", limiter.Limit, handler.GetPendingRequests)
 	friends.POST("/requests/:id/accept", limiter.Limit, handler.AcceptRequest)
