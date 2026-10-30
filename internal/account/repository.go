@@ -36,6 +36,23 @@ func (r *Repository) FindPasswordHash(ctx context.Context, userID int64) (string
 	return passwordHash, nil
 }
 
+func (r *Repository) FindAvatarURL(ctx context.Context, userID int64) (*string, error) {
+	var avatarURL *string
+	err := r.DB.QueryRow(
+		ctx,
+		`SELECT avatar_url FROM player_profiles WHERE user_id = $1`,
+		userID,
+	).Scan(&avatarURL)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "find avatar url failed", "user_id", userID, "error", err)
+		return nil, err
+	}
+	return avatarURL, nil
+}
+
 func (r *Repository) FindActiveGameIDs(ctx context.Context, userID int64) ([]string, error) {
 	rows, err := r.DB.Query(
 		ctx,

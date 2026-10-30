@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"log/slog"
+	"strings"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/bot"
 	"github.com/here-arjun-1/Caisaara-backend/internal/game"
@@ -32,13 +33,19 @@ type Disconnector interface {
 	DisconnectUser(userID int64)
 }
 
+type AvatarStorage interface {
+	Delete(ctx context.Context, key string) error
+	KeyFromURL(url string) (string, bool)
+}
+
 type Service struct {
-	Repository   *Repository
-	Games        GameResigner
-	BotGames     BotGameResigner
-	Tournaments  TournamentRemover
-	Matchmaking  QueueLeaver
-	Disconnector Disconnector
+	Repository    *Repository
+	Games         GameResigner
+	BotGames      BotGameResigner
+	Tournaments   TournamentRemover
+	Matchmaking   QueueLeaver
+	Disconnector  Disconnector
+	AvatarStorage AvatarStorage
 }
 
 func NewService(
@@ -48,14 +55,16 @@ func NewService(
 	tournaments TournamentRemover,
 	matchmaking QueueLeaver,
 	disconnector Disconnector,
+	avatarStorage AvatarStorage,
 ) *Service {
 	return &Service{
-		Repository:   repository,
-		Games:        games,
-		BotGames:     botGames,
-		Tournaments:  tournaments,
-		Matchmaking:  matchmaking,
-		Disconnector: disconnector,
+		Repository:    repository,
+		Games:         games,
+		BotGames:      botGames,
+		Tournaments:   tournaments,
+		Matchmaking:   matchmaking,
+		Disconnector:  disconnector,
+		AvatarStorage: avatarStorage,
 	}
 }
 
@@ -70,6 +79,11 @@ func (s *Service) DeleteAccount(ctx context.Context, userID int64, password stri
 
 	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)); err != nil {
 		return ErrWrongPassword
+	}
+
+	avatarURL, err := s.Repository.FindAvatarURL(ctx, userID)
+	if err != nil {
+		return ErrInternal
 	}
 
 	if err := s.Tournaments.RemoveUserFromTournaments(ctx, userID); err != nil {
@@ -89,6 +103,10 @@ func (s *Service) DeleteAccount(ctx context.Context, userID int64, password stri
 	}
 	if err != nil {
 		return ErrInternal
+	}
+
+	if avatarURL != nil {
+		s.deleteAvatar(ctx, userID, *avatarURL)
 	}
 
 	if err := s.Matchmaking.Cancel(ctx, userID); err != nil {
@@ -129,6 +147,17 @@ func (s *Service) resignBotGames(ctx context.Context, userID int64) {
 		if _, err := s.BotGames.Resign(ctx, gameID, userID); err != nil {
 			slog.ErrorContext(ctx, "resign bot game for deleted user failed", "user_id", userID, "game_id", gameID, "error", err)
 		}
+	}
+}
+
+func (s *Service) deleteAvatar(ctx context.Context, userID int64, url string) {
+	key, ok := s.AvatarStorage.KeyFromURL(url)
+	if !ok || !strings.HasPrefix(key, "avatars/users/") {
+		return
+	}
+
+	if err := s.AvatarStorage.Delete(ctx, key); err != nil {
+		slog.ErrorContext(ctx, "delete avatar for deleted user failed", "user_id", userID, "key", key, "error", err)
 	}
 }
 
