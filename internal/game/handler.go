@@ -119,10 +119,6 @@ func (h *Handler) Resign(c *gin.Context) {
 	c.JSON(http.StatusOK, currentGame)
 }
 
-func (h *Handler) Draw(c *gin.Context) {
-	h.OfferDraw(c)
-}
-
 func (h *Handler) OfferDraw(c *gin.Context) {
 	gameID := c.Param("gameID")
 	ctx := c.Request.Context()
