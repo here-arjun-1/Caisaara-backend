@@ -91,6 +91,19 @@ func generateInviteCode() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
+func isValidTimeControl(minutes, increment int) bool {
+	if minutes < 0 || increment < 0 || (minutes == 0 && increment == 0) {
+		return false
+	}
+	if minutes >= 1440 && minutes <= 20160 && increment == 0 {
+		return true
+	}
+	if minutes <= 240 && increment <= 180 {
+		return true
+	}
+	return false
+}
+
 func (s *Service) CreateInvite(
 	ctx context.Context,
 	userID int64,
@@ -101,7 +114,7 @@ func (s *Service) CreateInvite(
 	rated ...bool,
 ) (*Invite, error) {
 
-	if timeControlMinutes < 0 || incrementSeconds < 0 || (timeControlMinutes == 0 && incrementSeconds == 0) || timeControlMinutes > 180 || incrementSeconds > 60 {
+	if !isValidTimeControl(timeControlMinutes, incrementSeconds) {
 		return nil, ErrInvalidTimeControl
 	}
 
@@ -143,12 +156,25 @@ func (s *Service) CreateInvite(
 		}
 
 		if isRated && opponent.SkillLevel == nil {
-			return nil, ErrLevelNotPicked
+			return nil, ErrOpponentLevelNotPicked
 		}
 
 		sentCodes, err := s.InviteRepo.GetSentChallengeCodes(ctx, userID)
-		if err == nil && len(sentCodes) >= 10 {
-			return nil, ErrTooManyChallenges
+		if err == nil {
+			activeCount := 0
+			for _, code := range sentCodes {
+				inv, err := s.InviteRepo.GetInvite(ctx, code)
+				if errors.Is(err, redis.Nil) || (err == nil && inv.Status == "active") {
+					_ = s.InviteRepo.RemoveSentChallenge(ctx, userID, code)
+					continue
+				}
+				if err == nil {
+					activeCount++
+				}
+			}
+			if activeCount >= 10 {
+				return nil, ErrTooManyChallenges
+			}
 		}
 	}
 
@@ -200,7 +226,7 @@ func (s *Service) CreateInvite(
 			_ = s.InviteRepo.DeletePendingDirectChallenge(ctx, userID, opponentID)
 		}
 		slog.ErrorContext(ctx, "save invite failed", "error", err)
-		return nil, fmt.Errorf("failed to store invite: %w", err)
+		return nil, ErrInternal
 	}
 
 	if opponentID != 0 {
@@ -308,6 +334,14 @@ func (s *Service) JoinInvite(
 		return "", ErrSelfJoin
 	}
 
+	if invite.Status == "active" {
+		currentGame, err := s.GameRepository.FindGameByID(ctx, invite.GameID)
+		if err == nil && currentGame != nil && (currentGame.WhitePlayerID == player2ID || currentGame.BlackPlayerID == player2ID) {
+			return invite.GameID, nil
+		}
+		return "", ErrInviteUsed
+	}
+
 	if invite.OpponentID != 0 && invite.OpponentID != player2ID {
 		return "", ErrNotYourChallenge
 	}
@@ -366,6 +400,10 @@ func (s *Service) JoinInvite(
 	}
 
 	if invite.Status == "active" {
+		currentGame, err := s.GameRepository.FindGameByID(ctx, invite.GameID)
+		if err == nil && currentGame != nil && (currentGame.WhitePlayerID == player2ID || currentGame.BlackPlayerID == player2ID) {
+			return invite.GameID, nil
+		}
 		return "", ErrInviteUsed
 	}
 
@@ -407,7 +445,7 @@ func (s *Service) JoinInvite(
 
 	if err != nil {
 		slog.ErrorContext(ctx, "create game from invite failed", "error", err)
-		return "", fmt.Errorf("failed to create game: %w", err)
+		return "", ErrInternal
 	}
 
 	invite.Status = "active"
@@ -474,6 +512,7 @@ func (s *Service) GetMyChallenges(ctx context.Context, userID int64) ([]Challeng
 			ChallengerID:       challenger.ID,
 			ChallengerUsername: challenger.Username,
 			ChallengerColor:    invite.Color,
+			OpponentID:         invite.OpponentID,
 			TimeControlMinutes: invite.TimeControlMinutes,
 			IncrementSeconds:   invite.IncrementSeconds,
 			Rated:              invite.Rated,
@@ -490,7 +529,7 @@ func (s *Service) DeclineChallenge(ctx context.Context, userID int64, code strin
 		return ErrInternal
 	}
 	if !locked {
-		return ErrAlreadyJoining
+		return ErrChallengeBusy
 	}
 	defer func() {
 		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -538,7 +577,7 @@ func (s *Service) CancelChallenge(ctx context.Context, userID int64, code string
 		return ErrInternal
 	}
 	if !locked {
-		return ErrAlreadyJoining
+		return ErrChallengeBusy
 	}
 	defer func() {
 		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -610,12 +649,23 @@ func (s *Service) GetMySentChallenges(ctx context.Context, userID int64) ([]Chal
 			continue
 		}
 
+		opponentID := invite.OpponentID
+		opponentUsername := ""
+		if opponentID != 0 {
+			oppUser, _ := s.UserFinder.FindUserByID(ctx, opponentID)
+			if oppUser != nil {
+				opponentUsername = oppUser.Username
+			}
+		}
+
 		challenges = append(challenges, Challenge{
 			Code:               invite.Code,
 			GameID:             invite.GameID,
 			ChallengerID:       invite.CreatorID,
 			ChallengerUsername: username,
 			ChallengerColor:    invite.Color,
+			OpponentID:         opponentID,
+			OpponentUsername:   opponentUsername,
 			TimeControlMinutes: invite.TimeControlMinutes,
 			IncrementSeconds:   invite.IncrementSeconds,
 			Rated:              invite.Rated,
@@ -634,7 +684,7 @@ func (s *Service) notifyChallengeAccepted(ctx context.Context, invite *Invite, p
 	if player2 != nil {
 		p2Name = player2.Username
 	}
-	_ = s.Notifier.Send(ctx, invite.CreatorID, notification.TypeGameChallenge,
+	_ = s.Notifier.Send(ctx, invite.CreatorID, notification.TypeChallengeAccepted,
 		"Challenge accepted",
 		p2Name+" accepted your challenge!",
 		map[string]any{
@@ -657,7 +707,7 @@ func (s *Service) notifyChallengeDeclined(ctx context.Context, invite *Invite, u
 	if decliner != nil {
 		dName = decliner.Username
 	}
-	_ = s.Notifier.Send(ctx, invite.CreatorID, notification.TypeGameChallenge,
+	_ = s.Notifier.Send(ctx, invite.CreatorID, notification.TypeChallengeDeclined,
 		"Challenge declined",
 		dName+" declined your challenge",
 		map[string]any{
@@ -679,7 +729,7 @@ func (s *Service) notifyChallengeCancelled(ctx context.Context, invite *Invite) 
 	if creator != nil {
 		cName = creator.Username
 	}
-	_ = s.Notifier.Send(ctx, invite.OpponentID, notification.TypeGameChallenge,
+	_ = s.Notifier.Send(ctx, invite.OpponentID, notification.TypeChallengeCancelled,
 		"Challenge cancelled",
 		cName+" cancelled the challenge",
 		map[string]any{

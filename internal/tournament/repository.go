@@ -33,6 +33,7 @@ type TournamentRepository interface {
 	StartTournament(ctx context.Context, tournamentID int64) error
 	UndoStartTournament(ctx context.Context, tournamentID int64) error
 	EndTournament(ctx context.Context, tournamentID int64) error
+	CancelTournament(ctx context.Context, tournamentID int64) ([]string, error)
 	GetSwissPlayers(ctx context.Context, tournamentID int64) ([]*SwissPlayer, error)
 	SaveRoundPairings(ctx context.Context, tournamentID int64, roundNumber int, pairings []SwissPairingResult, gameRepo ...game.GameRepository) ([]*TournamentPairing, error)
 	UpdatePairingOnGameCompleted(ctx context.Context, gameID string, result string) (int64, bool, error)
@@ -590,21 +591,6 @@ func (r *Repository) EndTournament(ctx context.Context, tournamentID int64) erro
 
 	_, err = tx.Exec(
 		ctx,
-		`UPDATE games
-		SET status = 'finished', end_reason = 'aborted', ended_at = NOW()
-		WHERE id IN (
-			SELECT game_id FROM tournament_pairings
-			WHERE tournament_id = $1 AND game_id IS NOT NULL AND status != 'completed'
-		) AND status = 'active'`,
-		tournamentID,
-	)
-	if err != nil {
-		slog.ErrorContext(ctx, "abort unfinished tournament games failed", "tournament_id", tournamentID, "error", err)
-		return err
-	}
-
-	_, err = tx.Exec(
-		ctx,
 		`UPDATE tournament_pairings
 		SET status = 'completed', completed_at = NOW()
 		WHERE tournament_id = $1 AND status != 'completed'`,
@@ -630,12 +616,12 @@ func (r *Repository) EndTournament(ctx context.Context, tournamentID int64) erro
 	tag, err := tx.Exec(
 		ctx,
 		`UPDATE tournaments
-		SET status = 'cancelled', updated_at = NOW()
+		SET status = 'completed', updated_at = NOW()
 		WHERE id = $1 AND status = 'ongoing'`,
 		tournamentID,
 	)
 	if err != nil {
-		slog.ErrorContext(ctx, "update tournament status to cancelled failed", "tournament_id", tournamentID, "error", err)
+		slog.ErrorContext(ctx, "update tournament status to completed failed", "tournament_id", tournamentID, "error", err)
 		return err
 	}
 	if tag.RowsAffected() == 0 {
@@ -643,6 +629,84 @@ func (r *Repository) EndTournament(ctx context.Context, tournamentID int64) erro
 	}
 
 	return tx.Commit(ctx)
+}
+
+func (r *Repository) CancelTournament(ctx context.Context, tournamentID int64) ([]string, error) {
+	tx, err := r.DB.Begin(ctx)
+	if err != nil {
+		slog.ErrorContext(ctx, "begin transaction failed for cancel tournament", "tournament_id", tournamentID, "error", err)
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	rows, err := tx.Query(
+		ctx,
+		`UPDATE games
+		SET status = 'finished', end_reason = 'aborted', ended_at = NOW()
+		WHERE id IN (
+			SELECT game_id FROM tournament_pairings
+			WHERE tournament_id = $1 AND game_id IS NOT NULL AND status != 'completed'
+		) AND status = 'active'
+		RETURNING id`,
+		tournamentID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "abort unfinished tournament games failed", "tournament_id", tournamentID, "error", err)
+		return nil, err
+	}
+	var abortedGameIDs []string
+	for rows.Next() {
+		var gid string
+		if err := rows.Scan(&gid); err == nil {
+			abortedGameIDs = append(abortedGameIDs, gid)
+		}
+	}
+	rows.Close()
+
+	_, err = tx.Exec(
+		ctx,
+		`UPDATE tournament_pairings
+		SET status = 'completed', completed_at = NOW()
+		WHERE tournament_id = $1 AND status != 'completed'`,
+		tournamentID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "close unfinished pairings failed", "tournament_id", tournamentID, "error", err)
+		return nil, err
+	}
+
+	_, err = tx.Exec(
+		ctx,
+		`UPDATE tournament_rounds
+		SET status = 'completed', completed_at = NOW()
+		WHERE tournament_id = $1 AND status != 'completed'`,
+		tournamentID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "close unfinished rounds failed", "tournament_id", tournamentID, "error", err)
+		return nil, err
+	}
+
+	tag, err := tx.Exec(
+		ctx,
+		`UPDATE tournaments
+		SET status = 'cancelled', updated_at = NOW()
+		WHERE id = $1 AND status = 'ongoing'`,
+		tournamentID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "update tournament status to cancelled failed", "tournament_id", tournamentID, "error", err)
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, ErrNotOngoing
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return abortedGameIDs, nil
 }
 
 func (r *Repository) GetSwissPlayers(ctx context.Context, tournamentID int64) ([]*SwissPlayer, error) {

@@ -94,6 +94,12 @@ type EndTournamentResponse struct {
 	WinnerID     *int64 `json:"winner_id"`
 }
 
+type CancelTournamentResponse struct {
+	Message      string `json:"message"`
+	TournamentID string `json:"tournament_id"`
+	Status       string `json:"status"`
+}
+
 func ToTournamentResponse(t *Tournament) *TournamentResponse {
 	inviteCode := ""
 	link := ""

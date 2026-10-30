@@ -18,6 +18,8 @@ type Challenge struct {
 	ChallengerID       int64  `json:"challenger_id"`
 	ChallengerUsername string `json:"challenger_username"`
 	ChallengerColor    string `json:"challenger_color"`
+	OpponentID         int64  `json:"opponent_id,omitempty"`
+	OpponentUsername   string `json:"opponent_username,omitempty"`
 	TimeControlMinutes int    `json:"time_control_minutes"`
 	IncrementSeconds   int    `json:"increment_seconds"`
 	Rated              bool   `json:"rated"`
