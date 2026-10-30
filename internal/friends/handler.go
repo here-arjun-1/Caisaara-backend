@@ -139,6 +139,22 @@ func (h *Handler) GetFriends(c *gin.Context) {
 	response.Success(c, http.StatusOK, "friends fetched", gin.H{"friends": friends})
 }
 
+func (h *Handler) GetOnlineFriends(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	friends, err := h.Service.GetOnlineFriends(c.Request.Context(), userID)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "online friends fetched", gin.H{"friends": friends})
+}
+
 func handleError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrCannotAddYourself), errors.Is(err, ErrCannotBlockYourself):

@@ -158,6 +158,21 @@ func (s *Service) GetFriends(ctx context.Context, userID int64) ([]Friend, error
 	return friends, nil
 }
 
+func (s *Service) GetOnlineFriends(ctx context.Context, userID int64) ([]Friend, error) {
+	friends, err := s.GetFriends(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	onlineFriends := []Friend{}
+	for _, friend := range friends {
+		if friend.IsOnline {
+			onlineFriends = append(onlineFriends, friend)
+		}
+	}
+	return onlineFriends, nil
+}
+
 func (s *Service) CancelRequest(ctx context.Context, userID int64, requestID int64) error {
 	found, err := s.Repository.DeleteSentRequest(ctx, requestID, userID)
 	if err != nil {
