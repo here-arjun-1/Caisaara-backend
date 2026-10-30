@@ -1266,7 +1266,7 @@ func (h *Handler) CheckActiveClients(ctx context.Context) {
 			sendError(ctx, client, "invalid or revoked token")
 			go func(c *Client) {
 				time.Sleep(20 * time.Millisecond)
-				c.Close()
+				c.CloseWithReason(websocket.ClosePolicyViolation, "invalid or revoked token")
 			}(client)
 		}
 	}
