@@ -146,7 +146,30 @@ func (r *Repository) FindMatchingPuzzle(ctx context.Context, userID int64, minRa
 			&p.OpeningTags,
 			&p.CreatedAt,
 		)
-		if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			closestQuery := `
+				SELECT id, fen, moves, rating, rating_deviation, popularity, nb_plays, themes, COALESCE(game_url, ''), COALESCE(opening_tags, ''), created_at
+				FROM puzzles
+				ORDER BY ABS(rating - $1)
+				LIMIT 1
+			`
+			err = r.DB.QueryRow(ctx, closestQuery, (minRating+maxRating)/2).Scan(
+				&p.ID,
+				&p.FEN,
+				&p.Moves,
+				&p.Rating,
+				&p.RatingDeviation,
+				&p.Popularity,
+				&p.NbPlays,
+				&p.Themes,
+				&p.GameURL,
+				&p.OpeningTags,
+				&p.CreatedAt,
+			)
+			if err != nil {
+				return nil, err
+			}
+		} else if err != nil {
 			return nil, err
 		}
 	} else if err != nil {
@@ -214,7 +237,20 @@ func (r *Repository) GetOrCreateUserRating(ctx context.Context, userID int64) (*
 			INSERT INTO user_puzzle_ratings (
 				user_id, rating, rating_deviation, rating_volatility, puzzles_solved, puzzles_failed, best_rating, best_rating_at, current_streak, max_streak, updated_at
 			)
-			VALUES ($1, 1500, 350, 0.06, 0, 0, 1500, NOW(), 0, 0, NOW())
+			SELECT 
+				u.id, 
+				COALESCE(u.start_rating, u.rating, 1200), 
+				350, 
+				0.06, 
+				0, 
+				0, 
+				COALESCE(u.start_rating, u.rating, 1200), 
+				NOW(), 
+				0, 
+				0, 
+				NOW()
+			FROM users u
+			WHERE u.id = $1
 			ON CONFLICT (user_id) DO UPDATE SET updated_at = NOW()
 			RETURNING user_id, rating, rating_deviation, rating_volatility, puzzles_solved, puzzles_failed, best_rating, best_rating_at, current_streak, max_streak, last_played_date, updated_at
 		`
@@ -237,6 +273,14 @@ func (r *Repository) GetOrCreateUserRating(ctx context.Context, userID int64) (*
 		}
 	} else if err != nil {
 		return nil, err
+	} else if u.PuzzlesSolved == 0 && u.PuzzlesFailed == 0 {
+		var userStartRating int
+		err := r.DB.QueryRow(ctx, `SELECT COALESCE(start_rating, rating, 1200) FROM users WHERE id = $1`, userID).Scan(&userStartRating)
+		if err == nil && userStartRating > 0 && u.Rating != userStartRating {
+			u.Rating = userStartRating
+			u.BestRating = userStartRating
+			_, _ = r.DB.Exec(ctx, `UPDATE user_puzzle_ratings SET rating = $2, best_rating = $2 WHERE user_id = $1 AND puzzles_solved = 0 AND puzzles_failed = 0`, userID, userStartRating)
+		}
 	}
 
 	if lastPlayedDate != nil {
