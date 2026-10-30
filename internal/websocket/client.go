@@ -126,6 +126,17 @@ func (c *Client) Close() {
 	})
 }
 
+func (c *Client) CloseWithReason(code int, reason string) {
+	if c.closed.Load() {
+		return
+	}
+	if c.Conn != nil {
+		message := websocket.FormatCloseMessage(code, reason)
+		_ = c.Conn.WriteControl(websocket.CloseMessage, message, time.Now().Add(time.Second))
+	}
+	c.Close()
+}
+
 type RateLimiter struct {
 	tokens     float64
 	capacity   float64

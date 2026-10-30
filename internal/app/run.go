@@ -73,6 +73,8 @@ func (a *App) Run() error {
 
 	appCancel()
 
+	a.wsHandler.Hub.CloseAll()
+
 	if asynqServer != nil {
 		asynqServer.Stop()
 	}

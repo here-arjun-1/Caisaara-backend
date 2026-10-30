@@ -105,7 +105,6 @@ func (r *Repository) CreateDirectMessage(ctx context.Context, msg *DirectMessage
 }
 
 func (r *Repository) GetDirectMessages(ctx context.Context, user1ID, user2ID int64) ([]DirectMessage, error) {
-	// inner query picks the newest 100, outer query puts them back in old -> new order for the chat screen
 	rows, err := r.DB.Query(
 		ctx,
 		`SELECT id, sender_id, receiver_id, message, created_at

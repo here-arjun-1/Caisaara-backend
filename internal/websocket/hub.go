@@ -3,6 +3,8 @@ package websocket
 import (
 	"encoding/json"
 	"sync"
+
+	"github.com/gorilla/websocket"
 )
 
 type Hub struct {
@@ -107,10 +109,15 @@ func (h *Hub) CloseRoom(roomID string) {
 	for _, client := range room.Clients {
 		clients = append(clients, client)
 	}
+	for _, client := range room.Spectators {
+		clients = append(clients, client)
+	}
 	room.Mutex.RUnlock()
 
 	for _, client := range clients {
-		client.Close()
+		if client != nil {
+			client.Close()
+		}
 	}
 }
 
@@ -122,9 +129,35 @@ func (h *Hub) DisconnectUserFromRoom(roomID string, userID int64) {
 
 	room.Mutex.RLock()
 	client := room.Clients[userID]
+	spectator := room.Spectators[userID]
 	room.Mutex.RUnlock()
 
 	if client != nil {
 		client.Close()
+	}
+	if spectator != nil {
+		spectator.Close()
+	}
+}
+
+func (h *Hub) CloseAll() {
+	h.Mutex.RLock()
+	var clients []*Client
+	for _, room := range h.Rooms {
+		room.Mutex.RLock()
+		for _, client := range room.Clients {
+			clients = append(clients, client)
+		}
+		for _, client := range room.Spectators {
+			clients = append(clients, client)
+		}
+		room.Mutex.RUnlock()
+	}
+	h.Mutex.RUnlock()
+
+	for _, client := range clients {
+		if client != nil {
+			client.CloseWithReason(websocket.CloseGoingAway, "server restarting")
+		}
 	}
 }
