@@ -79,10 +79,6 @@ func ClearAccessTokenCookie(c *gin.Context) {
 	)
 }
 
-func GetAccessTokenFromCookie(c *gin.Context) (string, error) {
-	return c.Cookie(accessTokenCookieName)
-}
-
 func SetGuestTokenCookie(c *gin.Context, guestToken string) {
 	c.SetSameSite(http.SameSiteStrictMode)
 	c.SetCookie(
@@ -107,8 +103,4 @@ func ClearGuestTokenCookie(c *gin.Context) {
 		isSecure(c),
 		true,
 	)
-}
-
-func GetGuestTokenFromCookie(c *gin.Context) (string, error) {
-	return c.Cookie(guestTokenCookieName)
 }

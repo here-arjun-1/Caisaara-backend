@@ -252,7 +252,6 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 		}
 	}
 
-	ratingChange := 0
 	beforeRating := ratingProfile.Rating
 
 	if session != nil && session.SolutionViewed {
@@ -285,7 +284,7 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 		}, nil
 	}
 
-	ratingChange = calculateRatingChange(ratingProfile.Rating, puzzleRecord.Rating, true, attemptsLeft)
+	ratingChange := calculateRatingChange(ratingProfile.Rating, puzzleRecord.Rating, true, attemptsLeft)
 	ratingProfile.Rating += ratingChange
 	if ratingProfile.Rating > ratingProfile.BestRating {
 		ratingProfile.BestRating = ratingProfile.Rating
