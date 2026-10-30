@@ -668,7 +668,7 @@ func (s *TournamentService) OnGameCompleted(ctx context.Context, gameID string, 
 }
 
 func (s *TournamentService) startNextRound(ctx context.Context, tournamentID int64) error {
-	for {
+	for attempt := 0; attempt < 50; attempt++ {
 		t, err := s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
 		if err != nil {
 			return err
@@ -727,6 +727,7 @@ func (s *TournamentService) startNextRound(ctx context.Context, tournamentID int
 			return nil
 		}
 	}
+	return nil
 }
 
 func (s *TournamentService) RemoveUserFromTournaments(ctx context.Context, userID int64) error {
