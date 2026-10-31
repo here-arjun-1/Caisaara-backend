@@ -77,6 +77,11 @@ func (r *Repository) FindNearbyPlayers(ctx context.Context, userID int64) ([]Nea
 			AND me.nearby_enabled = true
 			AND other.nearby_enabled = true
 			AND ST_DWithin(other.location, me.location, $2)
+			AND NOT EXISTS (
+				SELECT 1 FROM user_blocks ub
+				WHERE (ub.blocker_id = me.user_id AND ub.blocked_id = other.user_id)
+					OR (ub.blocker_id = other.user_id AND ub.blocked_id = me.user_id)
+			)
 		ORDER BY ST_Distance(other.location, me.location)
 		LIMIT $3`,
 		userID, searchRadiusMeters, maxNearbyPlayers, activeWindowMinutes,
