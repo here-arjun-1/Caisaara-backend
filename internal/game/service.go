@@ -169,11 +169,7 @@ func (s *Service) enqueueMovePersist(task movePersistTask) {
 		s.removePendingMove(task.GameID)
 		return
 	}
-	select {
-	case s.moveQueues[idx] <- task:
-	default:
-		go s.processMovePersist(task)
-	}
+	s.moveQueues[idx] <- task
 }
 
 func (s *Service) processMovePersist(task movePersistTask) {
