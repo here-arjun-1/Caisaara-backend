@@ -17,16 +17,22 @@ const (
 	maxRatingRange  = 400
 )
 
+type BlockChecker interface {
+	IsBlockedEitherWay(ctx context.Context, userID int64, otherID int64) (bool, error)
+}
+
 type Matcher struct {
 	QueueRepo      QueueRepository
 	GameRepository game.GameRepository
 	OnMatchFound   func(userID int64, gameID string)
+	BlockChecker   BlockChecker
 }
 
-func NewMatcher(queueRepo QueueRepository, gameRepository game.GameRepository) *Matcher {
+func NewMatcher(queueRepo QueueRepository, gameRepository game.GameRepository, blockChecker BlockChecker) *Matcher {
 	return &Matcher{
 		QueueRepo:      queueRepo,
 		GameRepository: gameRepository,
+		BlockChecker:   blockChecker,
 	}
 }
 
@@ -70,12 +76,24 @@ func (m *Matcher) matchQueue(ctx context.Context, timeControlMinutes int, increm
 		a := entries[i]
 		b := entries[i+1]
 
-		if canMatch(a, b, now) {
-			m.pair(ctx, a, b)
-			i += 2
-		} else {
+		if !canMatch(a, b, now) {
 			i++
+			continue
 		}
+
+		blocked, err := m.BlockChecker.IsBlockedEitherWay(ctx, a.UserID, b.UserID)
+		if err != nil {
+			slog.ErrorContext(ctx, "check block for matchmaking failed", "error", err, "user_id", a.UserID, "other_id", b.UserID)
+			i++
+			continue
+		}
+		if blocked {
+			i++
+			continue
+		}
+
+		m.pair(ctx, a, b)
+		i += 2
 	}
 }
 

@@ -105,7 +105,7 @@ func New(cfg *config.Config) (*App, error) {
 	queueRepo := matchmaking.NewRedisQueueRepository(inf.redis)
 	matchmakingService := matchmaking.NewService(queueRepo, ratingRepository, tiltService)
 	matchmakingHandler := matchmaking.NewHandler(matchmakingService)
-	matcher := matchmaking.NewMatcher(queueRepo, gameRepository)
+	matcher := matchmaking.NewMatcher(queueRepo, gameRepository, friendsRepository)
 
 	chatRepo := chat.NewRepository(inf.db)
 	chatLimiter := chat.NewRedisRateLimiter(inf.redis, 10, time.Minute)
