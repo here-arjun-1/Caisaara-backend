@@ -20,6 +20,7 @@ const (
 type Matcher struct {
 	QueueRepo      QueueRepository
 	GameRepository game.GameRepository
+	OnMatchFound   func(userID int64, gameID string)
 }
 
 func NewMatcher(queueRepo QueueRepository, gameRepository game.GameRepository) *Matcher {
@@ -27,6 +28,10 @@ func NewMatcher(queueRepo QueueRepository, gameRepository game.GameRepository) *
 		QueueRepo:      queueRepo,
 		GameRepository: gameRepository,
 	}
+}
+
+func (m *Matcher) SetOnMatchFound(onMatchFound func(userID int64, gameID string)) {
+	m.OnMatchFound = onMatchFound
 }
 
 func (m *Matcher) Start(ctx context.Context) {
@@ -127,6 +132,10 @@ func (m *Matcher) pair(ctx context.Context, a *QueueEntry, b *QueueEntry) {
 	for _, userID := range []int64{entryA.UserID, entryB.UserID} {
 		if err := m.QueueRepo.SaveMatch(ctx, userID, gameID, matchTTL); err != nil {
 			slog.ErrorContext(ctx, "save match failed", "error", err, "user_id", userID)
+		}
+
+		if m.OnMatchFound != nil {
+			m.OnMatchFound(userID, gameID)
 		}
 	}
 

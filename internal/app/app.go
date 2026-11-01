@@ -131,6 +131,7 @@ func New(cfg *config.Config) (*App, error) {
 	notificationService.SetBroadcaster(wsHandler.BroadcastNotification)
 	notificationService.SetOnlineChecker(wsHandler.IsUserOnline)
 	friendsService.SetOnlineChecker(wsHandler.IsUserOnline)
+	matcher.SetOnMatchFound(wsHandler.BroadcastMatchFound)
 
 	tournamentRepo := tournament.NewRepository(inf.db)
 	tournamentService := tournament.NewService(tournamentRepo, gameRepository, wsHandler)
