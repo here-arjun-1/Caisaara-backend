@@ -105,3 +105,14 @@ func (h *Handler) IsUserOnline(userID int64) bool {
 	room := h.Hub.GetRoom("notif:" + strconv.FormatInt(userID, 10))
 	return room != nil && room.HasClient(userID)
 }
+
+func (h *Handler) BroadcastMatchFound(userID int64, gameID string) {
+	if h.Hub == nil || userID <= 0 {
+		return
+	}
+	roomKey := "notif:" + strconv.FormatInt(userID, 10)
+	_ = h.Hub.BroadcastJSON(roomKey, gin.H{
+		"type":    "match_found",
+		"game_id": gameID,
+	})
+}
