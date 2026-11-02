@@ -19,19 +19,21 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	}
 }
 
-func (r *Repository) SaveLocation(ctx context.Context, userID int64, latitude float64, longitude float64) error {
-	_, err := r.DB.Exec(ctx,
+func (r *Repository) SaveLocation(ctx context.Context, userID int64, latitude float64, longitude float64) (bool, error) {
+	var nearbyEnabled bool
+	err := r.DB.QueryRow(ctx,
 		`INSERT INTO player_locations (user_id, location, nearby_enabled, updated_at)
 		VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, true, NOW())
 		ON CONFLICT (user_id) DO UPDATE
-		SET location = EXCLUDED.location, nearby_enabled = true, updated_at = NOW()`,
+		SET location = EXCLUDED.location, updated_at = NOW()
+		RETURNING nearby_enabled`,
 		userID, longitude, latitude,
-	)
+	).Scan(&nearbyEnabled)
 	if err != nil {
 		slog.ErrorContext(ctx, "save player location failed", "user_id", userID, "error", err)
-		return err
+		return false, err
 	}
-	return nil
+	return nearbyEnabled, nil
 }
 
 func (r *Repository) SetNearbyEnabled(ctx context.Context, userID int64, enabled bool) (bool, error) {
@@ -46,20 +48,22 @@ func (r *Repository) SetNearbyEnabled(ctx context.Context, userID int64, enabled
 	return result.RowsAffected() > 0, nil
 }
 
-func (r *Repository) IsNearbyEnabled(ctx context.Context, userID int64) (bool, error) {
+func (r *Repository) GetNearbyStatus(ctx context.Context, userID int64) (bool, bool, error) {
 	var enabled bool
+	var locationFresh bool
 	err := r.DB.QueryRow(ctx,
-		`SELECT nearby_enabled FROM player_locations WHERE user_id = $1`,
-		userID,
-	).Scan(&enabled)
+		`SELECT nearby_enabled, updated_at > NOW() - make_interval(hours => $2)
+		FROM player_locations WHERE user_id = $1`,
+		userID, locationMaxAgeHours,
+	).Scan(&enabled, &locationFresh)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return false, nil
+		return false, false, nil
 	}
 	if err != nil {
-		slog.ErrorContext(ctx, "check nearby enabled failed", "user_id", userID, "error", err)
-		return false, err
+		slog.ErrorContext(ctx, "get nearby status failed", "user_id", userID, "error", err)
+		return false, false, err
 	}
-	return enabled, nil
+	return enabled, locationFresh, nil
 }
 
 func (r *Repository) FindNearbyPlayers(ctx context.Context, userID int64) ([]NearbyPlayer, error) {
@@ -76,6 +80,7 @@ func (r *Repository) FindNearbyPlayers(ctx context.Context, userID int64) ([]Nea
 		WHERE me.user_id = $1
 			AND me.nearby_enabled = true
 			AND other.nearby_enabled = true
+			AND other.updated_at > NOW() - make_interval(hours => $5)
 			AND ST_DWithin(other.location, me.location, $2)
 			AND NOT EXISTS (
 				SELECT 1 FROM user_blocks ub
@@ -84,7 +89,7 @@ func (r *Repository) FindNearbyPlayers(ctx context.Context, userID int64) ([]Nea
 			)
 		ORDER BY ST_Distance(other.location, me.location)
 		LIMIT $3`,
-		userID, searchRadiusMeters, maxNearbyPlayers, activeWindowMinutes,
+		userID, searchRadiusMeters, maxNearbyPlayers, activeWindowMinutes, locationMaxAgeHours,
 	)
 	if err != nil {
 		slog.ErrorContext(ctx, "find nearby players query failed", "user_id", userID, "error", err)

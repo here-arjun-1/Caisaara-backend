@@ -4,6 +4,7 @@ const (
 	searchRadiusMeters  = 50000
 	maxNearbyPlayers    = 50
 	activeWindowMinutes = 10
+	locationMaxAgeHours = 24
 )
 
 type NearbyPlayer struct {

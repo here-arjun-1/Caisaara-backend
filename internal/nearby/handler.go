@@ -41,13 +41,13 @@ func (h *Handler) UpdateLocation(c *gin.Context) {
 		return
 	}
 
-	err := h.Service.UpdateLocation(c.Request.Context(), userID, *req.Latitude, *req.Longitude)
+	nearbyEnabled, err := h.Service.UpdateLocation(c.Request.Context(), userID, *req.Latitude, *req.Longitude)
 	if err != nil {
 		handleError(c, err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "location saved", "nearby_enabled": true})
+	c.JSON(http.StatusOK, gin.H{"message": "location saved", "nearby_enabled": nearbyEnabled})
 }
 
 func (h *Handler) SetNearby(c *gin.Context) {
@@ -93,7 +93,7 @@ func (h *Handler) GetNearbyPlayers(c *gin.Context) {
 
 func handleError(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, ErrInvalidLocation), errors.Is(err, ErrLocationNotSaved):
+	case errors.Is(err, ErrInvalidLocation), errors.Is(err, ErrLocationNotSaved), errors.Is(err, ErrLocationTooOld):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, ErrNearbyOff):
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
