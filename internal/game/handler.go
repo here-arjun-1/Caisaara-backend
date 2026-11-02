@@ -34,6 +34,14 @@ func (h *Handler) GetGame(c *gin.Context) {
 		return
 	}
 
+	if playerID, ok := middleware.GetUserID(c); ok && currentGame != nil && currentGame.Status == StatusFinished {
+		if playerID == currentGame.WhitePlayerID {
+			currentGame.Streak = currentGame.WhiteStreak
+		} else if playerID == currentGame.BlackPlayerID {
+			currentGame.Streak = currentGame.BlackStreak
+		}
+	}
+
 	c.JSON(http.StatusOK, currentGame)
 }
 
@@ -116,6 +124,12 @@ func (h *Handler) Resign(c *gin.Context) {
 		return
 	}
 
+	if playerID == currentGame.WhitePlayerID {
+		currentGame.Streak = currentGame.WhiteStreak
+	} else if playerID == currentGame.BlackPlayerID {
+		currentGame.Streak = currentGame.BlackStreak
+	}
+
 	c.JSON(http.StatusOK, currentGame)
 }
 
@@ -138,6 +152,14 @@ func (h *Handler) OfferDraw(c *gin.Context) {
 			"error": err.Error(),
 		})
 		return
+	}
+
+	if accepted && currentGame != nil {
+		if playerID == currentGame.WhitePlayerID {
+			currentGame.Streak = currentGame.WhiteStreak
+		} else if playerID == currentGame.BlackPlayerID {
+			currentGame.Streak = currentGame.BlackStreak
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -166,6 +188,12 @@ func (h *Handler) AcceptDraw(c *gin.Context) {
 			"error": err.Error(),
 		})
 		return
+	}
+
+	if playerID == currentGame.WhitePlayerID {
+		currentGame.Streak = currentGame.WhiteStreak
+	} else if playerID == currentGame.BlackPlayerID {
+		currentGame.Streak = currentGame.BlackStreak
 	}
 
 	c.JSON(http.StatusOK, currentGame)
@@ -206,6 +234,14 @@ func (h *Handler) ClaimTimeout(c *gin.Context) {
 			"error": err.Error(),
 		})
 		return
+	}
+
+	if playerID, ok := middleware.GetUserID(c); ok && currentGame != nil {
+		if playerID == currentGame.WhitePlayerID {
+			currentGame.Streak = currentGame.WhiteStreak
+		} else if playerID == currentGame.BlackPlayerID {
+			currentGame.Streak = currentGame.BlackStreak
+		}
 	}
 
 	c.JSON(http.StatusOK, currentGame)
