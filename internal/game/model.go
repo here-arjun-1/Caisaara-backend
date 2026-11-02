@@ -11,36 +11,39 @@ const (
 )
 
 type Game struct {
-	ID                 string     `json:"id"`
-	WhitePlayerID      int64      `json:"white_player_id"`
-	BlackPlayerID      int64      `json:"black_player_id"`
-	WhiteUsername      string     `json:"white_username,omitempty"`
-	BlackUsername      string     `json:"black_username,omitempty"`
-	TimeControlMinutes int        `json:"time_control_minutes"`
-	Rated              bool       `json:"rated"`
-	TimeControlMode    string     `json:"time_control_mode"`
-	DailyMoveTimeMs    int64      `json:"daily_move_time_ms,omitempty"`
-	Position           string     `json:"position"`
-	Status             string     `json:"status"`
-	Result             string     `json:"result,omitempty"`
-	EndReason          string     `json:"end_reason,omitempty"`
-	InitialTimeMs      int64      `json:"initial_time_ms"`
-	IncrementMs        int64      `json:"increment_ms"`
-	WhiteTimeMs        int64      `json:"white_time_ms"`
-	BlackTimeMs        int64      `json:"black_time_ms"`
-	CurrentTurn        string     `json:"current_turn"`
-	TurnStartedAt      *time.Time `json:"turn_started_at,omitempty"`
-	DrawOfferedBy      int64      `json:"draw_offered_by,omitempty"`
-	LastMove           string     `json:"last_move,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
-	StartedAt          *time.Time `json:"started_at,omitempty"`
-	EndedAt            *time.Time `json:"ended_at,omitempty"`
-	WhiteRatingBefore  *int       `json:"white_rating_before,omitempty"`
-	WhiteRatingAfter   *int       `json:"white_rating_after,omitempty"`
-	BlackRatingBefore  *int       `json:"black_rating_before,omitempty"`
-	BlackRatingAfter   *int       `json:"black_rating_after,omitempty"`
-	WhiteProvisional   *bool      `json:"white_provisional,omitempty"`
-	BlackProvisional   *bool      `json:"black_provisional,omitempty"`
+	ID                 string        `json:"id"`
+	WhitePlayerID      int64         `json:"white_player_id"`
+	BlackPlayerID      int64         `json:"black_player_id"`
+	WhiteUsername      string        `json:"white_username,omitempty"`
+	BlackUsername      string        `json:"black_username,omitempty"`
+	TimeControlMinutes int           `json:"time_control_minutes"`
+	Rated              bool          `json:"rated"`
+	TimeControlMode    string        `json:"time_control_mode"`
+	DailyMoveTimeMs    int64         `json:"daily_move_time_ms,omitempty"`
+	Position           string        `json:"position"`
+	Status             string        `json:"status"`
+	Result             string        `json:"result,omitempty"`
+	EndReason          string        `json:"end_reason,omitempty"`
+	InitialTimeMs      int64         `json:"initial_time_ms"`
+	IncrementMs        int64         `json:"increment_ms"`
+	WhiteTimeMs        int64         `json:"white_time_ms"`
+	BlackTimeMs        int64         `json:"black_time_ms"`
+	CurrentTurn        string        `json:"current_turn"`
+	TurnStartedAt      *time.Time    `json:"turn_started_at,omitempty"`
+	DrawOfferedBy      int64         `json:"draw_offered_by,omitempty"`
+	LastMove           string        `json:"last_move,omitempty"`
+	CreatedAt          time.Time     `json:"created_at"`
+	StartedAt          *time.Time    `json:"started_at,omitempty"`
+	EndedAt            *time.Time    `json:"ended_at,omitempty"`
+	WhiteRatingBefore  *int          `json:"white_rating_before,omitempty"`
+	WhiteRatingAfter   *int          `json:"white_rating_after,omitempty"`
+	BlackRatingBefore  *int          `json:"black_rating_before,omitempty"`
+	BlackRatingAfter   *int          `json:"black_rating_after,omitempty"`
+	WhiteProvisional   *bool         `json:"white_provisional,omitempty"`
+	BlackProvisional   *bool         `json:"black_provisional,omitempty"`
+	Streak             *StreakUpdate `json:"streak,omitempty"`
+	WhiteStreak        *StreakUpdate `json:"-"`
+	BlackStreak        *StreakUpdate `json:"-"`
 }
 
 const (
@@ -108,6 +111,7 @@ type GameStateMessage struct {
 	Moves           []GameMove    `json:"moves,omitempty"`
 	Rated           bool          `json:"rated"`
 	RatingUpdate    *RatingUpdate `json:"rating_update,omitempty"`
+	Streak          *StreakUpdate `json:"streak,omitempty"`
 }
 
 type RatingUpdate struct {
@@ -116,6 +120,14 @@ type RatingUpdate struct {
 	After       int    `json:"after"`
 	Change      int    `json:"change"`
 	Provisional bool   `json:"provisional"`
+}
+
+type StreakUpdate struct {
+	CurrentStreak  int    `json:"current_streak"`
+	BestStreak     int    `json:"best_streak,omitempty"`
+	StreakStatus   string `json:"streak_status,omitempty"`
+	Incremented    bool   `json:"incremented"`
+	TodayCompleted bool   `json:"today_completed"`
 }
 
 type ErrorMessage struct {
