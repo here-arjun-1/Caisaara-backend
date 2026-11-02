@@ -31,6 +31,13 @@ type GameService interface {
 	ClaimTimeout(ctx context.Context, gameID string) (*Game, error)
 	StartTimeoutChecker(ctx context.Context, interval time.Duration)
 	EndGameOnDisconnect(ctx context.Context, gameID string, disconnectedPlayerID int64) (*Game, error)
+	SetStreakService(ss StreakService)
+}
+
+type StreakService interface {
+	OnGameFinish(ctx context.Context, userID int64) (*StreakUpdate, error)
+	GetStreakUpdate(ctx context.Context, userID int64) (*StreakUpdate, error)
+	RecordActivity(ctx context.Context, userID int64, activityType string) (*StreakUpdate, error)
 }
 
 const moveWorkerCount = 16
@@ -65,6 +72,7 @@ type movePersistTask struct {
 type Service struct {
 	Repository         GameRepository
 	RedisClient        *redis.Client
+	StreakService      StreakService
 	OnGameCompleted    func(ctx context.Context, gameID string, result string)
 	OnGameStateUpdated func(ctx context.Context, g *Game)
 	drawOffers         sync.Map
@@ -248,7 +256,24 @@ func (s *Service) SetGameCompletionListener(listener func(ctx context.Context, g
 	s.OnGameCompleted = listener
 }
 
+func (s *Service) SetStreakService(ss StreakService) {
+	s.StreakService = ss
+}
+
+func (s *Service) updateGameStreaks(ctx context.Context, g *Game) {
+	if s.StreakService == nil || g == nil || g.Status != StatusFinished {
+		return
+	}
+	if g.WhitePlayerID > 0 {
+		g.WhiteStreak, _ = s.StreakService.OnGameFinish(ctx, g.WhitePlayerID)
+	}
+	if g.BlackPlayerID > 0 {
+		g.BlackStreak, _ = s.StreakService.OnGameFinish(ctx, g.BlackPlayerID)
+	}
+}
+
 func (s *Service) notifyGameCompleted(ctx context.Context, g *Game) {
+	s.updateGameStreaks(ctx, g)
 	if s.OnGameCompleted != nil {
 		s.OnGameCompleted(ctx, g.ID, g.Result)
 	}
@@ -382,6 +407,7 @@ func (s *Service) CheckGameTimeout(ctx context.Context, currentGame *Game) (bool
 	currentGame.BlackTimeMs = newBlackTimeMs
 	currentGame.TurnStartedAt = &now
 
+	s.updateGameStreaks(ctx, currentGame)
 	s.notifyGameCompleted(ctx, currentGame)
 	s.notifyGameStateUpdated(ctx, currentGame)
 
@@ -634,6 +660,12 @@ func (s *Service) MakeMove(
 	currentGame.TurnStartedAt = &now
 	currentGame.LastMove = move
 
+	if status == StatusFinished {
+		s.updateGameStreaks(ctx, currentGame)
+	} else if currentGame.TimeControlMode == ModeDaily && s.StreakService != nil {
+		_, _ = s.StreakService.RecordActivity(ctx, playerID, "daily_move")
+	}
+
 	s.addPendingMove(gameID)
 	s.enqueueMovePersist(movePersistTask{
 		GameID:        gameID,
@@ -718,6 +750,13 @@ func (s *Service) ResignGame(
 	currentGame.TurnStartedAt = &now
 	mu.Unlock()
 
+	s.updateGameStreaks(ctx, currentGame)
+	if playerID == currentGame.WhitePlayerID {
+		currentGame.Streak = currentGame.WhiteStreak
+	} else if playerID == currentGame.BlackPlayerID {
+		currentGame.Streak = currentGame.BlackStreak
+	}
+
 	s.notifyGameCompleted(ctx, currentGame)
 	s.notifyGameStateUpdated(ctx, currentGame)
 
@@ -778,6 +817,13 @@ func (s *Service) DrawGame(
 	currentGame.EndReason = endReason
 	currentGame.TurnStartedAt = &now
 	mu.Unlock()
+
+	s.updateGameStreaks(ctx, currentGame)
+	if playerID == currentGame.WhitePlayerID {
+		currentGame.Streak = currentGame.WhiteStreak
+	} else if playerID == currentGame.BlackPlayerID {
+		currentGame.Streak = currentGame.BlackStreak
+	}
 
 	s.notifyGameCompleted(ctx, currentGame)
 	s.notifyGameStateUpdated(ctx, currentGame)
@@ -1014,6 +1060,7 @@ func (s *Service) EndGameOnDisconnect(
 	currentGame.TurnStartedAt = &now
 	mu.Unlock()
 
+	s.updateGameStreaks(ctx, currentGame)
 	s.notifyGameCompleted(ctx, currentGame)
 	s.notifyGameStateUpdated(ctx, currentGame)
 
