@@ -751,9 +751,10 @@ func (s *Service) ResignGame(
 	mu.Unlock()
 
 	s.updateGameStreaks(ctx, currentGame)
-	if playerID == currentGame.WhitePlayerID {
+	switch playerID {
+	case currentGame.WhitePlayerID:
 		currentGame.Streak = currentGame.WhiteStreak
-	} else if playerID == currentGame.BlackPlayerID {
+	case currentGame.BlackPlayerID:
 		currentGame.Streak = currentGame.BlackStreak
 	}
 
@@ -819,9 +820,10 @@ func (s *Service) DrawGame(
 	mu.Unlock()
 
 	s.updateGameStreaks(ctx, currentGame)
-	if playerID == currentGame.WhitePlayerID {
+	switch playerID {
+	case currentGame.WhitePlayerID:
 		currentGame.Streak = currentGame.WhiteStreak
-	} else if playerID == currentGame.BlackPlayerID {
+	case currentGame.BlackPlayerID:
 		currentGame.Streak = currentGame.BlackStreak
 	}
 
