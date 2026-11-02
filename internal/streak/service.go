@@ -45,17 +45,18 @@ func (s *Service) applyLazyEvaluation(ctx context.Context, streak *UserStreak, t
 		return
 	}
 	days := daysDiff(streak.LastActivityDate, today)
-	if days <= 1 {
+	switch {
+	case days <= 1:
 		if streak.StreakStatus != StreakActive {
 			streak.StreakStatus = StreakActive
 			_ = s.repo.UpdateStreak(ctx, streak)
 		}
-	} else if days <= 3 {
+	case days <= 3:
 		if streak.StreakStatus != StreakPaused {
 			streak.StreakStatus = StreakPaused
 			_ = s.repo.UpdateStreak(ctx, streak)
 		}
-	} else {
+	default:
 		if streak.CurrentStreak != 0 || streak.StreakStatus != StreakBroken {
 			streak.CurrentStreak = 0
 			streak.StreakStatus = StreakBroken
@@ -93,15 +94,16 @@ func (s *Service) RecordActivity(ctx context.Context, userID int64, activityType
 	days := daysDiff(streak.LastActivityDate, today)
 	incremented := false
 
-	if streak.LastActivityDate == "" {
+	switch {
+	case streak.LastActivityDate == "":
 		streak.CurrentStreak = 1
 		streak.StreakStatus = StreakActive
 		incremented = true
-	} else if days == 1 {
+	case days == 1:
 		streak.CurrentStreak++
 		streak.StreakStatus = StreakActive
 		incremented = true
-	} else if days <= 3 {
+	case days <= 3:
 		streak.CurrentStreak++
 		streak.StreakStatus = StreakActive
 		incremented = true
@@ -123,7 +125,7 @@ func (s *Service) RecordActivity(ctx context.Context, userID int64, activityType
 				streak.FreezesAvailable = 0
 			}
 		}
-	} else {
+	default:
 		streak.CurrentStreak = 1
 		streak.StreakStatus = StreakActive
 		incremented = true
@@ -226,15 +228,16 @@ func (s *Service) buildWeek(ctx context.Context, streak *UserStreak, loc *time.L
 		dStr := cur.Format("2006-01-02")
 
 		var status string
-		if dStr > today {
+		switch {
+		case dStr > today:
 			status = StatusEmpty
-		} else if dStr == today {
+		case dStr == today:
 			if todayCompleted {
 				status = StatusPlayed
 			} else {
 				status = StatusEmpty
 			}
-		} else {
+		default:
 			if act, ok := activities[dStr]; ok {
 				if act == "freeze" {
 					status = StatusFrozen
