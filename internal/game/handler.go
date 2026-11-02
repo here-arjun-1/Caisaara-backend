@@ -35,9 +35,10 @@ func (h *Handler) GetGame(c *gin.Context) {
 	}
 
 	if playerID, ok := middleware.GetUserID(c); ok && currentGame != nil && currentGame.Status == StatusFinished {
-		if playerID == currentGame.WhitePlayerID {
+		switch playerID {
+		case currentGame.WhitePlayerID:
 			currentGame.Streak = currentGame.WhiteStreak
-		} else if playerID == currentGame.BlackPlayerID {
+		case currentGame.BlackPlayerID:
 			currentGame.Streak = currentGame.BlackStreak
 		}
 	}
@@ -124,9 +125,10 @@ func (h *Handler) Resign(c *gin.Context) {
 		return
 	}
 
-	if playerID == currentGame.WhitePlayerID {
+	switch playerID {
+	case currentGame.WhitePlayerID:
 		currentGame.Streak = currentGame.WhiteStreak
-	} else if playerID == currentGame.BlackPlayerID {
+	case currentGame.BlackPlayerID:
 		currentGame.Streak = currentGame.BlackStreak
 	}
 
@@ -155,9 +157,10 @@ func (h *Handler) OfferDraw(c *gin.Context) {
 	}
 
 	if accepted && currentGame != nil {
-		if playerID == currentGame.WhitePlayerID {
+		switch playerID {
+		case currentGame.WhitePlayerID:
 			currentGame.Streak = currentGame.WhiteStreak
-		} else if playerID == currentGame.BlackPlayerID {
+		case currentGame.BlackPlayerID:
 			currentGame.Streak = currentGame.BlackStreak
 		}
 	}
@@ -190,9 +193,10 @@ func (h *Handler) AcceptDraw(c *gin.Context) {
 		return
 	}
 
-	if playerID == currentGame.WhitePlayerID {
+	switch playerID {
+	case currentGame.WhitePlayerID:
 		currentGame.Streak = currentGame.WhiteStreak
-	} else if playerID == currentGame.BlackPlayerID {
+	case currentGame.BlackPlayerID:
 		currentGame.Streak = currentGame.BlackStreak
 	}
 
@@ -237,9 +241,10 @@ func (h *Handler) ClaimTimeout(c *gin.Context) {
 	}
 
 	if playerID, ok := middleware.GetUserID(c); ok && currentGame != nil {
-		if playerID == currentGame.WhitePlayerID {
+		switch playerID {
+		case currentGame.WhitePlayerID:
 			currentGame.Streak = currentGame.WhiteStreak
-		} else if playerID == currentGame.BlackPlayerID {
+		case currentGame.BlackPlayerID:
 			currentGame.Streak = currentGame.BlackStreak
 		}
 	}
