@@ -1,0 +1,5 @@
+DROP TABLE IF EXISTS admin_actions;
+
+ALTER TABLE users DROP COLUMN IF EXISTS ban_reason;
+ALTER TABLE users DROP COLUMN IF EXISTS banned_until;
+ALTER TABLE users DROP COLUMN IF EXISTS role;

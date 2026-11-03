@@ -8,4 +8,6 @@ type User struct {
 	Rating          int
 	SkillLevel      *string
 	PasswordVersion int
+	Role            string
+	IsBanned        bool
 }
