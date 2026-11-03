@@ -369,9 +369,15 @@ func (h *Handler) spectatorReadPump(ctx context.Context, client *Client, room *R
 
 		var incomingMsg struct {
 			Type string `json:"type"`
+			T    *int64 `json:"t,omitempty"`
 		}
 		if err := json.Unmarshal(message, &incomingMsg); err != nil {
 			sendError(ctx, client, "invalid message format")
+			continue
+		}
+
+		if incomingMsg.Type == "ping" {
+			sendPong(client, incomingMsg.T)
 			continue
 		}
 
@@ -498,6 +504,7 @@ func (h *Handler) readPump(
 			Type    string `json:"type"`
 			Move    string `json:"move,omitempty"`
 			Message string `json:"message,omitempty"`
+			T       *int64 `json:"t,omitempty"`
 		}
 
 		if err := json.Unmarshal(message, &incomingMsg); err != nil {
@@ -506,6 +513,10 @@ func (h *Handler) readPump(
 		}
 
 		switch incomingMsg.Type {
+		case "ping":
+			sendPong(client, incomingMsg.T)
+			continue
+
 		case "move":
 			var cachedGame *game.Game
 			var cachedMoves []game.GameMove
@@ -1040,6 +1051,25 @@ func sendError(ctx context.Context, client *Client, message string) {
 
 	if !client.SafeSend(data) {
 		slog.WarnContext(ctx, "client send buffer full, dropped error message", "user_id", client.UserID)
+	}
+}
+
+func sendPong(client *Client, t *int64) {
+	response := struct {
+		Type string `json:"type"`
+		T    *int64 `json:"t,omitempty"`
+	}{
+		Type: "pong",
+		T:    t,
+	}
+
+	data, err := json.Marshal(response)
+	if err != nil {
+		return
+	}
+
+	if client != nil {
+		client.SafeSend(data)
 	}
 }
 
