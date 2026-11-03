@@ -11,4 +11,5 @@ func RegisterRoutes(handler *Handler, protected *gin.RouterGroup, userRepo *repo
 	adminRoutes.Use(middleware.RequireAdmin(userRepo))
 
 	adminRoutes.GET("/users", handler.SearchUsers)
+	adminRoutes.POST("/users/:id/ban", handler.BanUser)
 }
