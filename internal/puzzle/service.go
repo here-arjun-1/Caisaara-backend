@@ -211,6 +211,8 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 				ratingProfile.Rating = 100
 			}
 			ratingProfile.PuzzlesFailed++
+			ratingProfile.CurrentStreak = 0
+			ratingProfile.LastPlayedDate = today
 
 			_ = s.repo.UpdateUserRating(ctx, ratingProfile)
 
