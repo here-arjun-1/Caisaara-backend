@@ -21,6 +21,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/leaderboard"
 	"github.com/here-arjun-1/Caisaara-backend/internal/matchmaking"
 	"github.com/here-arjun-1/Caisaara-backend/internal/nearby"
+	"github.com/here-arjun-1/Caisaara-backend/internal/news"
 	"github.com/here-arjun-1/Caisaara-backend/internal/notification"
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
 	"github.com/here-arjun-1/Caisaara-backend/internal/privacy"
@@ -48,6 +49,7 @@ type App struct {
 	analysisEngine         *analysis.AnalysisEngine
 	analysisProcessor      *analysis.AnalysisProcessor
 	botEngine              *bot.Engine
+	newsService            *news.Service
 }
 
 func New(cfg *config.Config) (*App, error) {
@@ -163,6 +165,10 @@ func New(cfg *config.Config) (*App, error) {
 	)
 	accountHandler := account.NewHandler(accountService)
 
+	newsRepository := news.NewRepository(inf.db)
+	newsService := news.NewService(newsRepository)
+	newsHandler := news.NewHandler(newsService)
+
 	privacyRepo := privacy.NewRepository(inf.db)
 	privacyService := privacy.NewService(privacyRepo)
 	privacyHandler := privacy.NewHandler(privacyService)
@@ -200,6 +206,7 @@ func New(cfg *config.Config) (*App, error) {
 		analysisEngine:         analysisEngine,
 		analysisProcessor:      analysisProcessor,
 		botEngine:              botEngine,
+		newsService:            newsService,
 	}
 
 	r, err := router.New(
@@ -223,6 +230,7 @@ func New(cfg *config.Config) (*App, error) {
 		notificationHandler,
 		accountHandler,
 		tournamentHandler,
+		newsHandler,
 		privacyHandler,
 	)
 	if err != nil {
