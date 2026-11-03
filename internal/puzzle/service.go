@@ -448,7 +448,7 @@ func (s *Service) GetUserHistory(ctx context.Context, userID int64, limit, offse
 
 func calculateRatingChange(playerRating, puzzleRating int, solved bool, attemptsLeft int) int {
 	diff := float64(puzzleRating - playerRating)
-	expected := 1.0 / (1.0 + math.Pow(10, -diff/400.0))
+	expected := 1.0 / (1.0 + math.Pow(10, diff/400.0))
 
 	if solved {
 		k := 32.0
