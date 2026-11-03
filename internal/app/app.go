@@ -27,6 +27,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/privacy"
 	"github.com/here-arjun-1/Caisaara-backend/internal/puzzle"
 	"github.com/here-arjun-1/Caisaara-backend/internal/rating"
+	"github.com/here-arjun-1/Caisaara-backend/internal/report"
 	"github.com/here-arjun-1/Caisaara-backend/internal/router"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tilt"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tournament"
@@ -173,6 +174,10 @@ func New(cfg *config.Config) (*App, error) {
 	privacyService := privacy.NewService(privacyRepo)
 	privacyHandler := privacy.NewHandler(privacyService)
 
+	reportRepository := report.NewRepository(inf.db)
+	reportService := report.NewService(reportRepository)
+	reportHandler := report.NewHandler(reportService)
+
 	chatService.SetPrivacyChecker(privacyService)
 	invitationService.SetPrivacyChecker(privacyService)
 	clubService.SetPrivacyChecker(privacyService)
@@ -231,6 +236,7 @@ func New(cfg *config.Config) (*App, error) {
 		accountHandler,
 		tournamentHandler,
 		newsHandler,
+		reportHandler,
 		privacyHandler,
 	)
 	if err != nil {
