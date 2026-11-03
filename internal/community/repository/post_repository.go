@@ -2,8 +2,10 @@ package repository
 
 import (
 	"context"
+	"strconv"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/community/model"
+	"github.com/here-arjun-1/Caisaara-backend/internal/notification"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -255,19 +257,48 @@ func (r *PostRepository) CountReactions(ctx context.Context, postIDs []int64) (m
 	return counts, rows.Err()
 }
 
-func (r *PostRepository) SetReaction(ctx context.Context, postID, userID int64, reaction string) error {
-	_, err := r.DB.Exec(
+func (r *PostRepository) SetReaction(ctx context.Context, postID, userID int64, reaction string) (bool, error) {
+	var isNew bool
+	err := r.DB.QueryRow(
 		ctx,
-		`INSERT INTO post_reactions (post_id, user_id, reaction)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (post_id, user_id) DO UPDATE SET
-			reaction   = EXCLUDED.reaction,
-			created_at = now()`,
+		`WITH existing AS (
+			SELECT reaction FROM post_reactions WHERE post_id = $1 AND user_id = $2
+		),
+		upsert AS (
+			INSERT INTO post_reactions (post_id, user_id, reaction)
+			VALUES ($1, $2, $3)
+			ON CONFLICT (post_id, user_id) DO UPDATE SET
+				reaction   = EXCLUDED.reaction,
+				created_at = now()
+			RETURNING reaction
+		)
+		SELECT NOT EXISTS(SELECT 1 FROM existing) AS is_new
+		FROM upsert`,
 		postID,
 		userID,
 		reaction,
-	)
-	return err
+	).Scan(&isNew)
+	return isNew, err
+}
+
+func (r *PostRepository) HasRecentReactionNotification(ctx context.Context, ownerID, postID, userID int64) (bool, error) {
+	var exists bool
+	err := r.DB.QueryRow(
+		ctx,
+		`SELECT EXISTS (
+			SELECT 1 FROM notifications
+			WHERE user_id = $1
+			  AND type = $2
+			  AND data->>'post_id' = $3
+			  AND data->>'user_id' = $4
+			  AND created_at > now() - interval '24 hours'
+		)`,
+		ownerID,
+		notification.TypePostReaction,
+		strconv.FormatInt(postID, 10),
+		strconv.FormatInt(userID, 10),
+	).Scan(&exists)
+	return exists, err
 }
 
 func (r *PostRepository) DeleteReaction(ctx context.Context, postID, userID int64) error {

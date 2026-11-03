@@ -28,7 +28,8 @@ type PostRepository interface {
 	FindPostOwner(ctx context.Context, postID int64) (int64, error)
 	DeletePost(ctx context.Context, postID int64) error
 	CountReactions(ctx context.Context, postIDs []int64) (map[int64]map[string]int, error)
-	SetReaction(ctx context.Context, postID, userID int64, reaction string) error
+	SetReaction(ctx context.Context, postID, userID int64, reaction string) (bool, error)
+	HasRecentReactionNotification(ctx context.Context, ownerID, postID, userID int64) (bool, error)
 	DeleteReaction(ctx context.Context, postID, userID int64) error
 	ListBookmarkedPosts(ctx context.Context, userID, beforeID int64, limit int) ([]*model.Post, error)
 	AddBookmark(ctx context.Context, postID, userID int64) error
@@ -205,7 +206,7 @@ func (s *PostService) SetNotifier(notifier Notifier) {
 }
 
 func (s *PostService) SetReaction(ctx context.Context, userID, postID int64, reaction string) (*dto.ReactionResponse, error) {
-	err := s.PostRepository.SetReaction(ctx, postID, userID, reaction)
+	isNew, err := s.PostRepository.SetReaction(ctx, postID, userID, reaction)
 	if isForeignKeyError(err) {
 		return nil, ErrPostNotFound
 	}
@@ -214,7 +215,7 @@ func (s *PostService) SetReaction(ctx context.Context, userID, postID int64, rea
 		return nil, ErrInternal
 	}
 
-	if reaction != "dislike" {
+	if isNew && reaction != "dislike" {
 		s.notifyReaction(ctx, userID, postID)
 	}
 	return s.reactionSummary(ctx, postID, &reaction)
@@ -227,6 +228,15 @@ func (s *PostService) notifyReaction(ctx context.Context, userID, postID int64) 
 
 	ownerID, err := s.PostRepository.FindPostOwner(ctx, postID)
 	if err != nil || ownerID == userID {
+		return
+	}
+
+	hasRecent, err := s.PostRepository.HasRecentReactionNotification(ctx, ownerID, postID, userID)
+	if err != nil {
+		slog.Error("check recent reaction notification failed", "owner_id", ownerID, "error", err)
+		return
+	}
+	if hasRecent {
 		return
 	}
 
