@@ -361,6 +361,13 @@ func (r *Repository) GetOrCreateUserRating(ctx context.Context, userID int64) (*
 		u.LastPlayedDate = lastPlayedDate.Format("2006-01-02")
 	}
 
+	today := time.Now().UTC().Format("2006-01-02")
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
+	if u.LastPlayedDate != "" && u.LastPlayedDate != today && u.LastPlayedDate != yesterday && u.CurrentStreak > 0 {
+		u.CurrentStreak = 0
+		_ = r.UpdateUserRating(ctx, u)
+	}
+
 	return u, nil
 }
 
