@@ -66,12 +66,14 @@ func (s *Service) GetDailyPuzzle(ctx context.Context, userID int64) (*DailyPuzzl
 			return nil, fmt.Errorf("find session puzzle: %w", err)
 		}
 	} else {
-		targetRating := ratingProfile.Rating + (ratingProfile.CurrentStreak * 10)
-		if targetRating > 2800 {
+		targetRating := ratingProfile.Rating
+		if targetRating < 100 {
+			targetRating = 100
+		} else if targetRating > 2800 {
 			targetRating = 2800
 		}
 
-		puzzleRecord, err = s.repo.FindMatchingPuzzle(ctx, userID, targetRating-60, targetRating+60, "")
+		puzzleRecord, err = s.repo.FindDailyMatchingPuzzle(ctx, userID, targetRating)
 		if err != nil {
 			return nil, fmt.Errorf("find daily puzzle: %w", err)
 		}

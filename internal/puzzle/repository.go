@@ -12,6 +12,8 @@ import (
 )
 
 type PuzzleRepository interface {
+	GetPlayerRating(ctx context.Context, userID int64) (int, error)
+	FindDailyMatchingPuzzle(ctx context.Context, userID int64, targetRating int) (*Puzzle, error)
 	FindMatchingPuzzle(ctx context.Context, userID int64, minRating, maxRating int, theme string) (*Puzzle, error)
 	FindPuzzleByID(ctx context.Context, id string) (*Puzzle, error)
 	GetOrCreateUserRating(ctx context.Context, userID int64) (*UserPuzzleRating, error)
@@ -207,6 +209,77 @@ func (r *Repository) FindPuzzleByID(ctx context.Context, id string) (*Puzzle, er
 	return p, nil
 }
 
+func (r *Repository) GetPlayerRating(ctx context.Context, userID int64) (int, error) {
+	var rating int
+	query := `SELECT COALESCE(rating, start_rating, 1200) FROM users WHERE id = $1`
+	err := r.DB.QueryRow(ctx, query, userID).Scan(&rating)
+	if err != nil {
+		return 1200, nil
+	}
+	return rating, nil
+}
+
+func (r *Repository) FindDailyMatchingPuzzle(ctx context.Context, userID int64, targetRating int) (*Puzzle, error) {
+	queryUp := `
+		SELECT id, fen, moves, rating, rating_deviation, popularity, nb_plays, themes, COALESCE(game_url, ''), COALESCE(opening_tags, ''), created_at
+		FROM puzzles
+		WHERE rating BETWEEN $1 AND ($1 + 60)
+		  AND id NOT IN (
+		      SELECT puzzle_id FROM user_puzzle_attempts WHERE user_id = $2
+		  )
+		ORDER BY RANDOM()
+		LIMIT 1
+	`
+	p := &Puzzle{}
+	err := r.DB.QueryRow(ctx, queryUp, targetRating, userID).Scan(
+		&p.ID,
+		&p.FEN,
+		&p.Moves,
+		&p.Rating,
+		&p.RatingDeviation,
+		&p.Popularity,
+		&p.NbPlays,
+		&p.Themes,
+		&p.GameURL,
+		&p.OpeningTags,
+		&p.CreatedAt,
+	)
+	if err == nil {
+		return p, nil
+	}
+
+	if errors.Is(err, pgx.ErrNoRows) {
+		queryDown := `
+			SELECT id, fen, moves, rating, rating_deviation, popularity, nb_plays, themes, COALESCE(game_url, ''), COALESCE(opening_tags, ''), created_at
+			FROM puzzles
+			WHERE rating BETWEEN ($1 - 60) AND $1
+			  AND id NOT IN (
+			      SELECT puzzle_id FROM user_puzzle_attempts WHERE user_id = $2
+			  )
+			ORDER BY RANDOM()
+			LIMIT 1
+		`
+		err = r.DB.QueryRow(ctx, queryDown, targetRating, userID).Scan(
+			&p.ID,
+			&p.FEN,
+			&p.Moves,
+			&p.Rating,
+			&p.RatingDeviation,
+			&p.Popularity,
+			&p.NbPlays,
+			&p.Themes,
+			&p.GameURL,
+			&p.OpeningTags,
+			&p.CreatedAt,
+		)
+		if err == nil {
+			return p, nil
+		}
+	}
+
+	return r.FindMatchingPuzzle(ctx, userID, targetRating-60, targetRating+60, "")
+}
+
 func (r *Repository) GetOrCreateUserRating(ctx context.Context, userID int64) (*UserPuzzleRating, error) {
 	query := `
 		SELECT user_id, rating, rating_deviation, rating_volatility, puzzles_solved, puzzles_failed, best_rating, best_rating_at, current_streak, max_streak, last_played_date, updated_at
@@ -240,12 +313,12 @@ func (r *Repository) GetOrCreateUserRating(ctx context.Context, userID int64) (*
 			)
 			SELECT 
 				u.id, 
-				COALESCE(u.start_rating, u.rating, 1200), 
+				COALESCE(u.rating, u.start_rating, 1200), 
 				350, 
 				0.06, 
 				0, 
 				0, 
-				COALESCE(u.start_rating, u.rating, 1200), 
+				COALESCE(u.rating, u.start_rating, 1200), 
 				NOW(), 
 				0, 
 				0, 
@@ -276,7 +349,7 @@ func (r *Repository) GetOrCreateUserRating(ctx context.Context, userID int64) (*
 		return nil, err
 	case u.PuzzlesSolved == 0 && u.PuzzlesFailed == 0:
 		var userStartRating int
-		err := r.DB.QueryRow(ctx, `SELECT COALESCE(start_rating, rating, 1200) FROM users WHERE id = $1`, userID).Scan(&userStartRating)
+		err := r.DB.QueryRow(ctx, `SELECT COALESCE(rating, start_rating, 1200) FROM users WHERE id = $1`, userID).Scan(&userStartRating)
 		if err == nil && userStartRating > 0 && u.Rating != userStartRating {
 			u.Rating = userStartRating
 			u.BestRating = userStartRating
