@@ -527,13 +527,14 @@ func (s *Service) StartRush(ctx context.Context, userID int64, req StartRushRequ
 	}
 
 	return &StartRushResponse{
-		SessionID:    session.ID,
-		Mode:         session.Mode,
-		Theme:        session.Theme,
-		TimeLimitSec: session.TimeLimitSec,
-		Score:        session.Score,
-		Strikes:      session.Strikes,
-		StrikesLeft:  3,
+		SessionID:        session.ID,
+		Mode:             session.Mode,
+		Theme:            session.Theme,
+		TimeLimitSec:     session.TimeLimitSec,
+		TimeRemainingSec: session.TimeLimitSec,
+		Score:            session.Score,
+		Strikes:          session.Strikes,
+		StrikesLeft:      3,
 		Puzzle: RushPuzzleData{
 			PuzzleID:    puzzle.ID,
 			FEN:         puzzle.FEN,
@@ -558,11 +559,12 @@ func (s *Service) SubmitRushMove(ctx context.Context, userID int64, req SubmitRu
 
 	if session.Status != "active" {
 		return &SubmitRushMoveResponse{
-			Score:       session.Score,
-			Strikes:     session.Strikes,
-			StrikesLeft: 0,
-			GameOver:    true,
-			Reason:      session.Status,
+			Score:            session.Score,
+			Strikes:          session.Strikes,
+			StrikesLeft:      0,
+			TimeRemainingSec: 0,
+			GameOver:         true,
+			Reason:           session.Status,
 		}, nil
 	}
 
@@ -582,13 +584,14 @@ func (s *Service) SubmitRushMove(ctx context.Context, userID int64, req SubmitRu
 			}
 
 			return &SubmitRushMoveResponse{
-				Correct:     false,
-				Score:       session.Score,
-				Strikes:     session.Strikes,
-				StrikesLeft: 0,
-				GameOver:    true,
-				Reason:      "time_expired",
-				Summary:     summary,
+				Correct:          false,
+				Score:            session.Score,
+				Strikes:          session.Strikes,
+				StrikesLeft:      0,
+				TimeRemainingSec: 0,
+				GameOver:         true,
+				Reason:           "time_expired",
+				Summary:          summary,
 			}, nil
 		}
 	}
@@ -648,12 +651,21 @@ func (s *Service) SubmitRushMove(ctx context.Context, userID int64, req SubmitRu
 			initialMove = nextMoves[0]
 		}
 
+		timeRemaining := 0
+		if session.TimeLimitSec > 0 {
+			rem := session.TimeLimitSec - int(time.Since(session.StartedAt).Seconds())
+			if rem > 0 {
+				timeRemaining = rem
+			}
+		}
+
 		return &SubmitRushMoveResponse{
-			Correct:     true,
-			Score:       session.Score,
-			Strikes:     session.Strikes,
-			StrikesLeft: 3 - session.Strikes,
-			GameOver:    false,
+			Correct:          true,
+			Score:            session.Score,
+			Strikes:          session.Strikes,
+			StrikesLeft:      3 - session.Strikes,
+			TimeRemainingSec: timeRemaining,
+			GameOver:         false,
 			NextPuzzle: &RushPuzzleData{
 				PuzzleID:    nextPuzzle.ID,
 				FEN:         nextPuzzle.FEN,
@@ -679,13 +691,14 @@ func (s *Service) SubmitRushMove(ctx context.Context, userID int64, req SubmitRu
 		}
 
 		return &SubmitRushMoveResponse{
-			Correct:     false,
-			Score:       session.Score,
-			Strikes:     session.Strikes,
-			StrikesLeft: 0,
-			GameOver:    true,
-			Reason:      "max_strikes",
-			Summary:     summary,
+			Correct:          false,
+			Score:            session.Score,
+			Strikes:          session.Strikes,
+			StrikesLeft:      0,
+			TimeRemainingSec: 0,
+			GameOver:         true,
+			Reason:           "max_strikes",
+			Summary:          summary,
 		}, nil
 	}
 
@@ -706,12 +719,21 @@ func (s *Service) SubmitRushMove(ctx context.Context, userID int64, req SubmitRu
 		initialMove = nextMoves[0]
 	}
 
+	timeRemaining := 0
+	if session.TimeLimitSec > 0 {
+		rem := session.TimeLimitSec - int(time.Since(session.StartedAt).Seconds())
+		if rem > 0 {
+			timeRemaining = rem
+		}
+	}
+
 	return &SubmitRushMoveResponse{
-		Correct:     false,
-		Score:       session.Score,
-		Strikes:     session.Strikes,
-		StrikesLeft: 3 - session.Strikes,
-		GameOver:    false,
+		Correct:          false,
+		Score:            session.Score,
+		Strikes:          session.Strikes,
+		StrikesLeft:      3 - session.Strikes,
+		TimeRemainingSec: timeRemaining,
+		GameOver:         false,
 		NextPuzzle: &RushPuzzleData{
 			PuzzleID:    nextPuzzle.ID,
 			FEN:         nextPuzzle.FEN,
@@ -756,6 +778,9 @@ func (s *Service) EndRush(ctx context.Context, userID int64, req EndRushRequest)
 		if durationSec < 0 {
 			durationSec = 0
 		}
+		if session.TimeLimitSec > 0 && durationSec > session.TimeLimitSec {
+			durationSec = session.TimeLimitSec
+		}
 		return &RushSummary{
 			SessionID:      session.ID,
 			Mode:           session.Mode,
@@ -768,6 +793,9 @@ func (s *Service) EndRush(ctx context.Context, userID int64, req EndRushRequest)
 	}
 
 	session.Status = "ended"
+	if session.TimeLimitSec > 0 && time.Since(session.StartedAt).Seconds() >= float64(session.TimeLimitSec) {
+		session.Status = "time_expired"
+	}
 	now := time.Now().UTC()
 	session.EndedAt = &now
 	if err := s.repo.UpdateRushSession(ctx, session); err != nil {
@@ -819,6 +847,9 @@ func (s *Service) finalizeRushSession(ctx context.Context, session *PuzzleRushSe
 	durationSec := int(ended.Sub(session.StartedAt).Seconds())
 	if durationSec < 0 {
 		durationSec = 0
+	}
+	if session.TimeLimitSec > 0 && durationSec > session.TimeLimitSec {
+		durationSec = session.TimeLimitSec
 	}
 
 	return &RushSummary{
