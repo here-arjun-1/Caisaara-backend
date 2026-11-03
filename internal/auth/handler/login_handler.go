@@ -33,6 +33,10 @@ func (h *LoginHandler) Login(c *gin.Context) {
 		response.Error(c, http.StatusInternalServerError, "internal server error")
 		return
 	}
+	if errors.Is(err, service.ErrUserBanned) {
+		response.Error(c, http.StatusForbidden, err.Error())
+		return
+	}
 	if err != nil {
 		response.Error(c, http.StatusUnauthorized, err.Error())
 		return

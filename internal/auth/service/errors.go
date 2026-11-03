@@ -9,4 +9,5 @@ var (
 	ErrInternal           = errors.New("internal server error")
 	ErrRatingAlreadySet   = errors.New("rating already set")
 	ErrInvalidLevel       = errors.New("invalid level")
+	ErrUserBanned         = errors.New("your account has been banned")
 )

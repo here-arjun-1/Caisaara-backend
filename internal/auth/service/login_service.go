@@ -72,6 +72,10 @@ func (h *LoginService) Login(
 		return "", "", "", false, ErrInvalidCredentials
 	}
 
+	if user.IsBanned {
+		return "", "", "", false, ErrUserBanned
+	}
+
 	accessToken, refreshToken, err := createSessionTokens(ctx, h.SessionRepository, h.JWTSecret, user.ID, user.PasswordVersion)
 	if err != nil {
 		return "", "", "", false, err

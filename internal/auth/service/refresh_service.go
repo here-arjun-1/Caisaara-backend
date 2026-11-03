@@ -96,6 +96,14 @@ func (h *RefreshService) Refresh(ctx context.Context, req dto.RefreshData) (stri
 		return "", "", ErrInternal
 	}
 
+	if user.IsBanned {
+		err := h.SessionRepository.RevokeAllSessions(ctx, user.ID)
+		if err != nil {
+			slog.Error("revoke all sessions failed", "error", err)
+		}
+		return "", "", ErrUserBanned
+	}
+
 	accessToken, err := token.GenerateAccessToken(
 		h.JWTSecret,
 		newSession.UserID,

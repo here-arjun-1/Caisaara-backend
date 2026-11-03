@@ -21,7 +21,9 @@ func (r *UserRepository) FindUserByID(ctx context.Context, id int64) (*model.Use
 			username,
 			email,
 			skill_level,
-			COALESCE(password_version, 1)
+			COALESCE(password_version, 1),
+			role,
+			COALESCE(banned_until > NOW(), false)
 		FROM users
 		WHERE id = $1 AND deleted_at IS NULL`,
 		id,
@@ -31,6 +33,8 @@ func (r *UserRepository) FindUserByID(ctx context.Context, id int64) (*model.Use
 		&user.Email,
 		&user.SkillLevel,
 		&user.PasswordVersion,
+		&user.Role,
+		&user.IsBanned,
 	)
 	if err != nil {
 		return nil, err
@@ -89,7 +93,9 @@ func (r *UserRepository) FindUserByUsername(ctx context.Context, username string
 			username,
 			password,
 			skill_level,
-			COALESCE(password_version, 1)
+			COALESCE(password_version, 1),
+			role,
+			COALESCE(banned_until > NOW(), false)
 		FROM users
 		WHERE username = $1 AND deleted_at IS NULL`,
 		username,
@@ -99,6 +105,8 @@ func (r *UserRepository) FindUserByUsername(ctx context.Context, username string
 		&user.Password,
 		&user.SkillLevel,
 		&user.PasswordVersion,
+		&user.Role,
+		&user.IsBanned,
 	)
 
 	if err != nil {
@@ -119,7 +127,9 @@ func (r *UserRepository) FindUserByEmail(ctx context.Context, email string) (*mo
 			email,
 			password,
 			skill_level,
-			COALESCE(password_version, 1)
+			COALESCE(password_version, 1),
+			role,
+			COALESCE(banned_until > NOW(), false)
 		FROM users
 		WHERE email = $1 AND deleted_at IS NULL`,
 		email,
@@ -130,6 +140,8 @@ func (r *UserRepository) FindUserByEmail(ctx context.Context, email string) (*mo
 		&user.Password,
 		&user.SkillLevel,
 		&user.PasswordVersion,
+		&user.Role,
+		&user.IsBanned,
 	)
 
 	if err != nil {
