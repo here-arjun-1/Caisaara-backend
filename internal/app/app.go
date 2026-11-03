@@ -28,6 +28,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/puzzle"
 	"github.com/here-arjun-1/Caisaara-backend/internal/rating"
 	"github.com/here-arjun-1/Caisaara-backend/internal/router"
+	"github.com/here-arjun-1/Caisaara-backend/internal/streak"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tilt"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tournament"
 	"github.com/here-arjun-1/Caisaara-backend/internal/websocket"
@@ -169,6 +170,12 @@ func New(cfg *config.Config) (*App, error) {
 	newsService := news.NewService(newsRepository)
 	newsHandler := news.NewHandler(newsService)
 
+	streakRepository := streak.NewRepository(inf.db)
+	streakService := streak.NewService(streakRepository)
+	streakHandler := streak.NewHandler(streakService)
+	gameService.SetStreakService(streakService)
+	wsHandler.SetStreakService(streakService)
+
 	privacyRepo := privacy.NewRepository(inf.db)
 	privacyService := privacy.NewService(privacyRepo)
 	privacyHandler := privacy.NewHandler(privacyService)
@@ -179,6 +186,14 @@ func New(cfg *config.Config) (*App, error) {
 	tournamentService.SetPrivacyChecker(privacyService)
 
 	gameService.SetGameCompletionListener(func(ctx context.Context, gameID string, result string) {
+		if g, err := gameRepository.FindGameByID(ctx, gameID); err == nil && g != nil {
+			if g.WhitePlayerID > 0 {
+				_, _ = streakService.OnGameFinish(ctx, g.WhitePlayerID)
+			}
+			if g.BlackPlayerID > 0 {
+				_, _ = streakService.OnGameFinish(ctx, g.BlackPlayerID)
+			}
+		}
 		if err := ratingService.UpdateRatingsAfterGame(ctx, gameID); err != nil {
 			slog.ErrorContext(ctx, "update ratings failed", "game_id", gameID, "error", err)
 		}
@@ -231,6 +246,7 @@ func New(cfg *config.Config) (*App, error) {
 		accountHandler,
 		tournamentHandler,
 		newsHandler,
+		streakHandler,
 		privacyHandler,
 	)
 	if err != nil {
