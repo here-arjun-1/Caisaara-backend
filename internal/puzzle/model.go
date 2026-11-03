@@ -192,14 +192,15 @@ type RushPuzzleData struct {
 }
 
 type StartRushResponse struct {
-	SessionID    string         `json:"session_id"`
-	Mode         string         `json:"mode"`
-	TimeLimitSec int            `json:"time_limit_sec"`
-	Theme        string         `json:"theme,omitempty"`
-	Score        int            `json:"score"`
-	Strikes      int            `json:"strikes"`
-	StrikesLeft  int            `json:"strikes_left"`
-	Puzzle       RushPuzzleData `json:"puzzle"`
+	SessionID        string         `json:"session_id"`
+	Mode             string         `json:"mode"`
+	TimeLimitSec     int            `json:"time_limit_sec"`
+	TimeRemainingSec int            `json:"time_remaining_sec"`
+	Theme            string         `json:"theme,omitempty"`
+	Score            int            `json:"score"`
+	Strikes          int            `json:"strikes"`
+	StrikesLeft      int            `json:"strikes_left"`
+	Puzzle           RushPuzzleData `json:"puzzle"`
 }
 
 type SubmitRushMoveRequest struct {
@@ -219,14 +220,15 @@ type RushSummary struct {
 }
 
 type SubmitRushMoveResponse struct {
-	Correct     bool            `json:"correct"`
-	Score       int             `json:"score"`
-	Strikes     int             `json:"strikes"`
-	StrikesLeft int             `json:"strikes_left"`
-	GameOver    bool            `json:"game_over"`
-	Reason      string          `json:"reason,omitempty"`
-	NextPuzzle  *RushPuzzleData `json:"next_puzzle,omitempty"`
-	Summary     *RushSummary    `json:"summary,omitempty"`
+	Correct          bool            `json:"correct"`
+	Score            int             `json:"score"`
+	Strikes          int             `json:"strikes"`
+	StrikesLeft      int             `json:"strikes_left"`
+	TimeRemainingSec int             `json:"time_remaining_sec"`
+	GameOver         bool            `json:"game_over"`
+	Reason           string          `json:"reason,omitempty"`
+	NextPuzzle       *RushPuzzleData `json:"next_puzzle,omitempty"`
+	Summary          *RushSummary    `json:"summary,omitempty"`
 }
 
 type EndRushRequest struct {
