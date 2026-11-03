@@ -119,10 +119,16 @@ func (s *Service) GetDailyPuzzle(ctx context.Context, userID int64) (*DailyPuzzl
 
 func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAttemptRequest) (*SubmitAttemptResponse, error) {
 	today := time.Now().UTC().Format("2006-01-02")
+	yesterday := time.Now().UTC().AddDate(0, 0, -1).Format("2006-01-02")
 
 	ratingProfile, err := s.repo.GetOrCreateUserRating(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get user rating: %w", err)
+	}
+
+	if ratingProfile.LastPlayedDate != "" && ratingProfile.LastPlayedDate != today && ratingProfile.LastPlayedDate != yesterday {
+		ratingProfile.CurrentStreak = 0
+		_ = s.repo.UpdateUserRating(ctx, ratingProfile)
 	}
 
 	session, err := s.repo.GetDailySession(ctx, userID, today)
@@ -296,7 +302,11 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 	ratingProfile.PuzzlesSolved++
 
 	if ratingProfile.LastPlayedDate != today {
-		ratingProfile.CurrentStreak++
+		if ratingProfile.LastPlayedDate == yesterday {
+			ratingProfile.CurrentStreak++
+		} else {
+			ratingProfile.CurrentStreak = 1
+		}
 		if ratingProfile.CurrentStreak > ratingProfile.MaxStreak {
 			ratingProfile.MaxStreak = ratingProfile.CurrentStreak
 		}
