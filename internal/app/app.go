@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/account"
+	"github.com/here-arjun-1/Caisaara-backend/internal/admin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/analysis"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth"
 	"github.com/here-arjun-1/Caisaara-backend/internal/bot"
@@ -178,6 +179,11 @@ func New(cfg *config.Config) (*App, error) {
 	reportService := report.NewService(reportRepository)
 	reportHandler := report.NewHandler(reportService)
 
+	adminRepository := admin.NewRepository(inf.db)
+	adminService := admin.NewService(adminRepository)
+	adminService.SetDisconnector(wsHub)
+	adminHandler := admin.NewHandler(adminService)
+
 	chatService.SetPrivacyChecker(privacyService)
 	invitationService.SetPrivacyChecker(privacyService)
 	clubService.SetPrivacyChecker(privacyService)
@@ -237,6 +243,7 @@ func New(cfg *config.Config) (*App, error) {
 		tournamentHandler,
 		newsHandler,
 		reportHandler,
+		adminHandler,
 		privacyHandler,
 	)
 	if err != nil {

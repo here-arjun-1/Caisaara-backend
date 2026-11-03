@@ -2,11 +2,6 @@ package admin
 
 import "time"
 
-const (
-	DefaultUsersLimit = 20
-	MaxUsersLimit     = 50
-)
-
 type User struct {
 	ID        int64     `json:"id"`
 	Username  string    `json:"username"`
@@ -17,3 +12,10 @@ type User struct {
 	BanReason string    `json:"ban_reason"`
 	CreatedAt time.Time `json:"created_at"`
 }
+
+const (
+	DefaultUsersLimit  = 20
+	MaxUsersLimit      = 50
+	MaxBanReasonLength = 500
+	MaxBanDays         = 365
+)
