@@ -50,7 +50,10 @@ func fetchFeed(ctx context.Context, client *http.Client, source feedSource) ([]A
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("feed %s returned status %d", source.Name, resp.StatusCode)
