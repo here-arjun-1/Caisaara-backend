@@ -26,6 +26,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/player"
 	"github.com/here-arjun-1/Caisaara-backend/internal/privacy"
 	"github.com/here-arjun-1/Caisaara-backend/internal/puzzle"
+	"github.com/here-arjun-1/Caisaara-backend/internal/report"
 	"github.com/here-arjun-1/Caisaara-backend/internal/response"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tilt"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tournament"
@@ -54,6 +55,7 @@ func New(
 	accountHandler *account.Handler,
 	tournamentHandler *tournament.Handler,
 	newsHandler *news.Handler,
+	reportHandler *report.Handler,
 	privacyHandler ...*privacy.Handler,
 ) (*gin.Engine, error) {
 	r := gin.New()
@@ -187,6 +189,10 @@ func New(
 
 	if newsHandler != nil {
 		news.RegisterRoutes(newsHandler, protected)
+	}
+
+	if reportHandler != nil {
+		report.RegisterRoutes(reportHandler, protected)
 	}
 
 	return r, nil
