@@ -478,6 +478,21 @@ func (s *TournamentService) CancelTournament(ctx context.Context, tournamentID i
 		return ErrNotCreator
 	}
 
+	return s.cancelTournament(ctx, t)
+}
+
+func (s *TournamentService) ForceCancelTournament(ctx context.Context, tournamentID int64) error {
+	t, err := s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
+	if err != nil {
+		return err
+	}
+
+	return s.cancelTournament(ctx, t)
+}
+
+func (s *TournamentService) cancelTournament(ctx context.Context, t *TournamentWithPlayerCount) error {
+	tournamentID := t.ID
+
 	if t.Status != StatusOngoing {
 		return ErrNotOngoing
 	}
