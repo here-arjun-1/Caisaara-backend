@@ -21,6 +21,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/leaderboard"
 	"github.com/here-arjun-1/Caisaara-backend/internal/matchmaking"
 	"github.com/here-arjun-1/Caisaara-backend/internal/metrics"
+	"github.com/here-arjun-1/Caisaara-backend/internal/minimates"
 	"github.com/here-arjun-1/Caisaara-backend/internal/nearby"
 	"github.com/here-arjun-1/Caisaara-backend/internal/news"
 	"github.com/here-arjun-1/Caisaara-backend/internal/notification"
@@ -58,6 +59,7 @@ func New(
 	newsHandler *news.Handler,
 	reportHandler *report.Handler,
 	adminHandler *admin.Handler,
+	miniMatesHandler *minimates.Handler,
 	privacyHandler ...*privacy.Handler,
 ) (*gin.Engine, error) {
 	r := gin.New()
@@ -199,6 +201,10 @@ func New(
 
 	if adminHandler != nil {
 		admin.RegisterRoutes(adminHandler, protected, authModule.UserRepository)
+	}
+
+	if miniMatesHandler != nil {
+		minimates.RegisterRoutes(miniMatesHandler, protected)
 	}
 
 	return r, nil
