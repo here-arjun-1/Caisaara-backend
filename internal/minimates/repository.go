@@ -228,6 +228,21 @@ func (r *Repository) GetUserLevelHistory(ctx context.Context, userID int64, leve
 	return &h, nil
 }
 
+func (r *Repository) RecordFailedAttempt(ctx context.Context, userID int64, levelNumber int) error {
+	_, err := r.DB.Exec(ctx,
+		`INSERT INTO user_mini_mates_level_history (user_id, level_number, stars, completed, attempts, created_at, updated_at)
+		VALUES ($1, $2, 0, false, 1, NOW(), NOW())
+		ON CONFLICT (user_id, level_number) DO UPDATE SET
+			attempts = user_mini_mates_level_history.attempts + 1,
+			updated_at = NOW()`,
+		userID, levelNumber,
+	)
+	if err != nil {
+		return fmt.Errorf("record failed attempt: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) GetChapterOverview(ctx context.Context, userID int64) (*MiniMatesOverviewResponse, error) {
 	progress, err := r.GetUserMiniMatesProgress(ctx, userID)
 	if err != nil {
