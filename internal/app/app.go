@@ -180,7 +180,7 @@ func New(cfg *config.Config) (*App, error) {
 	reportHandler := report.NewHandler(reportService)
 
 	adminRepository := admin.NewRepository(inf.db)
-	adminService := admin.NewService(adminRepository)
+	adminService := admin.NewService(adminRepository, tournamentService)
 	adminService.SetDisconnector(wsHub)
 	adminHandler := admin.NewHandler(adminService)
 

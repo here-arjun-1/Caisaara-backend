@@ -3,22 +3,32 @@ package admin
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/google/uuid"
 )
 
 type Disconnector interface {
 	DisconnectUser(userID int64)
 }
 
-type Service struct {
-	Repository   *Repository
-	Disconnector Disconnector
+type TournamentCanceller interface {
+	ForceCancelTournament(ctx context.Context, tournamentID int64) error
 }
 
-func NewService(repository *Repository) *Service {
+type Service struct {
+	Repository          *Repository
+	Disconnector        Disconnector
+	TournamentCanceller TournamentCanceller
+}
+
+func NewService(repository *Repository, tournamentCanceller TournamentCanceller) *Service {
 	return &Service{
-		Repository: repository,
+		Repository:          repository,
+		TournamentCanceller: tournamentCanceller,
 	}
 }
 
@@ -26,22 +36,35 @@ func (s *Service) SetDisconnector(disconnector Disconnector) {
 	s.Disconnector = disconnector
 }
 
-func (s *Service) SearchUsers(ctx context.Context, search string, limit int, offset int) ([]User, error) {
-	search = strings.TrimSpace(search)
-
+func fixPagination(limit int, offset int) (int, int) {
 	if limit <= 0 {
-		limit = DefaultUsersLimit
+		limit = DefaultLimit
 	}
 
-	if limit > MaxUsersLimit {
-		limit = MaxUsersLimit
+	if limit > MaxLimit {
+		limit = MaxLimit
 	}
 
 	if offset < 0 {
 		offset = 0
 	}
 
+	return limit, offset
+}
+
+func (s *Service) GetStats(ctx context.Context) (*Stats, error) {
+	return s.Repository.GetStats(ctx)
+}
+
+func (s *Service) SearchUsers(ctx context.Context, search string, limit int, offset int) ([]User, error) {
+	search = strings.TrimSpace(search)
+	limit, offset = fixPagination(limit, offset)
+
 	return s.Repository.SearchUsers(ctx, search, limit, offset)
+}
+
+func (s *Service) GetUser(ctx context.Context, userID int64) (*UserDetail, error) {
+	return s.Repository.GetUser(ctx, userID)
 }
 
 func (s *Service) BanUser(ctx context.Context, adminID int64, userID int64, days int, reason string) error {
@@ -87,4 +110,92 @@ func (s *Service) BanUser(ctx context.Context, adminID int64, userID int64, days
 	}
 
 	return nil
+}
+
+func (s *Service) UnbanUser(ctx context.Context, adminID int64, userID int64) error {
+	_, err := s.Repository.GetUserRole(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	return s.Repository.UnbanUser(ctx, adminID, userID)
+}
+
+func (s *Service) ForceLogout(ctx context.Context, adminID int64, userID int64) error {
+	err := s.Repository.ForceLogout(ctx, adminID, userID)
+	if err != nil {
+		return err
+	}
+
+	if s.Disconnector != nil {
+		s.Disconnector.DisconnectUser(userID)
+	}
+
+	return nil
+}
+
+func (s *Service) ListReports(ctx context.Context, status string, limit int, offset int) ([]Report, error) {
+	status = strings.ToLower(strings.TrimSpace(status))
+	if status == "" {
+		status = ReportPending
+	}
+
+	if status != ReportPending && status != ReportResolved && status != ReportDismissed {
+		return nil, ErrInvalidReportStatus
+	}
+
+	limit, offset = fixPagination(limit, offset)
+
+	return s.Repository.ListReports(ctx, status, limit, offset)
+}
+
+func (s *Service) CloseReport(ctx context.Context, adminID int64, reportID int64, status string, note string) error {
+	status = strings.ToLower(strings.TrimSpace(status))
+	note = strings.TrimSpace(note)
+
+	if status != ReportResolved && status != ReportDismissed {
+		return ErrInvalidResolution
+	}
+
+	if utf8.RuneCountInString(note) > MaxNoteLength {
+		return ErrNoteTooLong
+	}
+
+	return s.Repository.CloseReport(ctx, adminID, reportID, status, note)
+}
+
+func (s *Service) DeletePost(ctx context.Context, adminID int64, postID int64) error {
+	return s.Repository.DeletePost(ctx, adminID, postID)
+}
+
+func (s *Service) DeleteComment(ctx context.Context, adminID int64, commentID int64) error {
+	return s.Repository.DeleteComment(ctx, adminID, commentID)
+}
+
+func (s *Service) DeleteClub(ctx context.Context, adminID int64, clubID string) error {
+	if _, err := uuid.Parse(clubID); err != nil {
+		return ErrInvalidClubID
+	}
+
+	return s.Repository.DeleteClub(ctx, adminID, clubID)
+}
+
+func (s *Service) CancelTournament(ctx context.Context, adminID int64, tournamentID int64) error {
+	err := s.TournamentCanceller.ForceCancelTournament(ctx, tournamentID)
+	if err != nil {
+		return err
+	}
+
+	err = s.Repository.LogAction(ctx, adminID, "cancel_tournament", "tournament", strconv.FormatInt(tournamentID, 10), "")
+	if err != nil {
+		slog.ErrorContext(ctx, "log cancel tournament action failed", "tournament_id", tournamentID, "error", err)
+	}
+
+	return nil
+}
+
+func (s *Service) ListActions(ctx context.Context, limit int, offset int) ([]Action, error) {
+	limit, offset = fixPagination(limit, offset)
+
+	return s.Repository.ListActions(ctx, limit, offset)
 }
