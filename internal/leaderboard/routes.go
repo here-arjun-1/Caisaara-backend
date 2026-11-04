@@ -10,4 +10,5 @@ import (
 func RegisterRoutes(handler *Handler, protected *gin.RouterGroup) {
 	limiter := middleware.NewTokenBucketLimiter(30, time.Minute)
 	protected.GET("/leaderboard", limiter.Limit, handler.GetLeaderboard)
+	protected.GET("/leaderboard/local", middleware.RequireRegisteredUser(), limiter.Limit, handler.GetLocalLeaderboard)
 }
