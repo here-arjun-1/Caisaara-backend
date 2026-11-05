@@ -1,8 +1,12 @@
 package middleware
 
 import (
+	"bytes"
+	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -105,4 +109,47 @@ func getLimiterKey(c *gin.Context) string {
 		}
 	}
 	return "ip:" + c.ClientIP()
+}
+
+type emailBody struct {
+	Email    string `json:"email"`
+	Username string `json:"username"`
+}
+
+func getEmailFromBody(c *gin.Context) string {
+	bodyBytes, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		return ""
+	}
+
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	var data emailBody
+	err = json.Unmarshal(bodyBytes, &data)
+	if err != nil {
+		return ""
+	}
+
+	email := data.Email
+	if email == "" {
+		email = data.Username
+	}
+
+	email = strings.TrimSpace(email)
+	email = strings.ToLower(email)
+	return email
+}
+
+func (l *TokenBucketLimiter) LimitByEmail(c *gin.Context) {
+	email := getEmailFromBody(c)
+	if email == "" {
+		c.Next()
+		return
+	}
+
+	if !l.allow("email:" + email) {
+		response.Abort(c, http.StatusTooManyRequests, "too many requests, please try again later")
+		return
+	}
+	c.Next()
 }
