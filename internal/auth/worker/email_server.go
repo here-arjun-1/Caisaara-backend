@@ -6,10 +6,11 @@ import (
 	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/email"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 	"github.com/hibiken/asynq"
 )
 
-func StartEmailServer(redisOpt asynq.RedisClientOpt, sender *email.Sender) *asynq.Server {
+func StartEmailServer(redisOpt asynq.RedisClientOpt, sender *email.Sender, userRepository *repository.UserRepository) *asynq.Server {
 	server := asynq.NewServer(
 		redisOpt,
 		asynq.Config{
@@ -24,7 +25,7 @@ func StartEmailServer(redisOpt asynq.RedisClientOpt, sender *email.Sender) *asyn
 	)
 
 	mux := asynq.NewServeMux()
-	processor := NewEmailTaskProcessor(sender)
+	processor := NewEmailTaskProcessor(sender, userRepository)
 	mux.HandleFunc(TypeEmailRegistration, processor.ProcessTaskEmailRegistration)
 	mux.HandleFunc(TypeEmailPasswordReset, processor.ProcessTaskEmailPasswordReset)
 
