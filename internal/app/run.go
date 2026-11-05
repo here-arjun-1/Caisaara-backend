@@ -24,7 +24,7 @@ func (a *App) Run() error {
 	appCtx, appCancel := context.WithCancel(context.Background())
 	defer appCancel()
 
-	asynqServer := worker.StartEmailServer(a.infra.asynqRedisOpt, email.NewSender(a.cfg.SMTP))
+	asynqServer := worker.StartEmailServer(a.infra.asynqRedisOpt, email.NewSender(a.cfg.SMTP), a.authModule.UserRepository)
 	analysisServer := analysis.StartAnalysisServer(a.infra.asynqRedisOpt, a.analysisProcessor, 2)
 
 	var pushServer *asynq.Server

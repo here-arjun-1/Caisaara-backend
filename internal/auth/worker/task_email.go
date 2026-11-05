@@ -3,10 +3,13 @@ package worker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/email"
+	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5"
 )
 
 const (
@@ -36,11 +39,12 @@ func NewEmailPasswordResetTask(to, code string) (*asynq.Task, error) {
 }
 
 type EmailTaskProcessor struct {
-	sender *email.Sender
+	sender         *email.Sender
+	userRepository *repository.UserRepository
 }
 
-func NewEmailTaskProcessor(sender *email.Sender) *EmailTaskProcessor {
-	return &EmailTaskProcessor{sender: sender}
+func NewEmailTaskProcessor(sender *email.Sender, userRepository *repository.UserRepository) *EmailTaskProcessor {
+	return &EmailTaskProcessor{sender: sender, userRepository: userRepository}
 }
 
 func (p *EmailTaskProcessor) ProcessTaskEmailRegistration(ctx context.Context, t *asynq.Task) error {
@@ -49,7 +53,19 @@ func (p *EmailTaskProcessor) ProcessTaskEmailRegistration(ctx context.Context, t
 		return fmt.Errorf("json.Unmarshal failed: %w: %w", err, asynq.SkipRetry)
 	}
 
-	err := p.sender.SendRegistrationEmail(pld.To, pld.Code)
+	_, err := p.userRepository.FindUserByEmail(ctx, pld.To)
+	if err == nil {
+		err = p.sender.SendAccountExistsEmail(pld.To)
+		if err != nil {
+			return fmt.Errorf("could not send account exists email: %w", err)
+		}
+		return nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("find user by email failed: %w", err)
+	}
+
+	err = p.sender.SendRegistrationEmail(pld.To, pld.Code)
 	if err != nil {
 		return fmt.Errorf("could not send registration email: %w", err)
 	}
@@ -63,7 +79,15 @@ func (p *EmailTaskProcessor) ProcessTaskEmailPasswordReset(ctx context.Context, 
 		return fmt.Errorf("json.Unmarshal failed: %w: %w", err, asynq.SkipRetry)
 	}
 
-	err := p.sender.SendPasswordResetEmail(pld.To, pld.Code)
+	_, err := p.userRepository.FindUserByEmail(ctx, pld.To)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("find user by email failed: %w", err)
+	}
+
+	err = p.sender.SendPasswordResetEmail(pld.To, pld.Code)
 	if err != nil {
 		return fmt.Errorf("could not send password reset email: %w", err)
 	}

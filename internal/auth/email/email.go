@@ -55,6 +55,42 @@ func (s *Sender) SendPasswordResetEmail(to string, code string) error {
 	)
 }
 
+func (s *Sender) SendAccountExistsEmail(to string) error {
+	host := s.cfg.Host
+	port := s.cfg.Port
+	username := s.cfg.Username
+	password := s.cfg.Password
+
+	auth := smtp.PlainAuth(
+		"",
+		username,
+		password,
+		host,
+	)
+
+	subject := "You already have an account"
+
+	body := "Hello,\n\nSomeone tried to create a new account with this email, but you already have one.\n\nIf it was you, just log in. If you forgot your password, use Forgot Password on the login screen.\n\nIf it wasn't you, you can ignore this email.\n"
+
+	message := []byte(
+		"Subject: " + subject + "\r\n" +
+			"From: " + username + "\r\n" +
+			"To: " + to + "\r\n" +
+			"MIME-Version: 1.0\r\n" +
+			"Content-Type: text/plain; charset=\"UTF-8\"\r\n" +
+			"\r\n" +
+			body,
+	)
+
+	return smtp.SendMail(
+		host+":"+port,
+		auth,
+		username,
+		[]string{to},
+		message,
+	)
+}
+
 func (s *Sender) SendRegistrationEmail(to string, code string) error {
 	host := s.cfg.Host
 	port := s.cfg.Port
