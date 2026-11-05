@@ -7,16 +7,17 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
 )
 
-func RegisterRoutes(handler *Handler, protected *gin.RouterGroup) {
+func RegisterRoutes(handler *Handler, r *gin.Engine, authMiddleware gin.HandlerFunc) {
 	limiter := middleware.NewTokenBucketLimiter(120, time.Minute)
 
-	group := protected.Group("/mini-mates")
-	group.Use(limiter.Limit)
+	group := r.Group("/mini-mates")
+	group.Use(authMiddleware, limiter.Limit)
 	{
 		group.GET("", handler.GetOverview)
 		group.GET("/overview", handler.GetOverview)
 		group.GET("/levels/:level", handler.GetLevel)
+		group.GET("/levels/:level/hint", handler.GetHint)
+		group.POST("/levels/:level/hint", handler.GetHint)
 		group.POST("/levels/:level/move", handler.SubmitMove)
 	}
 }
-
