@@ -63,16 +63,7 @@ func (s *RegisterService) Register(ctx context.Context, req dto.RegisterData) er
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	req.Username = strings.ToLower(strings.TrimSpace(req.Username))
 
-	_, err := s.UserRepository.FindUserByEmail(ctx, req.Email)
-	if err == nil {
-		return ErrEmailTaken
-	}
-	if !errors.Is(err, pgx.ErrNoRows) {
-		slog.Error("find user by email failed", "error", err)
-		return ErrInternal
-	}
-
-	_, err = s.UserRepository.FindUserByUsername(ctx, req.Username)
+	_, err := s.UserRepository.FindUserByUsername(ctx, req.Username)
 	if err == nil {
 		return ErrUsernameTaken
 	}

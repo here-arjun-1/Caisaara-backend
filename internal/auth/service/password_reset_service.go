@@ -66,15 +66,6 @@ func (s *PasswordResetService) SetDisconnector(disconnector SessionDisconnector)
 func (s *PasswordResetService) ForgotPassword(ctx context.Context, req dto.ForgotPasswordRequest) error {
 	userEmail := strings.ToLower(strings.TrimSpace(req.Email))
 
-	_, err := s.UserRepository.FindUserByEmail(ctx, userEmail)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		slog.Error("find user by email failed", "error", err)
-		return ErrInternal
-	}
-
 	otp, err := generateOTP()
 	if err != nil {
 		slog.Error("generate otp failed", "error", err)
@@ -206,6 +197,9 @@ func (s *PasswordResetService) ResetPassword(ctx context.Context, req dto.ResetP
 	}
 
 	err = s.PasswordResetRepository.ResetPassword(ctx, email, string(hashedPassword))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errors.New("invalid or expired reset token")
+	}
 	if err != nil {
 		slog.Error("reset password failed", "error", err)
 		return ErrInternal
