@@ -72,6 +72,39 @@ func (h *Handler) GetLevel(c *gin.Context) {
 	response.Success(c, http.StatusOK, "mini-mates level fetched", res)
 }
 
+func (h *Handler) GetHint(c *gin.Context) {
+	ctx := c.Request.Context()
+	userID, ok := middleware.GetUserID(c)
+	if !ok || userID <= 0 {
+		response.Error(c, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	levelStr := c.Param("level")
+	levelNumber, err := strconv.Atoi(levelStr)
+	if err != nil || levelNumber <= 0 {
+		response.Error(c, http.StatusBadRequest, "invalid level number")
+		return
+	}
+
+	res, err := h.Service.GetHint(ctx, userID, levelNumber)
+	if err != nil {
+		if errors.Is(err, ErrLevelLocked) {
+			response.Error(c, http.StatusForbidden, "level is locked")
+			return
+		}
+		if errors.Is(err, ErrLevelNotFound) {
+			response.Error(c, http.StatusNotFound, "level not found")
+			return
+		}
+		slog.ErrorContext(ctx, "get mini-mates hint failed", "user_id", userID, "level", levelNumber, "error", err)
+		response.Error(c, http.StatusInternalServerError, "failed to get hint")
+		return
+	}
+
+	response.Success(c, http.StatusOK, "hint fetched", res)
+}
+
 func (h *Handler) SubmitMove(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, ok := middleware.GetUserID(c)
@@ -110,4 +143,3 @@ func (h *Handler) SubmitMove(c *gin.Context) {
 
 	response.Success(c, http.StatusOK, "move processed", res)
 }
-
