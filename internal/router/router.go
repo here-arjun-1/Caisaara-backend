@@ -29,6 +29,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/puzzle"
 	"github.com/here-arjun-1/Caisaara-backend/internal/report"
 	"github.com/here-arjun-1/Caisaara-backend/internal/response"
+	"github.com/here-arjun-1/Caisaara-backend/internal/streak"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tilt"
 	"github.com/here-arjun-1/Caisaara-backend/internal/tournament"
 	"github.com/here-arjun-1/Caisaara-backend/internal/websocket"
@@ -58,6 +59,7 @@ func New(
 	newsHandler *news.Handler,
 	reportHandler *report.Handler,
 	adminHandler *admin.Handler,
+	streakHandler *streak.Handler,
 	privacyHandler ...*privacy.Handler,
 ) (*gin.Engine, error) {
 	r := gin.New()
@@ -183,6 +185,10 @@ func New(
 
 	if accountHandler != nil {
 		account.RegisterRoutes(accountHandler, protected)
+	}
+
+	if streakHandler != nil {
+		streak.RegisterRoutes(streakHandler, r, middleware.JWTMiddleware(jwtSecret, authModule.UserRepository))
 	}
 
 	if len(privacyHandler) > 0 && privacyHandler[0] != nil {
