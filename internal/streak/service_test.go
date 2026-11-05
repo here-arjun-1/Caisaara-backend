@@ -64,7 +64,6 @@ func (m *mockRepo) GetActivityDaysInRange(ctx context.Context, userID int64, sta
 	return res, nil
 }
 
-
 func TestStreakLifecycle(t *testing.T) {
 	ctx := context.Background()
 	repo := newMockRepo()
@@ -245,4 +244,3 @@ func TestStreakGapBeyondGracePeriod(t *testing.T) {
 		t.Fatalf("streak should be reset to 1 on activity: %+v", up)
 	}
 }
-

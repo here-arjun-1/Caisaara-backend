@@ -42,9 +42,14 @@ type disconnectTimerEntry struct {
 	disconnectedAt time.Time
 }
 
+type StreakService interface {
+	GetStreakUpdate(ctx context.Context, userID int64) (*game.StreakUpdate, error)
+}
+
 type Handler struct {
 	Hub                *Hub
 	GameService        game.GameService
+	StreakService      StreakService
 	ChatService        chat.ChatService
 	InviteFinder       InviteFinder
 	WatchInviteService WatchInviteService
@@ -82,6 +87,31 @@ func (h *Handler) SetPasswordVersionGetter(getter PasswordVersionGetter) {
 
 func (h *Handler) SetTournamentFinder(finder TournamentFinder) {
 	h.TournamentFinder = finder
+}
+
+func (h *Handler) SetStreakService(ss StreakService) {
+	h.StreakService = ss
+}
+
+func (h *Handler) attachStreakUpdate(msg *game.GameStateMessage, g *game.Game, userID int64) {
+	if g == nil || g.Status != game.StatusFinished || userID <= 0 {
+		return
+	}
+	if userID == g.WhitePlayerID && g.WhiteStreak != nil {
+		msg.Streak = g.WhiteStreak
+		return
+	}
+	if userID == g.BlackPlayerID && g.BlackStreak != nil {
+		msg.Streak = g.BlackStreak
+		return
+	}
+	if h.StreakService != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if update, err := h.StreakService.GetStreakUpdate(ctx, userID); err == nil && update != nil {
+			msg.Streak = update
+		}
+	}
 }
 
 func (h *Handler) SetTournamentService(finder TournamentFinder) {
@@ -729,6 +759,7 @@ func (h *Handler) broadcastGameState(ctx context.Context, room *Room, g *game.Ga
 		}
 		msg := baseMsg
 		attachRatingUpdate(&msg, g, client.UserID)
+		h.attachStreakUpdate(&msg, g, client.UserID)
 
 		data, err := json.Marshal(msg)
 		if err != nil {
@@ -995,6 +1026,7 @@ func (h *Handler) sendClientGameState(
 	response := h.buildGameStateMessage(ctx, g, moves, messageType)
 	if client != nil {
 		attachRatingUpdate(&response, g, client.UserID)
+		h.attachStreakUpdate(&response, g, client.UserID)
 	}
 
 	data, err := json.Marshal(response)
