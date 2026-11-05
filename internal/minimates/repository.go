@@ -102,7 +102,7 @@ func (r *Repository) SaveLevelCompletion(ctx context.Context, userID int64, leve
 	if err != nil {
 		return nil, fmt.Errorf("begin transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	var prevStars int
 	var wasCompleted bool
@@ -203,7 +203,7 @@ func (r *Repository) SaveLevelCompletion(ctx context.Context, userID int64, leve
 func (r *Repository) GetUserLevelHistory(ctx context.Context, userID int64, levelNumber int) (*LevelHistory, error) {
 	var h LevelHistory
 	err := r.DB.QueryRow(ctx,
-		`SELECT id, user_id, level_number, stars, completed, time_taken_ms, attempts, completed_at, created_at, updated_at
+		`SELECT id, user_id, level_number, stars, completed, hint_used, time_taken_ms, attempts, completed_at, created_at, updated_at
 		FROM user_mini_mates_level_history
 		WHERE user_id = $1 AND level_number = $2`,
 		userID, levelNumber,
@@ -213,6 +213,7 @@ func (r *Repository) GetUserLevelHistory(ctx context.Context, userID int64, leve
 		&h.LevelNumber,
 		&h.Stars,
 		&h.Completed,
+		&h.HintUsed,
 		&h.TimeTakenMs,
 		&h.Attempts,
 		&h.CompletedAt,
@@ -226,6 +227,21 @@ func (r *Repository) GetUserLevelHistory(ctx context.Context, userID int64, leve
 		return nil, fmt.Errorf("get user level history: %w", err)
 	}
 	return &h, nil
+}
+
+func (r *Repository) MarkHintUsed(ctx context.Context, userID int64, levelNumber int) error {
+	_, err := r.DB.Exec(ctx,
+		`INSERT INTO user_mini_mates_level_history (user_id, level_number, stars, completed, hint_used, attempts, created_at, updated_at)
+		VALUES ($1, $2, 0, false, true, 1, NOW(), NOW())
+		ON CONFLICT (user_id, level_number) DO UPDATE SET
+			hint_used = true,
+			updated_at = NOW()`,
+		userID, levelNumber,
+	)
+	if err != nil {
+		return fmt.Errorf("mark hint used: %w", err)
+	}
+	return nil
 }
 
 func (r *Repository) RecordFailedAttempt(ctx context.Context, userID int64, levelNumber int) error {
@@ -352,4 +368,3 @@ func (r *Repository) GetChapterOverview(ctx context.Context, userID int64) (*Min
 		Chapters:        orderedChapters,
 	}, nil
 }
-

@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS user_mini_mates_level_history (
     level_number INT NOT NULL REFERENCES mini_mates_levels(level_number) ON DELETE CASCADE,
     stars INT NOT NULL DEFAULT 0,
     completed BOOLEAN NOT NULL DEFAULT FALSE,
+    hint_used BOOLEAN NOT NULL DEFAULT FALSE,
     time_taken_ms INT NOT NULL DEFAULT 0,
     attempts INT NOT NULL DEFAULT 1,
     completed_at TIMESTAMPTZ,
@@ -37,6 +38,7 @@ CREATE TABLE IF NOT EXISTS user_mini_mates_level_history (
 
 CREATE INDEX IF NOT EXISTS idx_user_mini_mates_level_history_user_id ON user_mini_mates_level_history(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_mini_mates_level_history_level ON user_mini_mates_level_history(level_number);
+ALTER TABLE user_mini_mates_level_history ADD COLUMN IF NOT EXISTS hint_used BOOLEAN NOT NULL DEFAULT FALSE;
 
 INSERT INTO mini_mates_levels (level_number, puzzle_id, chapter, target_moves, title)
 WITH t1_pool AS (

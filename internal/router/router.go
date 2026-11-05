@@ -210,7 +210,7 @@ func New(
 	}
 
 	if miniMatesHandler != nil {
-		minimates.RegisterRoutes(miniMatesHandler, protected)
+		minimates.RegisterRoutes(miniMatesHandler, r, middleware.JWTMiddleware(jwtSecret, authModule.UserRepository))
 	}
 
 	return r, nil

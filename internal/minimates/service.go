@@ -18,15 +18,28 @@ var (
 type MiniMatesService interface {
 	GetOverview(ctx context.Context, userID int64) (*MiniMatesOverviewResponse, error)
 	GetLevel(ctx context.Context, userID int64, levelNumber int) (*MiniMatesLevelResponse, error)
+	GetHint(ctx context.Context, userID int64, levelNumber int) (*MiniMatesHintResponse, error)
 	SubmitMove(ctx context.Context, userID int64, levelNumber int, req SubmitMiniMatesMoveRequest) (*SubmitMiniMatesMoveResponse, error)
 }
 
+type MiniMatesRepository interface {
+	GetMiniMatesLevel(ctx context.Context, levelNumber int) (*LevelWithPuzzle, error)
+	GetLevel(ctx context.Context, levelNumber int) (*LevelWithPuzzle, error)
+	GetUserMiniMatesProgress(ctx context.Context, userID int64) (*UserProgress, error)
+	GetUserProgress(ctx context.Context, userID int64) (*UserProgress, error)
+	SaveLevelCompletion(ctx context.Context, userID int64, levelNumber int, stars int, timeTakenMs int) (*UserProgress, error)
+	GetUserLevelHistory(ctx context.Context, userID int64, levelNumber int) (*LevelHistory, error)
+	MarkHintUsed(ctx context.Context, userID int64, levelNumber int) error
+	RecordFailedAttempt(ctx context.Context, userID int64, levelNumber int) error
+	GetChapterOverview(ctx context.Context, userID int64) (*MiniMatesOverviewResponse, error)
+}
+
 type Service struct {
-	repo          *Repository
+	repo          MiniMatesRepository
 	streakService any
 }
 
-func NewService(repo *Repository, streakService any) *Service {
+func NewService(repo MiniMatesRepository, streakService any) *Service {
 	return &Service{
 		repo:          repo,
 		streakService: streakService,
@@ -50,22 +63,22 @@ func (s *Service) recordStreak(ctx context.Context, userID int64) {
 	val := reflect.ValueOf(s.streakService)
 	method := val.MethodByName("RecordActivity")
 	if method.IsValid() {
-		numIn := method.Type().NumIn()
-		if numIn == 3 {
+		switch method.Type().NumIn() {
+		case 3:
 			method.Call([]reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(userID), reflect.ValueOf("minimates")})
 			return
-		} else if numIn == 2 {
+		case 2:
 			method.Call([]reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(userID)})
 			return
 		}
 	}
 	method = val.MethodByName("RecordActivityDay")
 	if method.IsValid() {
-		numIn := method.Type().NumIn()
-		if numIn == 2 {
+		switch method.Type().NumIn() {
+		case 2:
 			method.Call([]reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(userID)})
 			return
-		} else if numIn == 3 {
+		case 3:
 			method.Call([]reflect.Value{reflect.ValueOf(ctx), reflect.ValueOf(userID), reflect.ValueOf("minimates")})
 			return
 		}
@@ -145,6 +158,102 @@ func (s *Service) GetLevel(ctx context.Context, userID int64, levelNumber int) (
 	}, nil
 }
 
+func getPieceNameFromFEN(fen string, square string) string {
+	if len(square) < 2 {
+		return "Piece"
+	}
+	parts := strings.Fields(fen)
+	if len(parts) == 0 {
+		return "Piece"
+	}
+	ranks := strings.Split(parts[0], "/")
+	if len(ranks) != 8 {
+		return "Piece"
+	}
+	targetFile := int(square[0] - 'a')
+	targetRank := int(square[1] - '1')
+	if targetFile < 0 || targetFile > 7 || targetRank < 0 || targetRank > 7 {
+		return "Piece"
+	}
+	rankStr := ranks[7-targetRank]
+	col := 0
+	var pieceChar rune
+	for _, ch := range rankStr {
+		if ch >= '1' && ch <= '8' {
+			col += int(ch - '0')
+		} else {
+			if col == targetFile {
+				pieceChar = ch
+				break
+			}
+			col++
+		}
+	}
+	switch strings.ToUpper(string(pieceChar)) {
+	case "Q":
+		return "Queen"
+	case "R":
+		return "Rook"
+	case "B":
+		return "Bishop"
+	case "N":
+		return "Knight"
+	case "K":
+		return "King"
+	case "P":
+		return "Pawn"
+	default:
+		return "Piece"
+	}
+}
+
+func (s *Service) GetHint(ctx context.Context, userID int64, levelNumber int) (*MiniMatesHintResponse, error) {
+	progress, err := s.repo.GetUserMiniMatesProgress(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if levelNumber > progress.CurrentLevel {
+		return nil, ErrLevelLocked
+	}
+
+	lp, err := s.repo.GetMiniMatesLevel(ctx, levelNumber)
+	if err != nil {
+		return nil, err
+	}
+
+	movesList := strings.Fields(lp.Moves)
+	if len(movesList) < 2 {
+		return nil, errors.New("invalid puzzle move sequence")
+	}
+
+	setupMove := movesList[0]
+	currentFEN := lp.FEN
+	fenOpt, err := chess.FEN(lp.FEN)
+	if err == nil {
+		g := chess.NewGame(fenOpt)
+		if err := g.PushNotationMove(setupMove, chess.UCINotation{}, nil); err == nil {
+			currentFEN = g.FEN()
+		}
+	}
+
+	playerMove := movesList[1]
+	if len(playerMove) < 4 {
+		return nil, errors.New("invalid solution move")
+	}
+	fromSquare := playerMove[:2]
+	toSquare := playerMove[2:4]
+	pieceName := getPieceNameFromFEN(currentFEN, fromSquare)
+
+	_ = s.repo.MarkHintUsed(ctx, userID, levelNumber)
+
+	return &MiniMatesHintResponse{
+		FromSquare: fromSquare,
+		ToSquare:   toSquare,
+		Piece:      pieceName,
+		Message:    fmt.Sprintf("Move your %s on %s", pieceName, fromSquare),
+	}, nil
+}
+
 func (s *Service) SubmitMove(ctx context.Context, userID int64, levelNumber int, req SubmitMiniMatesMoveRequest) (*SubmitMiniMatesMoveResponse, error) {
 	progress, err := s.repo.GetUserMiniMatesProgress(ctx, userID)
 	if err != nil {
@@ -201,10 +310,17 @@ func (s *Service) SubmitMove(ctx context.Context, userID int64, levelNumber int,
 			}
 			history, _ := s.repo.GetUserLevelHistory(ctx, userID, levelNumber)
 			attempts := 1
-			if history != nil && history.Attempts > 0 {
-				attempts = history.Attempts
+			hintUsed := false
+			if history != nil {
+				if history.Attempts > 0 {
+					attempts = history.Attempts + 1
+				}
+				hintUsed = history.HintUsed
 			}
 			stars := calculateStars(attempts)
+			if hintUsed {
+				stars = 1
+			}
 			updatedProgress, err := s.repo.SaveLevelCompletion(ctx, userID, levelNumber, stars, req.TimeTakenMs)
 			if err != nil {
 				return nil, fmt.Errorf("save level completion: %w", err)
@@ -248,16 +364,23 @@ func (s *Service) SubmitMove(ctx context.Context, userID int64, levelNumber int,
 		}, nil
 	}
 
-	isFinalPlayerMove := (playerPly + 1 >= len(movesList))
+	isFinalPlayerMove := (playerPly+1 >= len(movesList))
 
 	if isFinalPlayerMove {
 		history, _ := s.repo.GetUserLevelHistory(ctx, userID, levelNumber)
 		attempts := 1
-		if history != nil && history.Attempts > 0 {
-			attempts = history.Attempts
+		hintUsed := false
+		if history != nil {
+			if history.Attempts > 0 {
+				attempts = history.Attempts + 1
+			}
+			hintUsed = history.HintUsed
 		}
 
 		stars := calculateStars(attempts)
+		if hintUsed {
+			stars = 1
+		}
 
 		updatedProgress, err := s.repo.SaveLevelCompletion(ctx, userID, levelNumber, stars, req.TimeTakenMs)
 		if err != nil {
@@ -291,4 +414,3 @@ func (s *Service) SubmitMove(ctx context.Context, userID int64, levelNumber int,
 		Message:     "correct move",
 	}, nil
 }
-
