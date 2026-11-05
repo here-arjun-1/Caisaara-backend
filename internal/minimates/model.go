@@ -26,6 +26,7 @@ type LevelHistory struct {
 	LevelNumber int        `json:"level_number"`
 	Stars       int        `json:"stars"`
 	Completed   bool       `json:"completed"`
+	HintUsed    bool       `json:"hint_used"`
 	TimeTakenMs int        `json:"time_taken_ms"`
 	Attempts    int        `json:"attempts"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
@@ -91,6 +92,13 @@ type SubmitMiniMatesMoveResponse struct {
 	NextUnlockedLevel int    `json:"next_unlocked_level"`
 	FEN               string `json:"fen,omitempty"`
 	Message           string `json:"message,omitempty"`
+}
+
+type MiniMatesHintResponse struct {
+	FromSquare string `json:"from_square"`
+	ToSquare   string `json:"to_square,omitempty"`
+	Piece      string `json:"piece"`
+	Message    string `json:"message"`
 }
 
 type LevelWithPuzzle struct {
