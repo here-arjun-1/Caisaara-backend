@@ -13,10 +13,8 @@ func RegisterRoutes(handler *Handler, r *gin.Engine, authMiddleware gin.HandlerF
 	group := r.Group("/mini-mates")
 	group.Use(authMiddleware, limiter.Limit)
 	{
-		group.GET("", handler.GetOverview)
 		group.GET("/overview", handler.GetOverview)
 		group.GET("/levels/:level", handler.GetLevel)
-		group.GET("/levels/:level/hint", handler.GetHint)
 		group.POST("/levels/:level/hint", handler.GetHint)
 		group.POST("/levels/:level/move", handler.SubmitMove)
 	}
