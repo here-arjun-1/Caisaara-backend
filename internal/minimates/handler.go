@@ -87,7 +87,17 @@ func (h *Handler) GetHint(c *gin.Context) {
 		return
 	}
 
-	res, err := h.Service.GetHint(ctx, userID, levelNumber)
+	var req MiniMatesHintRequest
+	if c.Request.ContentLength > 0 {
+		_ = c.ShouldBindJSON(&req)
+	}
+	if moveIndexStr := c.Query("move_index"); moveIndexStr != "" && req.MoveIndex == 0 {
+		if idx, err := strconv.Atoi(moveIndexStr); err == nil && idx >= 0 {
+			req.MoveIndex = idx
+		}
+	}
+
+	res, err := h.Service.GetHint(ctx, userID, levelNumber, req.MoveIndex)
 	if err != nil {
 		if errors.Is(err, ErrLevelLocked) {
 			response.Error(c, http.StatusForbidden, "level is locked")

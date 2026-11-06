@@ -18,7 +18,7 @@ var (
 type MiniMatesService interface {
 	GetOverview(ctx context.Context, userID int64) (*MiniMatesOverviewResponse, error)
 	GetLevel(ctx context.Context, userID int64, levelNumber int) (*MiniMatesLevelResponse, error)
-	GetHint(ctx context.Context, userID int64, levelNumber int) (*MiniMatesHintResponse, error)
+	GetHint(ctx context.Context, userID int64, levelNumber int, moveIndex int) (*MiniMatesHintResponse, error)
 	SubmitMove(ctx context.Context, userID int64, levelNumber int, req SubmitMiniMatesMoveRequest) (*SubmitMiniMatesMoveResponse, error)
 }
 
@@ -124,10 +124,10 @@ func (s *Service) GetLevel(ctx context.Context, userID int64, levelNumber int) (
 	}
 
 	chapterNames := map[int]string{
-		1: "Novice Mates",
-		2: "Tactical Traps",
-		3: "Master Sacrifices",
-		4: "Grandmaster Net",
+		1: "Chapter 1: Novice Mates",
+		2: "Chapter 2: Tactical Traps",
+		3: "Chapter 3: Master Sacrifices",
+		4: "Chapter 4: Grandmaster Net",
 	}
 	chapterName := chapterNames[lp.Chapter]
 	if chapterName == "" {
@@ -142,6 +142,8 @@ func (s *Service) GetLevel(ctx context.Context, userID int64, levelNumber int) (
 		completed = history.Completed
 	}
 
+	viewport := CalculateViewport(currentFEN, movesList)
+
 	return &MiniMatesLevelResponse{
 		LevelNumber: lp.LevelNumber,
 		PuzzleID:    lp.PuzzleID,
@@ -153,6 +155,7 @@ func (s *Service) GetLevel(ctx context.Context, userID int64, levelNumber int) (
 		InitialFEN:  lp.FEN,
 		SetupMove:   setupMove,
 		PlayerColor: playerColor,
+		Viewport:    viewport,
 		Stars:       stars,
 		Completed:   completed,
 	}, nil
@@ -207,7 +210,155 @@ func getPieceNameFromFEN(fen string, square string) string {
 	}
 }
 
-func (s *Service) GetHint(ctx context.Context, userID int64, levelNumber int) (*MiniMatesHintResponse, error) {
+func CalculateViewport(fen string, moves []string) Viewport {
+	minFile, maxFile := 7, 0
+	minRank, maxRank := 7, 0
+
+	parts := strings.Fields(fen)
+	if len(parts) > 0 {
+		ranks := strings.Split(parts[0], "/")
+		if len(ranks) == 8 {
+			for rIdx, rankStr := range ranks {
+				actualRank := 7 - rIdx
+				fileIdx := 0
+				for _, ch := range rankStr {
+					if ch >= '1' && ch <= '8' {
+						fileIdx += int(ch - '0')
+					} else {
+						if fileIdx < minFile {
+							minFile = fileIdx
+						}
+						if fileIdx > maxFile {
+							maxFile = fileIdx
+						}
+						if actualRank < minRank {
+							minRank = actualRank
+						}
+						if actualRank > maxRank {
+							maxRank = actualRank
+						}
+
+						if ch == 'k' || ch == 'K' {
+							for df := -1; df <= 1; df++ {
+								for dr := -1; dr <= 1; dr++ {
+									ef := fileIdx + df
+									er := actualRank + dr
+									if ef >= 0 && ef <= 7 && er >= 0 && er <= 7 {
+										if ef < minFile {
+											minFile = ef
+										}
+										if ef > maxFile {
+											maxFile = ef
+										}
+										if er < minRank {
+											minRank = er
+										}
+										if er > maxRank {
+											maxRank = er
+										}
+									}
+								}
+							}
+						}
+
+						fileIdx++
+					}
+				}
+			}
+		}
+	}
+
+	for _, mv := range moves {
+		if len(mv) >= 4 {
+			f1, r1 := int(mv[0]-'a'), int(mv[1]-'1')
+			f2, r2 := int(mv[2]-'a'), int(mv[3]-'1')
+			if f1 >= 0 && f1 <= 7 && r1 >= 0 && r1 <= 7 {
+				if f1 < minFile {
+					minFile = f1
+				}
+				if f1 > maxFile {
+					maxFile = f1
+				}
+				if r1 < minRank {
+					minRank = r1
+				}
+				if r1 > maxRank {
+					maxRank = r1
+				}
+			}
+			if f2 >= 0 && f2 <= 7 && r2 >= 0 && r2 <= 7 {
+				if f2 < minFile {
+					minFile = f2
+				}
+				if f2 > maxFile {
+					maxFile = f2
+				}
+				if r2 < minRank {
+					minRank = r2
+				}
+				if r2 > maxRank {
+					maxRank = r2
+				}
+			}
+		}
+	}
+
+	if minFile > maxFile {
+		minFile, maxFile = 0, 7
+	}
+	if minRank > maxRank {
+		minRank, maxRank = 0, 7
+	}
+
+expandFiles:
+	for (maxFile - minFile + 1) < 3 {
+		switch {
+		case minFile > 0:
+			minFile--
+		case maxFile < 7:
+			maxFile++
+		default:
+			break expandFiles
+		}
+	}
+expandRanks:
+	for (maxRank - minRank + 1) < 3 {
+		switch {
+		case minRank > 0:
+			minRank--
+		case maxRank < 7:
+			maxRank++
+		default:
+			break expandRanks
+		}
+	}
+
+	if (maxFile - minFile + 1) > 5 {
+		maxFile = minFile + 4
+		if maxFile > 7 {
+			maxFile = 7
+			minFile = 3
+		}
+	}
+	if (maxRank - minRank + 1) > 5 {
+		maxRank = minRank + 4
+		if maxRank > 7 {
+			maxRank = 7
+			minRank = 3
+		}
+	}
+
+	return Viewport{
+		StartFile: string(rune('a' + minFile)),
+		EndFile:   string(rune('a' + maxFile)),
+		StartRank: minRank + 1,
+		EndRank:   maxRank + 1,
+		Cols:      maxFile - minFile + 1,
+		Rows:      maxRank - minRank + 1,
+	}
+}
+
+func (s *Service) GetHint(ctx context.Context, userID int64, levelNumber int, moveIndex int) (*MiniMatesHintResponse, error) {
 	progress, err := s.repo.GetUserMiniMatesProgress(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -226,29 +377,46 @@ func (s *Service) GetHint(ctx context.Context, userID int64, levelNumber int) (*
 		return nil, errors.New("invalid puzzle move sequence")
 	}
 
-	setupMove := movesList[0]
-	currentFEN := lp.FEN
+	playerPly := 1 + moveIndex*2
+	if playerPly >= len(movesList) && moveIndex > 0 {
+		altPly := 1 + (moveIndex-1)*2
+		if altPly < len(movesList) {
+			playerPly = altPly
+		}
+	}
+	if playerPly >= len(movesList) {
+		playerPly = len(movesList) - 1
+		if playerPly%2 == 0 {
+			playerPly--
+		}
+	}
+	if playerPly < 1 {
+		playerPly = 1
+	}
+
 	fenOpt, err := chess.FEN(lp.FEN)
-	if err == nil {
-		g := chess.NewGame(fenOpt)
-		if err := g.PushNotationMove(setupMove, chess.UCINotation{}, nil); err == nil {
-			currentFEN = g.FEN()
+	if err != nil {
+		return nil, fmt.Errorf("parse fen: %w", err)
+	}
+	board := chess.NewGame(fenOpt)
+	for i := 0; i < playerPly; i++ {
+		if err := board.PushNotationMove(movesList[i], chess.UCINotation{}, nil); err != nil {
+			return nil, fmt.Errorf("apply prior move %s: %w", movesList[i], err)
 		}
 	}
 
-	playerMove := movesList[1]
+	currentFEN := board.FEN()
+	playerMove := movesList[playerPly]
 	if len(playerMove) < 4 {
 		return nil, errors.New("invalid solution move")
 	}
 	fromSquare := playerMove[:2]
-	toSquare := playerMove[2:4]
 	pieceName := getPieceNameFromFEN(currentFEN, fromSquare)
 
 	_ = s.repo.MarkHintUsed(ctx, userID, levelNumber)
 
 	return &MiniMatesHintResponse{
 		FromSquare: fromSquare,
-		ToSquare:   toSquare,
 		Piece:      pieceName,
 		Message:    fmt.Sprintf("Move your %s on %s", pieceName, fromSquare),
 	}, nil
@@ -355,7 +523,10 @@ func (s *Service) SubmitMove(ctx context.Context, userID int64, levelNumber int,
 	lastMove := board.Moves()[len(board.Moves())-1]
 	playedUCI := chess.UCINotation{}.Encode(nil, lastMove)
 
-	if !strings.EqualFold(playedUCI, expectedUCI) {
+	isFinalPlayerMove := (playerPly+1 >= len(movesList))
+	isAlternateCheckmate := isFinalPlayerMove && board.Method() == chess.Checkmate
+
+	if !strings.EqualFold(playedUCI, expectedUCI) && !isAlternateCheckmate {
 		_ = s.repo.RecordFailedAttempt(ctx, userID, levelNumber)
 		return &SubmitMiniMatesMoveResponse{
 			Correct:     false,
@@ -364,9 +535,7 @@ func (s *Service) SubmitMove(ctx context.Context, userID int64, levelNumber int,
 		}, nil
 	}
 
-	isFinalPlayerMove := (playerPly+1 >= len(movesList))
-
-	if isFinalPlayerMove {
+	if isFinalPlayerMove || isAlternateCheckmate {
 		history, _ := s.repo.GetUserLevelHistory(ctx, userID, levelNumber)
 		attempts := 1
 		hintUsed := false

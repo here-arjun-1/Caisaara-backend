@@ -61,19 +61,33 @@ type MiniMatesOverviewResponse struct {
 	Chapters        []ChapterInfo `json:"chapters"`
 }
 
+type Viewport struct {
+	StartFile string `json:"start_file"`
+	EndFile   string `json:"end_file"`
+	StartRank int    `json:"start_rank"`
+	EndRank   int    `json:"end_rank"`
+	Cols      int    `json:"cols"`
+	Rows      int    `json:"rows"`
+}
+
 type MiniMatesLevelResponse struct {
-	LevelNumber int    `json:"level_number"`
-	PuzzleID    string `json:"puzzle_id"`
-	Chapter     int    `json:"chapter"`
-	ChapterName string `json:"chapter_name"`
-	TargetMoves int    `json:"target_moves"`
-	Title       string `json:"title"`
-	FEN         string `json:"fen"`
-	InitialFEN  string `json:"initial_fen"`
-	SetupMove   string `json:"setup_move"`
-	PlayerColor string `json:"player_color"`
-	Stars       int    `json:"stars"`
-	Completed   bool   `json:"completed"`
+	LevelNumber int      `json:"level_number"`
+	PuzzleID    string   `json:"puzzle_id"`
+	Chapter     int      `json:"chapter"`
+	ChapterName string   `json:"chapter_name"`
+	TargetMoves int      `json:"target_moves"`
+	Title       string   `json:"title"`
+	FEN         string   `json:"fen"`
+	InitialFEN  string   `json:"initial_fen"`
+	SetupMove   string   `json:"setup_move"`
+	PlayerColor string   `json:"player_color"`
+	Viewport    Viewport `json:"viewport"`
+	Stars       int      `json:"stars"`
+	Completed   bool     `json:"completed"`
+}
+
+type MiniMatesHintRequest struct {
+	MoveIndex int `json:"move_index"`
 }
 
 type SubmitMiniMatesMoveRequest struct {
@@ -96,7 +110,6 @@ type SubmitMiniMatesMoveResponse struct {
 
 type MiniMatesHintResponse struct {
 	FromSquare string `json:"from_square"`
-	ToSquare   string `json:"to_square,omitempty"`
 	Piece      string `json:"piece"`
 	Message    string `json:"message"`
 }
