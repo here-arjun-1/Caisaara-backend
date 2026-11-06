@@ -62,6 +62,7 @@ func NewRegisterService(
 func (s *RegisterService) Register(ctx context.Context, req dto.RegisterData) error {
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	req.Username = strings.ToLower(strings.TrimSpace(req.Username))
+	key := "register:" + req.Email
 
 	_, err := s.UserRepository.FindUserByUsername(ctx, req.Username)
 	if err == nil {
@@ -70,6 +71,23 @@ func (s *RegisterService) Register(ctx context.Context, req dto.RegisterData) er
 	if !errors.Is(err, pgx.ErrNoRows) {
 		slog.Error("find user by username failed", "error", err)
 		return ErrInternal
+	}
+
+	oldAttempts := 0
+	oldValue, err := s.RedisClient.Get(ctx, key).Result()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		slog.Error("get old pending user failed", "error", err)
+		return ErrInternal
+	}
+	if err == nil {
+		var oldUser pendingUser
+		if json.Unmarshal([]byte(oldValue), &oldUser) == nil {
+			oldAttempts = oldUser.Attempts
+		}
+	}
+
+	if oldAttempts >= maxOTPAttempts {
+		return nil
 	}
 
 	code, err := generateOTP()
@@ -90,10 +108,11 @@ func (s *RegisterService) Register(ctx context.Context, req dto.RegisterData) er
 	pUser := pendingUser{
 		Req:       req,
 		CodeHash:  codeHash,
+		Attempts:  oldAttempts,
 		ExpiresAt: time.Now().Add(15 * time.Minute),
 	}
 	pUserJSON, _ := json.Marshal(pUser)
-	if err := s.RedisClient.Set(ctx, "register:"+req.Email, pUserJSON, 15*time.Minute).Err(); err != nil {
+	if err := s.RedisClient.Set(ctx, key, pUserJSON, 15*time.Minute).Err(); err != nil {
 		slog.Error("save pending user to redis failed", "error", err)
 		return ErrInternal
 	}
@@ -140,12 +159,8 @@ func (s *RegisterService) VerifyRegistration(ctx context.Context, req dto.Verify
 
 		pUser.Attempts++
 		if pUser.Attempts > maxOTPAttempts {
-			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-				pipe.Del(ctx, key)
-				return nil
-			})
-			returnErr = errors.New("too many attempts, please request a new code")
-			return err
+			returnErr = errors.New("too many attempts, please try again later")
+			return nil
 		}
 
 		newData, _ := json.Marshal(pUser)

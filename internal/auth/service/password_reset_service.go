@@ -65,6 +65,24 @@ func (s *PasswordResetService) SetDisconnector(disconnector SessionDisconnector)
 
 func (s *PasswordResetService) ForgotPassword(ctx context.Context, req dto.ForgotPasswordRequest) error {
 	userEmail := strings.ToLower(strings.TrimSpace(req.Email))
+	key := "forgot_otp:" + userEmail
+
+	oldAttempts := 0
+	oldValue, err := s.RedisClient.Get(ctx, key).Result()
+	if err != nil && !errors.Is(err, redis.Nil) {
+		slog.Error("get old otp failed", "error", err)
+		return ErrInternal
+	}
+	if err == nil {
+		var oldData OTPData
+		if json.Unmarshal([]byte(oldValue), &oldData) == nil {
+			oldAttempts = oldData.Attempts
+		}
+	}
+
+	if oldAttempts >= maxOTPAttempts {
+		return nil
+	}
 
 	otp, err := generateOTP()
 	if err != nil {
@@ -76,11 +94,12 @@ func (s *PasswordResetService) ForgotPassword(ctx context.Context, req dto.Forgo
 
 	data := OTPData{
 		CodeHash:  otpHash,
+		Attempts:  oldAttempts,
 		ExpiresAt: time.Now().Add(15 * time.Minute),
 	}
 	dataJSON, _ := json.Marshal(data)
 
-	if err := s.RedisClient.Set(ctx, "forgot_otp:"+userEmail, dataJSON, 15*time.Minute).Err(); err != nil {
+	if err := s.RedisClient.Set(ctx, key, dataJSON, 15*time.Minute).Err(); err != nil {
 		slog.Error("save otp to redis failed", "error", err)
 		return ErrInternal
 	}
@@ -128,12 +147,8 @@ func (s *PasswordResetService) VerifyCode(ctx context.Context, req dto.VerifyCod
 
 		data.Attempts++
 		if data.Attempts > maxOTPAttempts {
-			_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-				pipe.Del(ctx, key)
-				return nil
-			})
-			returnErr = errors.New("too many attempts, please request a new code")
-			return err
+			returnErr = errors.New("too many attempts, please try again later")
+			return nil
 		}
 
 		newData, _ := json.Marshal(data)
