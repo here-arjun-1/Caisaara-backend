@@ -31,19 +31,24 @@ func (m *Module) RegisterRoutes(r *gin.Engine, protected *gin.RouterGroup) {
 	logoutLimiter := middleware.NewTokenBucketLimiter(10, time.Minute)
 	ratingLimiter := middleware.NewTokenBucketLimiter(5, time.Minute)
 
+	loginEmailLimiter := middleware.NewTokenBucketLimiter(10, 15*time.Minute)
+	verifyRegistrationEmailLimiter := middleware.NewTokenBucketLimiter(5, 15*time.Minute)
+	forgotEmailLimiter := middleware.NewTokenBucketLimiter(3, 15*time.Minute)
+	verifyResetEmailLimiter := middleware.NewTokenBucketLimiter(5, 15*time.Minute)
+
 	authGroup := r.Group("")
 	{
 		authGroup.POST("/register", registerLimiter.Limit, h.Register.Register)
-		authGroup.POST("/verify-registration", verifyRegistrationLimiter.Limit, h.Register.VerifyRegistration)
+		authGroup.POST("/verify-registration", verifyRegistrationLimiter.Limit, verifyRegistrationEmailLimiter.LimitByEmail, h.Register.VerifyRegistration)
 		authGroup.POST("/guest-login", guestLoginLimiter.Limit, h.Register.GuestLogin)
-		authGroup.POST("/login", loginLimiter.Limit, h.Login.Login)
+		authGroup.POST("/login", loginLimiter.Limit, loginEmailLimiter.LimitByEmail, h.Login.Login)
 		authGroup.POST("/refresh", refreshLimiter.Limit, h.Refresh.Refresh)
 
 		authGroup.POST("/logout", logoutLimiter.Limit, h.Logout.Logout)
 		authGroup.POST("/logout-all", logoutLimiter.Limit, h.Logout.LogoutAll)
 
-		authGroup.POST("/forgot-password", forgotLimiter.Limit, h.PasswordReset.ForgotPassword)
-		authGroup.POST("/verify-reset-code", verifyResetLimiter.Limit, h.PasswordReset.VerifyCode)
+		authGroup.POST("/forgot-password", forgotLimiter.Limit, forgotEmailLimiter.LimitByEmail, h.PasswordReset.ForgotPassword)
+		authGroup.POST("/verify-reset-code", verifyResetLimiter.Limit, verifyResetEmailLimiter.LimitByEmail, h.PasswordReset.VerifyCode)
 		authGroup.POST("/reset-password", resetPasswordLimiter.Limit, h.PasswordReset.ResetPassword)
 	}
 
