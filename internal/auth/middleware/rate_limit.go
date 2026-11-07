@@ -116,10 +116,11 @@ type emailBody struct {
 	Username string `json:"username"`
 }
 
-func getEmailFromBody(c *gin.Context) string {
+func getEmailFromBody(c *gin.Context) (string, error) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 4096)
 	bodyBytes, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		return ""
+		return "", err
 	}
 
 	c.Request.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
@@ -127,7 +128,7 @@ func getEmailFromBody(c *gin.Context) string {
 	var data emailBody
 	err = json.Unmarshal(bodyBytes, &data)
 	if err != nil {
-		return ""
+		return "", nil
 	}
 
 	email := data.Email
@@ -137,11 +138,16 @@ func getEmailFromBody(c *gin.Context) string {
 
 	email = strings.TrimSpace(email)
 	email = strings.ToLower(email)
-	return email
+	return email, nil
 }
 
 func (l *TokenBucketLimiter) LimitByEmail(c *gin.Context) {
-	email := getEmailFromBody(c)
+	email, err := getEmailFromBody(c)
+	if err != nil {
+		response.Abort(c, http.StatusRequestEntityTooLarge, "request body too large")
+		return
+	}
+
 	if email == "" {
 		c.Next()
 		return
