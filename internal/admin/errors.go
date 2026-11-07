@@ -20,3 +20,10 @@ var (
 	ErrClubNotFound        = errors.New("club not found")
 	ErrInvalidClubID       = errors.New("invalid club id")
 )
+
+var (
+	ErrGameNotFound        = errors.New("game not found")
+	ErrGameAlreadyFinished = errors.New("game is already finished")
+	ErrAbortReasonRequired = errors.New("abort reason is required")
+	ErrTournamentGame      = errors.New("this is a tournament game, cancel the tournament instead")
+)

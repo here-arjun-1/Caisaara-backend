@@ -78,6 +78,7 @@ func (r *Repository) FindNearbyPlayers(ctx context.Context, userID int64) ([]Nea
 		JOIN player_locations other ON other.user_id <> me.user_id
 		JOIN users u ON u.id = other.user_id
 		WHERE me.user_id = $1
+			AND u.role = 'user'
 			AND me.nearby_enabled = true
 			AND other.nearby_enabled = true
 			AND other.updated_at > NOW() - make_interval(hours => $5)

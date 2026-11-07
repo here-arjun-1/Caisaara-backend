@@ -211,7 +211,7 @@ func (r *Repository) GetConversations(ctx context.Context, userID int64) ([]Conv
 
 func (r *Repository) UserExists(ctx context.Context, userID int64) (bool, error) {
 	var id int64
-	err := r.DB.QueryRow(ctx, `SELECT id FROM users WHERE id = $1`, userID).Scan(&id)
+	err := r.DB.QueryRow(ctx, `SELECT id FROM users WHERE id = $1 AND role = 'user'`, userID).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}

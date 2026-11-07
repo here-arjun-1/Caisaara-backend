@@ -27,6 +27,8 @@ func (h *LoginHandler) Login(c *gin.Context) {
 		response.Error(c, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	req.IP = c.ClientIP()
+
 	username, accessToken, refreshToken, needsRating, err := h.LoginService.Login(c.Request.Context(), req)
 
 	if errors.Is(err, service.ErrInternal) {

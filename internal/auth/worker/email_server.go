@@ -28,6 +28,7 @@ func StartEmailServer(redisOpt asynq.RedisClientOpt, sender *email.Sender, userR
 	processor := NewEmailTaskProcessor(sender, userRepository)
 	mux.HandleFunc(TypeEmailRegistration, processor.ProcessTaskEmailRegistration)
 	mux.HandleFunc(TypeEmailPasswordReset, processor.ProcessTaskEmailPasswordReset)
+	mux.HandleFunc(TypeEmailAdminLogin, processor.ProcessTaskEmailAdminLogin)
 
 	if err := server.Start(mux); err != nil {
 		slog.Error("could not start asynq server", "error", err)

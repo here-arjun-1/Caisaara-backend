@@ -3,6 +3,7 @@ package email
 import (
 	"fmt"
 	"net/smtp"
+	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/config"
 )
@@ -109,6 +110,46 @@ func (s *Sender) SendRegistrationEmail(to string, code string) error {
 	body := fmt.Sprintf(
 		"Hello,\n\nYour registration verification code is: %s\n\nThis code will expire in 15 minutes.\n",
 		code,
+	)
+
+	message := []byte(
+		"Subject: " + subject + "\r\n" +
+			"From: " + username + "\r\n" +
+			"To: " + to + "\r\n" +
+			"MIME-Version: 1.0\r\n" +
+			"Content-Type: text/plain; charset=\"UTF-8\"\r\n" +
+			"\r\n" +
+			body,
+	)
+
+	return smtp.SendMail(
+		host+":"+port,
+		auth,
+		username,
+		[]string{to},
+		message,
+	)
+}
+
+func (s *Sender) SendAdminLoginAlertEmail(to string, ip string, at time.Time) error {
+	host := s.cfg.Host
+	port := s.cfg.Port
+	username := s.cfg.Username
+	password := s.cfg.Password
+
+	auth := smtp.PlainAuth(
+		"",
+		username,
+		password,
+		host,
+	)
+
+	subject := "New login to admin account"
+
+	body := fmt.Sprintf(
+		"Hello,\n\nThe admin account was just logged in.\n\nTime (UTC): %s\nIP address: %s\n\nIf this was not you, revoke all admin sessions and change the password right away.\n",
+		at.Format("2006-01-02 15:04:05"),
+		ip,
 	)
 
 	message := []byte(
