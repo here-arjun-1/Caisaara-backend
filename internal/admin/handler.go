@@ -22,6 +22,10 @@ type CloseReportBody struct {
 	Note   string `json:"note"`
 }
 
+type AbortGameBody struct {
+	Reason string `json:"reason"`
+}
+
 type Handler struct {
 	Service *Service
 }
@@ -39,6 +43,14 @@ func getIDParam(c *gin.Context) (int64, bool) {
 		return 0, false
 	}
 	return id, true
+}
+
+func (h *Handler) Me(c *gin.Context) {
+	response.Success(c, http.StatusOK, "admin", gin.H{"is_admin": true})
+}
+
+func (h *Handler) GetHealth(c *gin.Context) {
+	response.Success(c, http.StatusOK, "health fetched", h.Service.GetHealth(c.Request.Context()))
 }
 
 func (h *Handler) GetStats(c *gin.Context) {
@@ -285,6 +297,61 @@ func (h *Handler) ListActions(c *gin.Context) {
 	response.Success(c, http.StatusOK, "actions fetched", actions)
 }
 
+func (h *Handler) ListLiveGames(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+
+	games, err := h.Service.ListLiveGames(c.Request.Context(), limit, offset)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "live games fetched", games)
+}
+
+func (h *Handler) GetGame(c *gin.Context) {
+	detail, err := h.Service.GetGame(c.Request.Context(), c.Param("gameID"))
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "game fetched", detail)
+}
+
+func (h *Handler) AbortGame(c *gin.Context) {
+	adminID, ok := middleware.GetUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	var body AbortGameBody
+	if err := c.ShouldBindJSON(&body); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	err := h.Service.AbortGame(c.Request.Context(), adminID, c.Param("gameID"), body.Reason)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "game aborted", nil)
+}
+
+func (h *Handler) GetMatchmakingQueues(c *gin.Context) {
+	queues, err := h.Service.ListMatchmakingQueues(c.Request.Context())
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "matchmaking queues fetched", queues)
+}
+
 func handleError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrCannotBanYourself),
@@ -294,7 +361,8 @@ func handleError(c *gin.Context, err error) {
 		errors.Is(err, ErrInvalidReportStatus),
 		errors.Is(err, ErrInvalidResolution),
 		errors.Is(err, ErrNoteTooLong),
-		errors.Is(err, ErrInvalidClubID):
+		errors.Is(err, ErrInvalidClubID),
+		errors.Is(err, ErrAbortReasonRequired):
 		response.Error(c, http.StatusBadRequest, err.Error())
 	case errors.Is(err, ErrCannotBanAdmin):
 		response.Error(c, http.StatusForbidden, err.Error())
@@ -303,10 +371,13 @@ func handleError(c *gin.Context, err error) {
 		errors.Is(err, ErrPostNotFound),
 		errors.Is(err, ErrCommentNotFound),
 		errors.Is(err, ErrClubNotFound),
+		errors.Is(err, ErrGameNotFound),
 		errors.Is(err, tournament.ErrTournamentNotFound):
 		response.Error(c, http.StatusNotFound, err.Error())
 	case errors.Is(err, ErrUserNotBanned),
 		errors.Is(err, ErrReportAlreadyClosed),
+		errors.Is(err, ErrGameAlreadyFinished),
+		errors.Is(err, ErrTournamentGame),
 		errors.Is(err, tournament.ErrNotOngoing):
 		response.Error(c, http.StatusConflict, err.Error())
 	default:

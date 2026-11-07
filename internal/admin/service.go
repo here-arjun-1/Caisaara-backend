@@ -2,6 +2,7 @@ package admin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -9,6 +10,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/here-arjun-1/Caisaara-backend/internal/game"
+	"github.com/jackc/pgx/v5"
 )
 
 type Disconnector interface {
@@ -19,10 +22,17 @@ type TournamentCanceller interface {
 	ForceCancelTournament(ctx context.Context, tournamentID int64) error
 }
 
+type GameManager interface {
+	GetGame(ctx context.Context, gameID string) (*game.Game, error)
+	GetMoves(ctx context.Context, gameID string) ([]game.GameMove, error)
+	AbortGame(ctx context.Context, gameID string) (*game.Game, error)
+}
+
 type Service struct {
 	Repository          *Repository
 	Disconnector        Disconnector
 	TournamentCanceller TournamentCanceller
+	GameManager         GameManager
 }
 
 func NewService(repository *Repository, tournamentCanceller TournamentCanceller) *Service {
@@ -34,6 +44,10 @@ func NewService(repository *Repository, tournamentCanceller TournamentCanceller)
 
 func (s *Service) SetDisconnector(disconnector Disconnector) {
 	s.Disconnector = disconnector
+}
+
+func (s *Service) SetGameManager(gameManager GameManager) {
+	s.GameManager = gameManager
 }
 
 func fixPagination(limit int, offset int) (int, int) {
@@ -198,4 +212,85 @@ func (s *Service) ListActions(ctx context.Context, limit int, offset int) ([]Act
 	limit, offset = fixPagination(limit, offset)
 
 	return s.Repository.ListActions(ctx, limit, offset)
+}
+
+func (s *Service) GetHealth(ctx context.Context) Health {
+	return s.Repository.CheckHealth(ctx)
+}
+
+func (s *Service) ListLiveGames(ctx context.Context, limit int, offset int) ([]LiveGame, error) {
+	limit, offset = fixPagination(limit, offset)
+
+	return s.Repository.ListLiveGames(ctx, limit, offset)
+}
+
+func (s *Service) GetGame(ctx context.Context, gameID string) (*GameDetail, error) {
+	if _, err := uuid.Parse(gameID); err != nil {
+		return nil, ErrGameNotFound
+	}
+
+	g, err := s.GameManager.GetGame(ctx, gameID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, ErrGameNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	moves, err := s.GameManager.GetMoves(ctx, gameID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &GameDetail{
+		Game:  g,
+		Moves: moves,
+	}, nil
+}
+
+func (s *Service) AbortGame(ctx context.Context, adminID int64, gameID string, reason string) error {
+	reason = strings.TrimSpace(reason)
+
+	if _, err := uuid.Parse(gameID); err != nil {
+		return ErrGameNotFound
+	}
+
+	if reason == "" {
+		return ErrAbortReasonRequired
+	}
+
+	if utf8.RuneCountInString(reason) > MaxNoteLength {
+		return ErrNoteTooLong
+	}
+
+	isTournamentGame, err := s.Repository.IsTournamentGame(ctx, gameID)
+	if err != nil {
+		return err
+	}
+
+	if isTournamentGame {
+		return ErrTournamentGame
+	}
+
+	_, err = s.GameManager.AbortGame(ctx, gameID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrGameNotFound
+	}
+	if errors.Is(err, game.ErrGameAlreadyFinished) {
+		return ErrGameAlreadyFinished
+	}
+	if err != nil {
+		return err
+	}
+
+	err = s.Repository.LogAction(ctx, adminID, "abort_game", "game", gameID, reason)
+	if err != nil {
+		slog.ErrorContext(ctx, "log abort game action failed", "game_id", gameID, "error", err)
+	}
+
+	return nil
+}
+
+func (s *Service) ListMatchmakingQueues(ctx context.Context) ([]MatchmakingQueue, error) {
+	return s.Repository.ListMatchmakingQueues(ctx)
 }

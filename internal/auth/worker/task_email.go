@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/email"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/repository"
@@ -15,6 +16,7 @@ import (
 const (
 	TypeEmailRegistration  = "email:registration"
 	TypeEmailPasswordReset = "email:password_reset"
+	TypeEmailAdminLogin    = "email:admin_login"
 )
 
 type EmailPayload struct {
@@ -36,6 +38,20 @@ func NewEmailPasswordResetTask(to, code string) (*asynq.Task, error) {
 		return nil, err
 	}
 	return asynq.NewTask(TypeEmailPasswordReset, payload, asynq.Queue("email")), nil
+}
+
+type AdminLoginPayload struct {
+	To string    `json:"to"`
+	IP string    `json:"ip"`
+	At time.Time `json:"at"`
+}
+
+func NewEmailAdminLoginTask(to string, ip string, at time.Time) (*asynq.Task, error) {
+	payload, err := json.Marshal(AdminLoginPayload{To: to, IP: ip, At: at})
+	if err != nil {
+		return nil, err
+	}
+	return asynq.NewTask(TypeEmailAdminLogin, payload, asynq.Queue("email")), nil
 }
 
 type EmailTaskProcessor struct {
@@ -79,7 +95,7 @@ func (p *EmailTaskProcessor) ProcessTaskEmailPasswordReset(ctx context.Context, 
 		return fmt.Errorf("json.Unmarshal failed: %w: %w", err, asynq.SkipRetry)
 	}
 
-	_, err := p.userRepository.FindUserByEmail(ctx, pld.To)
+	user, err := p.userRepository.FindUserByEmail(ctx, pld.To)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
@@ -87,9 +103,27 @@ func (p *EmailTaskProcessor) ProcessTaskEmailPasswordReset(ctx context.Context, 
 		return fmt.Errorf("find user by email failed: %w", err)
 	}
 
+	if user.Role != "user" {
+		return nil
+	}
+
 	err = p.sender.SendPasswordResetEmail(pld.To, pld.Code)
 	if err != nil {
 		return fmt.Errorf("could not send password reset email: %w", err)
+	}
+
+	return nil
+}
+
+func (p *EmailTaskProcessor) ProcessTaskEmailAdminLogin(ctx context.Context, t *asynq.Task) error {
+	var pld AdminLoginPayload
+	if err := json.Unmarshal(t.Payload(), &pld); err != nil {
+		return fmt.Errorf("json.Unmarshal failed: %w: %w", err, asynq.SkipRetry)
+	}
+
+	err := p.sender.SendAdminLoginAlertEmail(pld.To, pld.IP, pld.At)
+	if err != nil {
+		return fmt.Errorf("could not send admin login alert email: %w", err)
 	}
 
 	return nil

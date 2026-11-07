@@ -5,18 +5,22 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 )
 
 type Repository struct {
-	DB *pgxpool.Pool
+	DB    *pgxpool.Pool
+	Redis *redis.Client
 }
 
-func NewRepository(db *pgxpool.Pool) *Repository {
+func NewRepository(db *pgxpool.Pool, redisClient *redis.Client) *Repository {
 	return &Repository{
-		DB: db,
+		DB:    db,
+		Redis: redisClient,
 	}
 }
 
@@ -50,9 +54,9 @@ func (r *Repository) GetStats(ctx context.Context) (*Stats, error) {
 	var stats Stats
 	err := r.DB.QueryRow(ctx,
 		`SELECT
-			(SELECT COUNT(*) FROM users WHERE deleted_at IS NULL),
-			(SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND created_at >= CURRENT_DATE),
-			(SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND banned_until > NOW()),
+			(SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND role = 'user'),
+			(SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND role = 'user' AND created_at >= CURRENT_DATE),
+			(SELECT COUNT(*) FROM users WHERE deleted_at IS NULL AND role = 'user' AND banned_until > NOW()),
 			(SELECT COUNT(*) FROM games WHERE status = 'active'),
 			(SELECT COUNT(*) FROM player_reports WHERE status = 'pending'),
 			(SELECT COUNT(*) FROM tournaments WHERE status = 'ongoing')`,
@@ -526,4 +530,107 @@ func (r *Repository) ListActions(ctx context.Context, limit int, offset int) ([]
 	}
 
 	return actions, nil
+}
+
+func (r *Repository) ListLiveGames(ctx context.Context, limit int, offset int) ([]LiveGame, error) {
+	rows, err := r.DB.Query(ctx,
+		`SELECT
+			g.id::text,
+			g.white_player_id,
+			COALESCE(wu.username, ''),
+			g.black_player_id,
+			COALESCE(bu.username, ''),
+			COALESCE(g.time_control_mode, ''),
+			g.time_control_minutes,
+			g.rated,
+			(SELECT COUNT(*) FROM game_moves m WHERE m.game_id = g.id),
+			g.created_at,
+			g.started_at
+		FROM games g
+		LEFT JOIN users wu ON wu.id = g.white_player_id
+		LEFT JOIN users bu ON bu.id = g.black_player_id
+		WHERE g.status = 'active'
+		ORDER BY g.created_at ASC
+		LIMIT $1 OFFSET $2`,
+		limit,
+		offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	games := []LiveGame{}
+	for rows.Next() {
+		var g LiveGame
+		err := rows.Scan(
+			&g.ID,
+			&g.WhitePlayerID,
+			&g.WhiteUsername,
+			&g.BlackPlayerID,
+			&g.BlackUsername,
+			&g.TimeControlMode,
+			&g.TimeControlMinutes,
+			&g.Rated,
+			&g.MoveCount,
+			&g.CreatedAt,
+			&g.StartedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		games = append(games, g)
+	}
+
+	return games, rows.Err()
+}
+
+func (r *Repository) ListMatchmakingQueues(ctx context.Context) ([]MatchmakingQueue, error) {
+	queues := []MatchmakingQueue{}
+
+	iter := r.Redis.Scan(ctx, 0, "matchmaking:queue:*", 100).Iterator()
+	for iter.Next(ctx) {
+		key := iter.Val()
+
+		count, err := r.Redis.ZCard(ctx, key).Result()
+		if err != nil {
+			return nil, err
+		}
+
+		queues = append(queues, MatchmakingQueue{
+			Queue:   strings.TrimPrefix(key, "matchmaking:queue:"),
+			Players: count,
+		})
+	}
+	if err := iter.Err(); err != nil {
+		return nil, err
+	}
+
+	return queues, nil
+}
+
+func (r *Repository) CheckHealth(ctx context.Context) Health {
+	health := Health{
+		Database: HealthOK,
+		Redis:    HealthOK,
+	}
+
+	if err := r.DB.Ping(ctx); err != nil {
+		health.Database = HealthDown
+	}
+
+	if err := r.Redis.Ping(ctx).Err(); err != nil {
+		health.Redis = HealthDown
+	}
+
+	return health
+}
+
+func (r *Repository) IsTournamentGame(ctx context.Context, gameID string) (bool, error) {
+	var exists bool
+	err := r.DB.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM tournament_pairings WHERE game_id = $1)`,
+		gameID,
+	).Scan(&exists)
+	return exists, err
 }

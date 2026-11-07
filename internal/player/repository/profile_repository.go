@@ -43,7 +43,7 @@ func (r *ProfileRepository) FindByUserID(ctx context.Context, userID int64) (*mo
 					AND fr.status = 'accepted')
 		FROM users u
 		LEFT JOIN player_profiles p ON p.user_id = u.id
-		WHERE u.id = $1`,
+		WHERE u.id = $1 AND u.role = 'user'`,
 		userID,
 	).Scan(
 		&p.UserID,
@@ -88,7 +88,7 @@ func (r *ProfileRepository) FindByUsername(ctx context.Context, username string)
 			p.avatar_url
 		FROM users u
 		LEFT JOIN player_profiles p ON p.user_id = u.id
-		WHERE u.username = $1 AND u.deleted_at IS NULL`,
+		WHERE u.username = $1 AND u.deleted_at IS NULL AND u.role = 'user'`,
 		username,
 	).Scan(
 		&p.UserID,
@@ -464,7 +464,7 @@ func (r *ProfileRepository) SearchByUsername(ctx context.Context, prefix string,
 			p.avatar_url
 		FROM users u
 		LEFT JOIN player_profiles p ON p.user_id = u.id
-		WHERE (u.username LIKE $1 || '%' OR CAST(u.id AS TEXT) = $1) AND u.deleted_at IS NULL
+		WHERE (u.username LIKE $1 || '%' OR CAST(u.id AS TEXT) = $1) AND u.deleted_at IS NULL AND u.role = 'user'
 		ORDER BY u.username
 		LIMIT $2`,
 		prefix,

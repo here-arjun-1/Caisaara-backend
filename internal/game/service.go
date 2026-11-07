@@ -17,6 +17,7 @@ type GameService interface {
 	MakeMove(ctx context.Context, gameID string, playerID int64, move string, cachedState ...interface{}) (*Game, error)
 	ResignGame(ctx context.Context, gameID string, playerID int64) (*Game, error)
 	DrawGame(ctx context.Context, gameID string, playerID int64) (*Game, error)
+	AbortGame(ctx context.Context, gameID string) (*Game, error)
 	OfferDraw(ctx context.Context, gameID string, playerID int64) (*Game, bool, int64, error)
 	AcceptDraw(ctx context.Context, gameID string, playerID int64) (*Game, error)
 	DeclineDraw(ctx context.Context, gameID string, playerID int64) (*Game, error)
@@ -828,6 +829,57 @@ func (s *Service) DrawGame(
 	}
 
 	s.notifyGameCompleted(ctx, currentGame)
+	s.notifyGameStateUpdated(ctx, currentGame)
+
+	return currentGame, nil
+}
+
+func (s *Service) AbortGame(
+	ctx context.Context,
+	gameID string,
+) (*Game, error) {
+	mu := s.getGameLock(gameID)
+	mu.Lock()
+
+	s.drawOffers.Delete(gameID)
+	s.waitForPendingMoves(gameID)
+
+	currentGame, err := s.Repository.FindGameByID(ctx, gameID)
+	if err != nil {
+		mu.Unlock()
+		return nil, err
+	}
+
+	if currentGame.Status != StatusActive {
+		mu.Unlock()
+		return nil, ErrGameAlreadyFinished
+	}
+
+	now := time.Now()
+
+	err = s.Repository.UpdateGameState(
+		ctx,
+		gameID,
+		currentGame.Position,
+		StatusFinished,
+		"",
+		EndReasonAborted,
+		currentGame.CurrentTurn,
+		currentGame.WhiteTimeMs,
+		currentGame.BlackTimeMs,
+		&now,
+	)
+	if err != nil {
+		mu.Unlock()
+		return nil, err
+	}
+
+	currentGame.Status = StatusFinished
+	currentGame.Result = ""
+	currentGame.EndReason = EndReasonAborted
+	currentGame.TurnStartedAt = &now
+	mu.Unlock()
+
 	s.notifyGameStateUpdated(ctx, currentGame)
 
 	return currentGame, nil

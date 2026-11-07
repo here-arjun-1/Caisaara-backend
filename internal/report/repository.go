@@ -22,7 +22,7 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 func (r *Repository) UserExists(ctx context.Context, userID int64) (bool, error) {
 	var exists bool
 	err := r.DB.QueryRow(ctx,
-		`SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND deleted_at IS NULL)`,
+		`SELECT EXISTS (SELECT 1 FROM users WHERE id = $1 AND deleted_at IS NULL AND role = 'user')`,
 		userID,
 	).Scan(&exists)
 	if err != nil {

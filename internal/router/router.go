@@ -206,7 +206,9 @@ func New(
 	}
 
 	if adminHandler != nil {
-		admin.RegisterRoutes(adminHandler, protected, authModule.UserRepository)
+		adminGroup := r.Group("/api/admin")
+		adminGroup.Use(middleware.RequireAdmin(jwtSecret, authModule.UserRepository))
+		admin.RegisterRoutes(adminHandler, adminGroup)
 	}
 
 	if miniMatesHandler != nil {

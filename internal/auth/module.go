@@ -37,6 +37,7 @@ func NewModule(
 	loginService := service.NewLoginService(
 		userRepository,
 		sessionRepository,
+		taskDistributor,
 		jwtSecret,
 	)
 	refreshService := service.NewRefreshService(

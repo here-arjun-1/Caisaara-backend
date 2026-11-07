@@ -28,7 +28,7 @@ func (r *Repository) GetLeaderboard(ctx context.Context, mode string, maxRD floa
 			pr.rating
 		FROM player_ratings pr
 		JOIN users u ON u.id = pr.user_id
-		WHERE pr.mode = $1 AND pr.rating_deviation <= $2 AND u.deleted_at IS NULL
+		WHERE pr.mode = $1 AND pr.rating_deviation <= $2 AND u.deleted_at IS NULL AND u.role = 'user'
 		ORDER BY pr.rating DESC, LOWER(u.username) ASC, u.id ASC
 		LIMIT $3 OFFSET $4`,
 		mode,
@@ -100,6 +100,7 @@ func (r *Repository) GetLocalLeaderboard(ctx context.Context, userID int64, mode
 			AND pl.updated_at > NOW() - make_interval(days => $4)
 			AND pr.rating_deviation <= $5
 			AND u.deleted_at IS NULL
+			AND u.role = 'user'
 			AND (u.banned_until IS NULL OR u.banned_until <= NOW())
 			AND NOT EXISTS (
 				SELECT 1 FROM user_blocks ub
