@@ -356,15 +356,47 @@ func (p *AnalysisProcessor) ProcessTaskGameAnalysis(ctx context.Context, t *asyn
 		moveAnalyses = append(moveAnalyses, moveAnalysis)
 	}
 
-	accWhite := CalculateAccuracyFormula(whiteLosses)
-	accBlack := CalculateAccuracyFormula(blackLosses)
+	var accWhite, accBlack float64
+	if len(whiteLosses) > 0 {
+		accWhite = CalculateAccuracyFormula(whiteLosses)
+		analysisRecord.AccuracyWhite = &accWhite
+		analysisRecord.RatingWhite = CalculatePerformanceRating(accWhite)
+	} else {
+		analysisRecord.RatingWhite = 100
+	}
 
-	openWhite := CalculateAccuracyFormula(whiteOpeningLosses)
-	openBlack := CalculateAccuracyFormula(blackOpeningLosses)
-	midWhite := CalculateAccuracyFormula(whiteMiddleLosses)
-	midBlack := CalculateAccuracyFormula(blackMiddleLosses)
-	endWhite := CalculateAccuracyFormula(whiteEndLosses)
-	endBlack := CalculateAccuracyFormula(blackEndLosses)
+	if len(blackLosses) > 0 {
+		accBlack = CalculateAccuracyFormula(blackLosses)
+		analysisRecord.AccuracyBlack = &accBlack
+		analysisRecord.RatingBlack = CalculatePerformanceRating(accBlack)
+	} else {
+		analysisRecord.RatingBlack = 100
+	}
+
+	if len(whiteOpeningLosses) > 0 {
+		openWhite := CalculateAccuracyFormula(whiteOpeningLosses)
+		analysisRecord.OpeningAccuracyWhite = &openWhite
+	}
+	if len(blackOpeningLosses) > 0 {
+		openBlack := CalculateAccuracyFormula(blackOpeningLosses)
+		analysisRecord.OpeningAccuracyBlack = &openBlack
+	}
+	if len(whiteMiddleLosses) > 0 {
+		midWhite := CalculateAccuracyFormula(whiteMiddleLosses)
+		analysisRecord.MiddlegameAccuracyWhite = &midWhite
+	}
+	if len(blackMiddleLosses) > 0 {
+		midBlack := CalculateAccuracyFormula(blackMiddleLosses)
+		analysisRecord.MiddlegameAccuracyBlack = &midBlack
+	}
+	if len(whiteEndLosses) > 0 {
+		endWhite := CalculateAccuracyFormula(whiteEndLosses)
+		analysisRecord.EndgameAccuracyWhite = &endWhite
+	}
+	if len(blackEndLosses) > 0 {
+		endBlack := CalculateAccuracyFormula(blackEndLosses)
+		analysisRecord.EndgameAccuracyBlack = &endBlack
+	}
 
 	openClassWhite, openSymWhite := ClassifyPhase(whiteOpeningLosses, whiteOpeningInacc, whiteOpeningMistake, whiteOpeningMiss, whiteOpeningBlunder)
 	openClassBlack, openSymBlack := ClassifyPhase(blackOpeningLosses, blackOpeningInacc, blackOpeningMistake, blackOpeningMiss, blackOpeningBlunder)
@@ -373,14 +405,6 @@ func (p *AnalysisProcessor) ProcessTaskGameAnalysis(ctx context.Context, t *asyn
 	endClassWhite, endSymWhite := ClassifyPhase(whiteEndLosses, whiteEndInacc, whiteEndMistake, whiteEndMiss, whiteEndBlunder)
 	endClassBlack, endSymBlack := ClassifyPhase(blackEndLosses, blackEndInacc, blackEndMistake, blackEndMiss, blackEndBlunder)
 
-	analysisRecord.AccuracyWhite = &accWhite
-	analysisRecord.AccuracyBlack = &accBlack
-	analysisRecord.OpeningAccuracyWhite = &openWhite
-	analysisRecord.OpeningAccuracyBlack = &openBlack
-	analysisRecord.MiddlegameAccuracyWhite = &midWhite
-	analysisRecord.MiddlegameAccuracyBlack = &midBlack
-	analysisRecord.EndgameAccuracyWhite = &endWhite
-	analysisRecord.EndgameAccuracyBlack = &endBlack
 	analysisRecord.OpeningClassificationWhite = openClassWhite
 	analysisRecord.OpeningClassificationBlack = openClassBlack
 	analysisRecord.MiddlegameClassificationWhite = midClassWhite
@@ -394,8 +418,6 @@ func (p *AnalysisProcessor) ProcessTaskGameAnalysis(ctx context.Context, t *asyn
 	analysisRecord.EndgameSymbolWhite = endSymWhite
 	analysisRecord.EndgameSymbolBlack = endSymBlack
 
-	analysisRecord.RatingWhite = CalculatePerformanceRating(accWhite)
-	analysisRecord.RatingBlack = CalculatePerformanceRating(accBlack)
 	analysisRecord.Status = StatusCompleted
 
 	err = p.AnalysisRepo.SaveAnalysisResult(ctx, analysisRecord, moveAnalyses)

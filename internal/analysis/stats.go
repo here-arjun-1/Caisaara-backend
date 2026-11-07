@@ -277,7 +277,7 @@ func (s *StatisticsService) CalculateStatistics(moves []GameMoveAnalysis) (Summa
 
 func CalculateAccuracyFormula(losses []float64) float64 {
 	if len(losses) == 0 {
-		return 100.0
+		return 0.0
 	}
 	var total float64
 	for _, l := range losses {
