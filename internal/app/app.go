@@ -187,9 +187,10 @@ func New(cfg *config.Config) (*App, error) {
 	reportService := report.NewService(reportRepository)
 	reportHandler := report.NewHandler(reportService)
 
-	adminRepository := admin.NewRepository(inf.db)
+	adminRepository := admin.NewRepository(inf.db, inf.redis)
 	adminService := admin.NewService(adminRepository, tournamentService)
 	adminService.SetDisconnector(wsHub)
+	adminService.SetGameManager(gameService)
 	adminHandler := admin.NewHandler(adminService)
 
 	miniMatesRepo := minimates.NewRepository(inf.db)

@@ -190,7 +190,7 @@ func (r *Repository) FindSentRequests(ctx context.Context, userID int64) ([]Sent
 
 func (r *Repository) FindUserIDByUsername(ctx context.Context, username string) (int64, error) {
 	var userID int64
-	err := r.DB.QueryRow(ctx, `SELECT id FROM users WHERE username = $1 AND deleted_at IS NULL`, username).Scan(&userID)
+	err := r.DB.QueryRow(ctx, `SELECT id FROM users WHERE username = $1 AND deleted_at IS NULL AND role = 'user'`, username).Scan(&userID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, ErrUserNotFound
 	}
@@ -339,7 +339,7 @@ func (r *Repository) IsBlockedEitherWay(ctx context.Context, userID int64, other
 
 func (r *Repository) FindUsernameByID(ctx context.Context, userID int64) (string, error) {
 	var username string
-	err := r.DB.QueryRow(ctx, `SELECT username FROM users WHERE id = $1`, userID).Scan(&username)
+	err := r.DB.QueryRow(ctx, `SELECT username FROM users WHERE id = $1 AND role = 'user'`, userID).Scan(&username)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return "", ErrUserNotFound
 	}

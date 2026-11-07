@@ -70,6 +70,7 @@ const (
 	EndReasonInsufficientMaterial = "insufficient_material"
 	EndReasonDailyTimeout         = "daily_timeout"
 	EndReasonAbandonment          = "abandonment"
+	EndReasonAborted              = "aborted"
 )
 
 type GameMove struct {

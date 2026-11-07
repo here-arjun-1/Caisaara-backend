@@ -191,13 +191,27 @@ func (r *UserRepository) GetPasswordVersion(ctx context.Context, id int64) (int,
 	var version int
 	err := r.DB.QueryRow(
 		ctx,
-		`SELECT COALESCE(password_version, 1) FROM users WHERE id = $1`,
+		`SELECT COALESCE(password_version, 1) FROM users WHERE id = $1 AND role = 'user'`,
 		id,
 	).Scan(&version)
 	if err != nil {
 		return 0, err
 	}
 	return version, nil
+}
+
+func (r *UserRepository) GetPasswordVersionAndRole(ctx context.Context, id int64) (int, string, error) {
+	var version int
+	var role string
+	err := r.DB.QueryRow(
+		ctx,
+		`SELECT COALESCE(password_version, 1), role FROM users WHERE id = $1`,
+		id,
+	).Scan(&version, &role)
+	if err != nil {
+		return 0, "", err
+	}
+	return version, role, nil
 }
 
 func (r *UserRepository) IncrementPasswordVersion(ctx context.Context, id int64) error {

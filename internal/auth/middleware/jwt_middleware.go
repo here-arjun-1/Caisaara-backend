@@ -72,9 +72,14 @@ func JWTMiddleware(secret string, userRepo ...*repository.UserRepository) gin.Ha
 		}
 
 		if len(userRepo) > 0 && userRepo[0] != nil && claims.PasswordVersion > 0 {
-			currentVersion, err := userRepo[0].GetPasswordVersion(c.Request.Context(), claims.UserID)
+			currentVersion, role, err := userRepo[0].GetPasswordVersionAndRole(c.Request.Context(), claims.UserID)
 			if err != nil || claims.PasswordVersion != currentVersion {
 				response.Abort(c, http.StatusUnauthorized, "invalid or revoked token")
+				return
+			}
+
+			if role == RoleAdmin {
+				response.Abort(c, http.StatusForbidden, "admin accounts cannot use player features")
 				return
 			}
 		}

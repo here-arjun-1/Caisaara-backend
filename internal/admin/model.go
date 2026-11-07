@@ -1,6 +1,10 @@
 package admin
 
-import "time"
+import (
+	"time"
+
+	"github.com/here-arjun-1/Caisaara-backend/internal/game"
+)
 
 type User struct {
 	ID        int64     `json:"id"`
@@ -74,3 +78,37 @@ const (
 	ReportResolved  = "resolved"
 	ReportDismissed = "dismissed"
 )
+
+type LiveGame struct {
+	ID                 string     `json:"id"`
+	WhitePlayerID      int64      `json:"white_player_id"`
+	WhiteUsername      string     `json:"white_username"`
+	BlackPlayerID      int64      `json:"black_player_id"`
+	BlackUsername      string     `json:"black_username"`
+	TimeControlMode    string     `json:"time_control_mode"`
+	TimeControlMinutes int        `json:"time_control_minutes"`
+	Rated              bool       `json:"rated"`
+	MoveCount          int        `json:"move_count"`
+	CreatedAt          time.Time  `json:"created_at"`
+	StartedAt          *time.Time `json:"started_at"`
+}
+
+type MatchmakingQueue struct {
+	Queue   string `json:"queue"`
+	Players int64  `json:"players"`
+}
+
+type Health struct {
+	Database string `json:"database"`
+	Redis    string `json:"redis"`
+}
+
+const (
+	HealthOK   = "ok"
+	HealthDown = "down"
+)
+
+type GameDetail struct {
+	Game  *game.Game      `json:"game"`
+	Moves []game.GameMove `json:"moves"`
+}

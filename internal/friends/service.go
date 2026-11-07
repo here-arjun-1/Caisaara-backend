@@ -242,6 +242,9 @@ func (s *Service) BlockUser(ctx context.Context, userID int64, targetID int64) e
 	if userID == targetID {
 		return ErrCannotBlockYourself
 	}
+	if _, err := s.Repository.FindUsernameByID(ctx, targetID); err != nil {
+		return err
+	}
 	return s.Repository.BlockUser(ctx, userID, targetID)
 }
 
