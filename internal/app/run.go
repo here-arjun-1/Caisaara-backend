@@ -25,7 +25,7 @@ func (a *App) Run() error {
 	defer appCancel()
 
 	asynqServer := worker.StartEmailServer(a.infra.asynqRedisOpt, email.NewSender(a.cfg.SMTP), a.authModule.UserRepository)
-	analysisServer := analysis.StartAnalysisServer(a.infra.asynqRedisOpt, a.analysisProcessor, 2)
+	analysisServer := analysis.StartAnalysisServer(a.infra.asynqRedisOpt, a.analysisProcessor, 0)
 
 	var pushServer *asynq.Server
 	if a.cfg.FirebaseCredentials != "" {

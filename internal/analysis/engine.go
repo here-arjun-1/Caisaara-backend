@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -17,7 +19,23 @@ var (
 	ErrTimeout        = errors.New("engine search timed out")
 )
 
-const analysisPoolSize = 2
+func getAnalysisPoolSize() int {
+	if val := os.Getenv("ANALYSIS_POOL_SIZE"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil && n > 0 {
+			return n
+		}
+	}
+	if val := os.Getenv("ANALYSIS_CONCURRENCY"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil && n > 0 {
+			return n
+		}
+	}
+	n := runtime.NumCPU()
+	if n < 4 {
+		return 4
+	}
+	return n
+}
 
 type AnalysisEngine struct {
 	Pool *stockfish.Pool
@@ -68,40 +86,41 @@ func NewAnalysisEngine(path string) *AnalysisEngine {
 		path = "stockfish"
 	}
 	return &AnalysisEngine{
-		Pool: stockfish.NewPool(path, analysisPoolSize),
+		Pool: stockfish.NewPool(path, getAnalysisPoolSize()),
 	}
 }
 
 func (e *AnalysisEngine) Analyze(ctx context.Context, pos PositionOptions, opts AnalysisOptions) (*AnalysisResult, error) {
-	var cancel context.CancelFunc
-	switch {
-	case opts.Timeout > 0:
-		ctx, cancel = context.WithTimeout(ctx, opts.Timeout)
-	case opts.MoveTimeMs > 0:
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(opts.MoveTimeMs+2000)*time.Millisecond)
-	default:
-		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
-	}
-	defer cancel()
-
 	process, err := e.Pool.GetProcess(ctx)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) {
-			return nil, ErrTimeout
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return nil, err
 		}
 		return nil, fmt.Errorf("%w: %w", ErrEngineNotFound, err)
 	}
 
-	stopWatching := context.AfterFunc(ctx, process.Kill)
+	var searchCtx context.Context
+	var cancel context.CancelFunc
+	switch {
+	case opts.Timeout > 0:
+		searchCtx, cancel = context.WithTimeout(ctx, opts.Timeout)
+	case opts.MoveTimeMs > 0:
+		searchCtx, cancel = context.WithTimeout(ctx, time.Duration(opts.MoveTimeMs+2000)*time.Millisecond)
+	default:
+		searchCtx, cancel = context.WithTimeout(ctx, 30*time.Second)
+	}
+	defer cancel()
 
-	result, err := runAnalysis(ctx, process, pos, opts)
+	stopWatching := context.AfterFunc(searchCtx, process.Kill)
+
+	result, err := runAnalysis(searchCtx, process, pos, opts)
 
 	if !stopWatching() {
 		e.Pool.ReplaceBrokenProcess(process)
-		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		if errors.Is(searchCtx.Err(), context.DeadlineExceeded) {
 			return nil, ErrTimeout
 		}
-		return nil, ctx.Err()
+		return nil, searchCtx.Err()
 	}
 	if errors.Is(err, ErrNoBestMove) {
 		e.Pool.ReturnProcess(process)

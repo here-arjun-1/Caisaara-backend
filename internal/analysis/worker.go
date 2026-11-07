@@ -57,7 +57,7 @@ func StartAnalysisServer(
 	concurrency int,
 ) *asynq.Server {
 	if concurrency <= 0 {
-		concurrency = 2
+		concurrency = getAnalysisPoolSize()
 	}
 
 	server := asynq.NewServer(
@@ -147,6 +147,15 @@ func (p *AnalysisProcessor) ProcessTaskGameAnalysis(ctx context.Context, t *asyn
 	blackMiddleInacc, blackMiddleMistake, blackMiddleMiss, blackMiddleBlunder := 0, 0, 0, 0
 	blackEndInacc, blackEndMistake, blackEndMiss, blackEndBlunder := 0, 0, 0, 0
 
+	var currentEvalRes *AnalysisResult
+	if len(moves) > 0 {
+		var err error
+		currentEvalRes, err = p.Engine.Analyze(ctx, PositionOptions{FEN: chessBoard.FEN()}, opts)
+		if err != nil {
+			slog.WarnContext(ctx, "engine initial eval warning", "game_id", gameID, "error", err)
+		}
+	}
+
 	for idx, moveRecord := range moves {
 		playerColor := "white"
 		if idx%2 != 0 {
@@ -155,18 +164,21 @@ func (p *AnalysisProcessor) ProcessTaskGameAnalysis(ctx context.Context, t *asyn
 
 		posBeforeFEN := chessBoard.FEN()
 
-		evalBeforeRes, err := p.Engine.Analyze(ctx, PositionOptions{FEN: posBeforeFEN}, opts)
-		if err != nil {
-			slog.WarnContext(ctx, "engine eval before move warning", "game_id", gameID, "move_number", moveRecord.MoveNumber, "error", err)
+		if currentEvalRes == nil {
+			var err error
+			currentEvalRes, err = p.Engine.Analyze(ctx, PositionOptions{FEN: posBeforeFEN}, opts)
+			if err != nil {
+				slog.WarnContext(ctx, "engine eval before move warning", "game_id", gameID, "move_number", moveRecord.MoveNumber, "error", err)
+			}
 		}
 
-		evalBeforeWhite := extractCentipawnScore(evalBeforeRes, playerColor == "white")
+		evalBeforeWhite := extractCentipawnScore(currentEvalRes, playerColor == "white")
 
 		bestMove := ""
 		var pv []string
-		if evalBeforeRes != nil {
-			bestMove = evalBeforeRes.BestMove
-			pv = evalBeforeRes.PV
+		if currentEvalRes != nil {
+			bestMove = currentEvalRes.BestMove
+			pv = currentEvalRes.PV
 		}
 
 		err = chessBoard.MakeMove(moveRecord.Move)
@@ -186,12 +198,14 @@ func (p *AnalysisProcessor) ProcessTaskGameAnalysis(ctx context.Context, t *asyn
 			default:
 				evalAfterWhite = 0
 			}
+			currentEvalRes = nil
 		} else {
-			evalAfterRes, err := p.Engine.Analyze(ctx, PositionOptions{FEN: posAfterFEN}, opts)
+			nextEvalRes, err := p.Engine.Analyze(ctx, PositionOptions{FEN: posAfterFEN}, opts)
 			if err != nil {
 				slog.WarnContext(ctx, "engine eval after move warning", "game_id", gameID, "move_number", moveRecord.MoveNumber, "error", err)
 			}
-			evalAfterWhite = extractCentipawnScore(evalAfterRes, playerColor != "white")
+			evalAfterWhite = extractCentipawnScore(nextEvalRes, playerColor != "white")
+			currentEvalRes = nextEvalRes
 		}
 
 		var cpl int
