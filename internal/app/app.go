@@ -21,6 +21,7 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/invitation"
 	"github.com/here-arjun-1/Caisaara-backend/internal/leaderboard"
 	"github.com/here-arjun-1/Caisaara-backend/internal/matchmaking"
+	"github.com/here-arjun-1/Caisaara-backend/internal/minimates"
 	"github.com/here-arjun-1/Caisaara-backend/internal/nearby"
 	"github.com/here-arjun-1/Caisaara-backend/internal/news"
 	"github.com/here-arjun-1/Caisaara-backend/internal/notification"
@@ -191,6 +192,10 @@ func New(cfg *config.Config) (*App, error) {
 	adminService.SetDisconnector(wsHub)
 	adminHandler := admin.NewHandler(adminService)
 
+	miniMatesRepo := minimates.NewRepository(inf.db)
+	miniMatesService := minimates.NewService(miniMatesRepo, nil)
+	miniMatesHandler := minimates.NewHandler(miniMatesService)
+
 	chatService.SetPrivacyChecker(privacyService)
 	invitationService.SetPrivacyChecker(privacyService)
 	clubService.SetPrivacyChecker(privacyService)
@@ -260,6 +265,7 @@ func New(cfg *config.Config) (*App, error) {
 		reportHandler,
 		adminHandler,
 		streakHandler,
+		miniMatesHandler,
 		privacyHandler,
 	)
 	if err != nil {
