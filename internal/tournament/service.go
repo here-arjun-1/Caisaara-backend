@@ -455,6 +455,8 @@ func (s *TournamentService) EndTournament(ctx context.Context, tournamentID int6
 		return nil, err
 	}
 
+	s.moveKnockoutChampionToTop(ctx, &t.Tournament, standings)
+
 	winnerID := pickWinner(standings, withdrawn)
 
 	if s.Broadcaster != nil {
@@ -626,6 +628,47 @@ func pickWinner(standings []*StandingsPlayerResponse, withdrawn map[int64]bool) 
 	return nil
 }
 
+func (s *TournamentService) moveKnockoutChampionToTop(ctx context.Context, t *Tournament, standings []*StandingsPlayerResponse) {
+	if t.Format != FormatKnockout || t.CurrentRound < t.TotalRounds {
+		return
+	}
+
+	rounds, err := s.Repo.GetRounds(ctx, t.ID, t.TotalRounds)
+	if err != nil || len(rounds) == 0 {
+		slog.ErrorContext(ctx, "get knockout final round failed", "tournament_id", t.ID, "error", err)
+		return
+	}
+
+	roundID, err := strconv.ParseInt(rounds[0].ID, 10, 64)
+	if err != nil {
+		slog.ErrorContext(ctx, "parse knockout final round id failed", "tournament_id", t.ID, "error", err)
+		return
+	}
+
+	winners, err := s.Repo.GetRoundWinners(ctx, t.ID, roundID)
+	if err != nil {
+		slog.ErrorContext(ctx, "get knockout champion failed", "tournament_id", t.ID, "error", err)
+		return
+	}
+	if len(winners) != 1 {
+		return
+	}
+
+	for i, player := range standings {
+		if player.PlayerID == winners[0] {
+			for j := i; j > 0; j-- {
+				standings[j] = standings[j-1]
+			}
+			standings[0] = player
+			break
+		}
+	}
+
+	for i := range standings {
+		standings[i].Rank = i + 1
+	}
+}
+
 func (s *TournamentService) GenerateRoundPairings(ctx context.Context, tournamentID int64, userID int64) ([]*TournamentPairing, error) {
 	t, err := s.Repo.FindByIDWithPlayerCount(ctx, tournamentID)
 	if err != nil {
@@ -696,6 +739,7 @@ func (s *TournamentService) startNextRound(ctx context.Context, tournamentID int
 
 		if t.Status == StatusCompleted {
 			standings, _ := s.Repo.GetStandings(ctx, tournamentID)
+			s.moveKnockoutChampionToTop(ctx, &t.Tournament, standings)
 			if s.Broadcaster != nil {
 				s.Broadcaster.BroadcastTournamentEvent(tournamentID, map[string]interface{}{
 					"type":      "tournament_completed",
@@ -848,7 +892,7 @@ func (s *TournamentService) sendTournamentNotification(ctx context.Context, user
 }
 
 func (s *TournamentService) GetStandings(ctx context.Context, tournamentID int64) (*TournamentStandingsResponse, error) {
-	_, err := s.Repo.FindByID(ctx, tournamentID)
+	t, err := s.Repo.FindByID(ctx, tournamentID)
 	if err != nil {
 		return nil, ErrTournamentNotFound
 	}
@@ -857,6 +901,8 @@ func (s *TournamentService) GetStandings(ctx context.Context, tournamentID int64
 	if err != nil {
 		return nil, err
 	}
+
+	s.moveKnockoutChampionToTop(ctx, t, standings)
 
 	return &TournamentStandingsResponse{
 		TournamentID: strconv.FormatInt(tournamentID, 10),
