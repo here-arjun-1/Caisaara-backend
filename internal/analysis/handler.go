@@ -34,6 +34,8 @@ func (h *Handler) TriggerAnalysis(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		case "forbidden: not part of this game":
 			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		case "task distributor unavailable":
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "analysis service temporarily unavailable"})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to trigger game analysis"})
 		}
@@ -131,6 +133,8 @@ func (h *Handler) RetryAnalysis(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		case "forbidden: not part of this game":
 			c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		case "task distributor unavailable":
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "analysis service temporarily unavailable"})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retry game analysis"})
 		}

@@ -79,27 +79,31 @@ func (s *Service) TriggerAnalysis(ctx context.Context, gameID string, userID int
 		}
 	}
 
+	if s.TaskDistributor == nil {
+		slog.ErrorContext(ctx, "analysis task distributor is nil", "game_id", gameID)
+		return nil, errors.New("task distributor unavailable")
+	}
+
+	task, err := NewGameAnalysisTask(gameID)
+	if err != nil {
+		slog.ErrorContext(ctx, "create analysis task failed", "game_id", gameID, "error", err)
+		return nil, fmt.Errorf("create analysis task: %w", err)
+	}
+
 	analysisRecord, err := s.Repo.CreateAnalysis(ctx, gameID, "Stockfish 16", 12)
 	if err != nil {
 		slog.ErrorContext(ctx, "create analysis DB record failed", "game_id", gameID, "error", err)
 		return nil, fmt.Errorf("create analysis record: %w", err)
 	}
 
-	if s.TaskDistributor != nil {
-		task, err := NewGameAnalysisTask(gameID)
-		if err != nil {
-			slog.ErrorContext(ctx, "create analysis task failed", "game_id", gameID, "error", err)
-			return nil, fmt.Errorf("create analysis task: %w", err)
-		}
-
-		info, err := s.TaskDistributor.EnqueueContext(ctx, task)
-		if err != nil {
-			slog.ErrorContext(ctx, "enqueue analysis task failed", "game_id", gameID, "error", err)
-			return nil, fmt.Errorf("enqueue analysis task: %w", err)
-		}
-
-		slog.InfoContext(ctx, "enqueued background game analysis task", "game_id", gameID, "task_id", info.ID)
+	info, err := s.TaskDistributor.EnqueueContext(ctx, task)
+	if err != nil {
+		slog.ErrorContext(ctx, "enqueue analysis task failed", "game_id", gameID, "error", err)
+		_ = s.Repo.UpdateStatus(ctx, gameID, StatusFailed, "failed to enqueue task: "+err.Error())
+		return nil, fmt.Errorf("enqueue analysis task: %w", err)
 	}
+
+	slog.InfoContext(ctx, "enqueued background game analysis task", "game_id", gameID, "task_id", info.ID)
 
 	return analysisRecord, nil
 }
@@ -219,23 +223,27 @@ func (s *Service) RetryAnalysis(ctx context.Context, gameID string, userID int64
 		return nil, errors.New("analysis not found")
 	}
 
-	if existing.Status == StatusPending || existing.Status == StatusProcessing || existing.Status == StatusCompleted {
+	if existing.Status == StatusCompleted {
 		return existing, nil
+	}
+
+	if s.TaskDistributor == nil {
+		return nil, errors.New("task distributor unavailable")
+	}
+
+	task, err := NewGameAnalysisTask(gameID)
+	if err != nil {
+		return nil, fmt.Errorf("create retry analysis task: %w", err)
 	}
 
 	if err := s.Repo.UpdateStatus(ctx, gameID, StatusPending, ""); err != nil {
 		return nil, fmt.Errorf("update analysis status: %w", err)
 	}
 
-	if s.TaskDistributor != nil {
-		task, err := NewGameAnalysisTask(gameID)
-		if err != nil {
-			return nil, fmt.Errorf("create retry analysis task: %w", err)
-		}
-		_, err = s.TaskDistributor.EnqueueContext(ctx, task)
-		if err != nil {
-			return nil, fmt.Errorf("enqueue retry task: %w", err)
-		}
+	_, err = s.TaskDistributor.EnqueueContext(ctx, task)
+	if err != nil {
+		_ = s.Repo.UpdateStatus(ctx, gameID, StatusFailed, "failed to enqueue retry task: "+err.Error())
+		return nil, fmt.Errorf("enqueue retry task: %w", err)
 	}
 
 	return s.Repo.GetAnalysisByGameID(ctx, gameID)
