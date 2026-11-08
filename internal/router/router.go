@@ -114,7 +114,7 @@ func New(
 	protected.Use(middleware.JWTMiddleware(jwtSecret, authModule.UserRepository))
 
 	public := r.Group("")
-	public.Use(middleware.OptionalJWTMiddleware(jwtSecret))
+	public.Use(middleware.OptionalJWTMiddleware(jwtSecret, authModule.UserRepository))
 
 	authModule.RegisterRoutes(r, protected)
 	playerModule.RegisterRoutes(r, protected)
