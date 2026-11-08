@@ -103,7 +103,7 @@ func RequireRegisteredUser() gin.HandlerFunc {
 	}
 }
 
-func OptionalJWTMiddleware(secret string) gin.HandlerFunc {
+func OptionalJWTMiddleware(secret string, userRepo *repository.UserRepository) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var tokenString string
 
@@ -138,10 +138,18 @@ func OptionalJWTMiddleware(secret string) gin.HandlerFunc {
 			},
 		)
 
-		if err == nil && jwtToken.Valid && !claims.IsGuest && claims.UserID > 0 {
-			c.Set("user_id", claims.UserID)
+		if err != nil || !jwtToken.Valid || claims.IsGuest || claims.UserID <= 0 {
+			c.Next()
+			return
 		}
 
+		currentVersion, err := userRepo.GetPasswordVersion(c.Request.Context(), claims.UserID)
+		if err != nil || claims.PasswordVersion != currentVersion {
+			c.Next()
+			return
+		}
+
+		c.Set("user_id", claims.UserID)
 		c.Next()
 	}
 }
