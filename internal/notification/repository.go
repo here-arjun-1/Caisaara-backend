@@ -2,8 +2,10 @@ package notification
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -167,4 +169,64 @@ func (r *Repository) FindDeviceTokens(ctx context.Context, userID int64) ([]stri
 	}
 
 	return tokens, nil
+}
+
+func (r *Repository) IsTypeEnabled(ctx context.Context, userID int64, notificationType string) (bool, error) {
+	var enabled bool
+	err := r.DB.QueryRow(ctx,
+		`SELECT enabled FROM notification_preferences WHERE user_id = $1 AND type = $2`,
+		userID, notificationType).Scan(&enabled)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return true, nil
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "check notification preference failed", "user_id", userID, "type", notificationType, "error", err)
+		return false, err
+	}
+	return enabled, nil
+}
+
+func (r *Repository) FindPreferences(ctx context.Context, userID int64) (map[string]bool, error) {
+	preferences := map[string]bool{}
+	rows, err := r.DB.Query(ctx,
+		`SELECT type, enabled FROM notification_preferences WHERE user_id = $1`,
+		userID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "find notification preferences failed", "user_id", userID, "error", err)
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		var notificationType string
+		var enabled bool
+
+		if err := rows.Scan(&notificationType, &enabled); err != nil {
+			slog.ErrorContext(ctx, "scan notification preference failed", "user_id", userID, "error", err)
+			return nil, err
+		}
+		preferences[notificationType] = enabled
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "notification preferences rows iteration error", "user_id", userID, "error", err)
+		return nil, err
+	}
+
+	return preferences, nil
+}
+
+func (r *Repository) SavePreference(ctx context.Context, userID int64, notificationType string, enabled bool) error {
+	_, err := r.DB.Exec(ctx,
+		`INSERT INTO notification_preferences (user_id, type, enabled) VALUES ($1, $2, $3)
+		ON CONFLICT (user_id, type) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = NOW()`,
+		userID, notificationType, enabled,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "save notification preference failed", "user_id", userID, "type", notificationType, "error", err)
+		return err
+	}
+	return nil
 }
