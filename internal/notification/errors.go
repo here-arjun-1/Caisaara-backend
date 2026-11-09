@@ -3,6 +3,7 @@ package notification
 import "errors"
 
 var (
-	ErrNotificationNotFound = errors.New("notification not found")
-	ErrDeadToken            = errors.New("device token is no longer valid")
+	ErrNotificationNotFound    = errors.New("notification not found")
+	ErrDeadToken               = errors.New("device token is no longer valid")
+	ErrInvalidNotificationType = errors.New("invalid notification type")
 )

@@ -33,3 +33,28 @@ type Notification struct {
 	IsRead    bool           `json:"is_read"`
 	CreatedAt time.Time      `json:"created_at"`
 }
+
+var AllTypes = []string{
+	TypeFriendRequest,
+	TypeFriendAccepted,
+	TypeGameChallenge,
+	TypeChallengeAccepted,
+	TypeChallengeDeclined,
+	TypeChallengeCancelled,
+	TypeTournamentRound,
+	TypeTournamentFinished,
+	TypeTournamentCancelled,
+	TypeDirectMessage,
+	TypePostComment,
+	TypePostReaction,
+	TypeClubPromoted,
+	TypeClubDemoted,
+	TypeClubNewOwner,
+	TypeClubKicked,
+	TypeClubBanned,
+}
+
+type Preference struct {
+	Type    string `json:"type"`
+	Enabled bool   `json:"enabled"`
+}
