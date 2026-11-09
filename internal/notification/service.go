@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"math"
+	"slices"
 
 	"github.com/hibiken/asynq"
 )
@@ -34,6 +35,10 @@ func (s *Service) SetTaskClient(client *asynq.Client) {
 }
 
 func (s *Service) Send(ctx context.Context, userID int64, notificationType string, title string, body string, data map[string]any) error {
+	if !s.isTypeEnabled(ctx, userID, notificationType) {
+		return nil
+	}
+
 	n := &Notification{
 		UserID: userID,
 		Type:   notificationType,
@@ -59,6 +64,10 @@ func (s *Service) Send(ctx context.Context, userID int64, notificationType strin
 
 func (s *Service) SendPushOnly(ctx context.Context, userID int64, notificationType string, title string, body string, data map[string]any) error {
 	if s.IsOnline != nil && s.IsOnline(userID) {
+		return nil
+	}
+
+	if !s.isTypeEnabled(ctx, userID, notificationType) {
 		return nil
 	}
 
@@ -123,4 +132,36 @@ func (s *Service) RegisterDevice(ctx context.Context, userID int64, token string
 
 func (s *Service) UnregisterDevice(ctx context.Context, userID int64, token string) error {
 	return s.Repository.DeleteDeviceToken(ctx, userID, token)
+}
+
+func (s *Service) isTypeEnabled(ctx context.Context, userID int64, notificationType string) bool {
+	enabled, err := s.Repository.IsTypeEnabled(ctx, userID, notificationType)
+	if err != nil {
+		return true
+	}
+	return enabled
+}
+
+func (s *Service) GetPreferences(ctx context.Context, userID int64) ([]Preference, error) {
+	saved, err := s.Repository.FindPreferences(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	preferences := []Preference{}
+	for _, notificationType := range AllTypes {
+		enabled, found := saved[notificationType]
+		if !found {
+			enabled = true
+		}
+		preferences = append(preferences, Preference{Type: notificationType, Enabled: enabled})
+	}
+	return preferences, nil
+}
+
+func (s *Service) UpdatePreference(ctx context.Context, userID int64, notificationType string, enabled bool) error {
+	if !slices.Contains(AllTypes, notificationType) {
+		return ErrInvalidNotificationType
+	}
+	return s.Repository.SavePreference(ctx, userID, notificationType, enabled)
 }

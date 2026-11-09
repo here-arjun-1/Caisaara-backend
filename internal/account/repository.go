@@ -151,6 +151,7 @@ func (r *Repository) DeleteUserData(ctx context.Context, userID int64, newPasswo
 		`DELETE FROM sessions WHERE user_id = $1`,
 		`DELETE FROM device_tokens WHERE user_id = $1`,
 		`DELETE FROM notifications WHERE user_id = $1`,
+		`DELETE FROM notification_preferences WHERE user_id = $1`,
 		`DELETE FROM player_locations WHERE user_id = $1`,
 		`DELETE FROM friend_requests WHERE sender_id = $1 OR receiver_id = $1`,
 		`DELETE FROM user_blocks WHERE blocker_id = $1 OR blocked_id = $1`,

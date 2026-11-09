@@ -20,6 +20,11 @@ type RemoveDeviceBody struct {
 	Token string `json:"token" binding:"required,max=4096"`
 }
 
+type UpdatePreferenceBody struct {
+	Type    string `json:"type" binding:"required,max=50"`
+	Enabled *bool  `json:"enabled" binding:"required"`
+}
+
 type Handler struct {
 	Service *Service
 }
@@ -105,6 +110,8 @@ func handleError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrNotificationNotFound):
 		response.Error(c, http.StatusNotFound, err.Error())
+	case errors.Is(err, ErrInvalidNotificationType):
+		response.Error(c, http.StatusBadRequest, err.Error())
 	default:
 		slog.ErrorContext(c.Request.Context(), "notification request failed", "path", c.FullPath(), "error", err)
 		response.Error(c, http.StatusInternalServerError, "internal server error")
@@ -151,4 +158,41 @@ func (h *Handler) UnregisterDevice(c *gin.Context) {
 	}
 
 	response.Success(c, http.StatusOK, "device removed", nil)
+}
+
+func (h *Handler) GetPreferences(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	preferences, err := h.Service.GetPreferences(c.Request.Context(), userID)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "notification preferences fetched", gin.H{"preferences": preferences})
+}
+
+func (h *Handler) UpdatePreference(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	var req UpdatePreferenceBody
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := h.Service.UpdatePreference(c.Request.Context(), userID, req.Type, *req.Enabled); err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "notification preference updated", nil)
 }
