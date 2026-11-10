@@ -441,8 +441,18 @@ func (s *TournamentService) EndTournament(ctx context.Context, tournamentID int6
 		return nil, ErrNotOngoing
 	}
 
-	if err := s.Repo.EndTournament(ctx, tournamentID); err != nil {
+	abortedGameIDs, err := s.Repo.EndTournament(ctx, tournamentID)
+	if err != nil {
 		return nil, err
+	}
+
+	for _, gameID := range abortedGameIDs {
+		if s.GameRepo != nil {
+			g, err := s.GameRepo.FindGameByID(ctx, gameID)
+			if err == nil && g != nil && s.Broadcaster != nil {
+				s.Broadcaster.BroadcastGameState(g)
+			}
+		}
 	}
 
 	standings, err := s.Repo.GetStandings(ctx, tournamentID)

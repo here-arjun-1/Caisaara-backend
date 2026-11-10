@@ -32,7 +32,7 @@ type TournamentRepository interface {
 	RemovePlayer(ctx context.Context, tournamentID int64, userID int64) error
 	StartTournament(ctx context.Context, tournamentID int64) error
 	UndoStartTournament(ctx context.Context, tournamentID int64) error
-	EndTournament(ctx context.Context, tournamentID int64) error
+	EndTournament(ctx context.Context, tournamentID int64) ([]string, error)
 	CancelTournament(ctx context.Context, tournamentID int64) ([]string, error)
 	GetSwissPlayers(ctx context.Context, tournamentID int64) ([]*SwissPlayer, error)
 	SaveRoundPairings(ctx context.Context, tournamentID int64, roundNumber int, pairings []SwissPairingResult, gameRepo ...game.GameRepository) ([]*TournamentPairing, error)
@@ -581,13 +581,39 @@ func (r *Repository) StartTournament(ctx context.Context, tournamentID int64) er
 	return tx.Commit(ctx)
 }
 
-func (r *Repository) EndTournament(ctx context.Context, tournamentID int64) error {
+func (r *Repository) EndTournament(ctx context.Context, tournamentID int64) ([]string, error) {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "begin transaction failed for end tournament", "tournament_id", tournamentID, "error", err)
-		return err
+		return nil, err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
+	defer func() {
+		_ = tx.Rollback(ctx)
+	}()
+
+	rows, err := tx.Query(
+		ctx,
+		`UPDATE games
+		SET status = 'finished', end_reason = 'aborted', ended_at = NOW()
+		WHERE id IN (
+			SELECT game_id FROM tournament_pairings
+			WHERE tournament_id = $1 AND game_id IS NOT NULL AND status != 'completed'
+		) AND status = 'active'
+		RETURNING id`,
+		tournamentID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "abort live tournament games failed", "tournament_id", tournamentID, "error", err)
+		return nil, err
+	}
+	var abortedGameIDs []string
+	for rows.Next() {
+		var gameID string
+		if err := rows.Scan(&gameID); err == nil {
+			abortedGameIDs = append(abortedGameIDs, gameID)
+		}
+	}
+	rows.Close()
 
 	_, err = tx.Exec(
 		ctx,
@@ -598,7 +624,7 @@ func (r *Repository) EndTournament(ctx context.Context, tournamentID int64) erro
 	)
 	if err != nil {
 		slog.ErrorContext(ctx, "close unfinished pairings failed", "tournament_id", tournamentID, "error", err)
-		return err
+		return nil, err
 	}
 
 	_, err = tx.Exec(
@@ -610,7 +636,7 @@ func (r *Repository) EndTournament(ctx context.Context, tournamentID int64) erro
 	)
 	if err != nil {
 		slog.ErrorContext(ctx, "close unfinished rounds failed", "tournament_id", tournamentID, "error", err)
-		return err
+		return nil, err
 	}
 
 	tag, err := tx.Exec(
@@ -622,13 +648,17 @@ func (r *Repository) EndTournament(ctx context.Context, tournamentID int64) erro
 	)
 	if err != nil {
 		slog.ErrorContext(ctx, "update tournament status to completed failed", "tournament_id", tournamentID, "error", err)
-		return err
+		return nil, err
 	}
 	if tag.RowsAffected() == 0 {
-		return ErrNotOngoing
+		return nil, ErrNotOngoing
 	}
 
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+
+	return abortedGameIDs, nil
 }
 
 func (r *Repository) CancelTournament(ctx context.Context, tournamentID int64) ([]string, error) {
