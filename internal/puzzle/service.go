@@ -938,6 +938,26 @@ func (s *Service) GetThemes(ctx context.Context) (*ThemesResponse, error) {
 	}, nil
 }
 
+func determinePlayerColor(fen string, hasInitialMove bool) string {
+	fenParts := strings.Fields(fen)
+	if len(fenParts) < 2 {
+		return "white"
+	}
+
+	activeColor := strings.ToLower(fenParts[1])
+	if hasInitialMove {
+		if activeColor == "w" {
+			return "black"
+		}
+		return "white"
+	}
+
+	if activeColor == "b" {
+		return "black"
+	}
+	return "white"
+}
+
 func (s *Service) GetCustomPuzzle(ctx context.Context, userID int64, filter CustomPuzzleFilter) (*CustomPuzzleResponse, error) {
 	if filter.MinRating <= 0 && filter.MaxRating <= 0 {
 		ratingProfile, err := s.repo.GetOrCreateUserRating(ctx, userID)
@@ -959,12 +979,18 @@ func (s *Service) GetCustomPuzzle(ctx context.Context, userID int64, filter Cust
 		initialMove = moves[0]
 	}
 
+	playerColor := determinePlayerColor(puzzle.FEN, len(moves) > 0)
+
 	return &CustomPuzzleResponse{
+		ID:          puzzle.ID,
 		PuzzleID:    puzzle.ID,
 		FEN:         puzzle.FEN,
 		InitialMove: initialMove,
+		Moves:       puzzle.Moves,
 		Rating:      puzzle.Rating,
 		Themes:      puzzle.Themes,
+		PlayerColor: playerColor,
+		SideToMove:  playerColor,
 	}, nil
 }
 
