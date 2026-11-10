@@ -304,6 +304,8 @@ type CustomPuzzleResponse struct {
 type SubmitCustomAttemptRequest struct {
 	PuzzleID    string `json:"puzzle_id" binding:"required"`
 	Move        string `json:"move" binding:"required"`
+	MoveIndex   *int   `json:"move_index,omitempty"`
+	Step        *int   `json:"step,omitempty"`
 	TimeTakenMs int    `json:"time_taken_ms"`
 	Rated       bool   `json:"rated"`
 }
@@ -311,6 +313,7 @@ type SubmitCustomAttemptRequest struct {
 type SubmitCustomAttemptResponse struct {
 	Correct          bool     `json:"correct"`
 	Solved           bool     `json:"solved"`
+	NextMove         string   `json:"next_move,omitempty"`
 	PuzzleID         string   `json:"puzzle_id"`
 	AttemptedMoves   []string `json:"attempted_moves"`
 	SolutionMoves    []string `json:"solution_moves"`

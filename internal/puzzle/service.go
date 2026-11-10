@@ -968,6 +968,73 @@ func (s *Service) GetCustomPuzzle(ctx context.Context, userID int64, filter Cust
 	}, nil
 }
 
+func determineExpectedMoveIndex(moves []string, playedMove string, moveIndex *int, step *int) int {
+	if len(moves) < 2 {
+		return 1
+	}
+
+	if step != nil {
+		s := *step
+		candidates := []int{}
+		if s >= 1 {
+			candidates = append(candidates, 1+(s-1)*2)
+		}
+		if s >= 0 {
+			candidates = append(candidates, 1+s*2)
+		}
+		if s >= 1 && s%2 == 1 {
+			candidates = append(candidates, s)
+		}
+		for _, idx := range candidates {
+			if idx > 0 && idx < len(moves) && strings.EqualFold(playedMove, moves[idx]) {
+				return idx
+			}
+		}
+		if s >= 1 && 1+(s-1)*2 < len(moves) {
+			return 1 + (s-1)*2
+		}
+		if s >= 0 && 1+s*2 < len(moves) {
+			return 1 + s*2
+		}
+	}
+
+	if moveIndex != nil {
+		m := *moveIndex
+		candidates := []int{}
+		if m >= 0 {
+			candidates = append(candidates, 1+m*2)
+		}
+		if m >= 1 && m%2 == 1 {
+			candidates = append(candidates, m)
+		}
+		if m >= 1 {
+			candidates = append(candidates, 1+(m-1)*2)
+		}
+		for _, idx := range candidates {
+			if idx > 0 && idx < len(moves) && strings.EqualFold(playedMove, moves[idx]) {
+				return idx
+			}
+		}
+		if m >= 0 && 1+m*2 < len(moves) {
+			return 1 + m*2
+		}
+		if m >= 1 && m%2 == 1 && m < len(moves) {
+			return m
+		}
+		if m >= 1 && 1+(m-1)*2 < len(moves) {
+			return 1 + (m-1)*2
+		}
+	}
+
+	for idx := 1; idx < len(moves); idx += 2 {
+		if strings.EqualFold(playedMove, moves[idx]) {
+			return idx
+		}
+	}
+
+	return 1
+}
+
 func (s *Service) SubmitCustomAttempt(ctx context.Context, userID int64, req SubmitCustomAttemptRequest) (*SubmitCustomAttemptResponse, error) {
 	puzzleRecord, err := s.repo.FindPuzzleByID(ctx, req.PuzzleID)
 	if err != nil {
@@ -980,10 +1047,34 @@ func (s *Service) SubmitCustomAttempt(ctx context.Context, userID int64, req Sub
 	}
 
 	playedMove := strings.TrimSpace(req.Move)
-	correctMove := moves[1]
+	expectedMoveIndex := determineExpectedMoveIndex(moves, playedMove, req.MoveIndex, req.Step)
+	if expectedMoveIndex < 1 || expectedMoveIndex >= len(moves) {
+		expectedMoveIndex = 1
+	}
+
+	correctMove := moves[expectedMoveIndex]
 	isCorrect := strings.EqualFold(playedMove, correctMove)
 	if !isCorrect && strings.Contains(playedMove, " ") {
-		isCorrect = strings.EqualFold(playedMove, strings.Join(moves[1:], " "))
+		fullExpected := strings.Join(moves[1:], " ")
+		if strings.EqualFold(playedMove, fullExpected) {
+			isCorrect = true
+			expectedMoveIndex = len(moves) - 1
+		}
+	}
+
+	nextMove := ""
+	isSolved := false
+	if isCorrect {
+		switch {
+		case strings.Contains(playedMove, " "):
+			nextMove = ""
+			isSolved = true
+		case expectedMoveIndex+1 < len(moves) && expectedMoveIndex+2 < len(moves):
+			nextMove = moves[expectedMoveIndex+1]
+			isSolved = false
+		default:
+			isSolved = true
+		}
 	}
 
 	ratingProfile, err := s.repo.GetOrCreateUserRating(ctx, userID)
@@ -991,52 +1082,36 @@ func (s *Service) SubmitCustomAttempt(ctx context.Context, userID int64, req Sub
 		return nil, fmt.Errorf("get user rating: %w", err)
 	}
 
-	userRatingBefore := ratingProfile.Rating
-	ratingChange := 0
-
-	if req.Rated {
-		ratingChange = calculateRatingChange(userRatingBefore, puzzleRecord.Rating, isCorrect, 3)
-		ratingProfile.Rating += ratingChange
-		if ratingProfile.Rating < 100 {
-			ratingProfile.Rating = 100
-		}
-		if ratingProfile.Rating > ratingProfile.BestRating {
-			ratingProfile.BestRating = ratingProfile.Rating
-			ratingProfile.BestRatingAt = time.Now().UTC()
-		}
-		if isCorrect {
-			ratingProfile.PuzzlesSolved++
-		} else {
-			ratingProfile.PuzzlesFailed++
-		}
-		_ = s.repo.UpdateUserRating(ctx, ratingProfile)
-	}
+	userRating := ratingProfile.Rating
 
 	solutionMoves := []string{}
 	if len(moves) > 1 {
 		solutionMoves = moves[1:]
 	}
 
-	attempt := &UserPuzzleAttempt{
-		UserID:           userID,
-		PuzzleID:         req.PuzzleID,
-		Solved:           isCorrect,
-		UserRatingBefore: userRatingBefore,
-		UserRatingAfter:  ratingProfile.Rating,
-		TimeTakenMs:      req.TimeTakenMs,
-		AttemptedMoves:   []string{playedMove},
+	if !isCorrect || isSolved {
+		attempt := &UserPuzzleAttempt{
+			UserID:           userID,
+			PuzzleID:         req.PuzzleID,
+			Solved:           isSolved,
+			UserRatingBefore: userRating,
+			UserRatingAfter:  userRating,
+			TimeTakenMs:      req.TimeTakenMs,
+			AttemptedMoves:   []string{playedMove},
+		}
+		_ = s.repo.RecordAttempt(ctx, attempt)
 	}
-	_ = s.repo.RecordAttempt(ctx, attempt)
 
 	return &SubmitCustomAttemptResponse{
 		Correct:          isCorrect,
-		Solved:           isCorrect,
+		Solved:           isSolved,
+		NextMove:         nextMove,
 		PuzzleID:         req.PuzzleID,
 		AttemptedMoves:   []string{playedMove},
 		SolutionMoves:    solutionMoves,
-		RatingChange:     ratingChange,
-		UserRatingBefore: userRatingBefore,
-		UserRatingAfter:  ratingProfile.Rating,
-		Rated:            req.Rated,
+		RatingChange:     0,
+		UserRatingBefore: userRating,
+		UserRatingAfter:  userRating,
+		Rated:            false,
 	}, nil
 }
