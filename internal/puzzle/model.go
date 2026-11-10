@@ -294,11 +294,15 @@ type CustomPuzzleFilter struct {
 }
 
 type CustomPuzzleResponse struct {
+	ID          string   `json:"id"`
 	PuzzleID    string   `json:"puzzle_id"`
 	FEN         string   `json:"fen"`
 	InitialMove string   `json:"initial_move"`
+	Moves       string   `json:"moves"`
 	Rating      int      `json:"rating"`
 	Themes      []string `json:"themes"`
+	PlayerColor string   `json:"player_color,omitempty"`
+	SideToMove  string   `json:"side_to_move,omitempty"`
 }
 
 type SubmitCustomAttemptRequest struct {
