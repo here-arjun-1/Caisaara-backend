@@ -2,7 +2,6 @@ package puzzle
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -173,7 +172,7 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 
 	moves := strings.Fields(puzzleRecord.Moves)
 	if len(moves) < 2 {
-		return nil, errors.New("invalid puzzle moves sequence")
+		return nil, ErrInvalidMoves
 	}
 
 	playedMove := strings.TrimSpace(req.Move)
@@ -363,7 +362,7 @@ func (s *Service) GetHint(ctx context.Context, userID int64, req HintRequest) (*
 
 	moves := strings.Fields(puzzleRecord.Moves)
 	if len(moves) < 2 {
-		return nil, errors.New("invalid puzzle moves sequence")
+		return nil, ErrInvalidMoves
 	}
 
 	correctMove := moves[1]
@@ -489,7 +488,7 @@ func (s *Service) StartRush(ctx context.Context, userID int64, req StartRushRequ
 	case "survival":
 		timeLimitSec = 0
 	default:
-		return nil, errors.New("invalid mode: must be 3min, 5min, or survival")
+		return nil, ErrInvalidMode
 	}
 
 	minRating, maxRating := getRushRatingWindow(0)
@@ -551,10 +550,10 @@ func (s *Service) SubmitRushMove(ctx context.Context, userID int64, req SubmitRu
 		return nil, fmt.Errorf("get rush session: %w", err)
 	}
 	if session == nil {
-		return nil, errors.New("rush session not found")
+		return nil, ErrSessionNotFound
 	}
 	if session.UserID != userID {
-		return nil, errors.New("unauthorized session access")
+		return nil, ErrUnauthorizedSession
 	}
 
 	if session.Status != "active" {
@@ -597,7 +596,7 @@ func (s *Service) SubmitRushMove(ctx context.Context, userID int64, req SubmitRu
 	}
 
 	if session.CurrentPuzzleID != req.PuzzleID {
-		return nil, errors.New("puzzle id does not match current session puzzle")
+		return nil, ErrPuzzleMismatch
 	}
 
 	puzzleRecord, err := s.repo.FindPuzzleByID(ctx, req.PuzzleID)
@@ -607,7 +606,7 @@ func (s *Service) SubmitRushMove(ctx context.Context, userID int64, req SubmitRu
 
 	moves := strings.Fields(puzzleRecord.Moves)
 	if len(moves) < 2 {
-		return nil, errors.New("invalid puzzle moves sequence")
+		return nil, ErrInvalidMoves
 	}
 
 	playedMove := strings.TrimSpace(req.Move)
@@ -750,10 +749,10 @@ func (s *Service) EndRush(ctx context.Context, userID int64, req EndRushRequest)
 		return nil, fmt.Errorf("get rush session: %w", err)
 	}
 	if session == nil {
-		return nil, errors.New("rush session not found")
+		return nil, ErrSessionNotFound
 	}
 	if session.UserID != userID {
-		return nil, errors.New("unauthorized session access")
+		return nil, ErrUnauthorizedSession
 	}
 
 	if session.Status != "active" {
@@ -1069,7 +1068,7 @@ func (s *Service) SubmitCustomAttempt(ctx context.Context, userID int64, req Sub
 
 	moves := strings.Fields(puzzleRecord.Moves)
 	if len(moves) < 2 {
-		return nil, errors.New("invalid puzzle moves sequence")
+		return nil, ErrInvalidMoves
 	}
 
 	playedMove := strings.TrimSpace(req.Move)
