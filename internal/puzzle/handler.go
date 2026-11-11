@@ -1,6 +1,7 @@
 package puzzle
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -8,6 +9,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/here-arjun-1/Caisaara-backend/internal/auth/middleware"
+)
+
+var (
+	ErrUnauthorized        = errors.New("unauthorized")
+	ErrInvalidRequestBody  = errors.New("invalid request body")
+	ErrInvalidMode         = errors.New("invalid mode: must be 3min, 5min, or survival")
+	ErrSessionNotFound     = errors.New("rush session not found")
+	ErrUnauthorizedSession = errors.New("unauthorized session access")
+	ErrPuzzleMismatch      = errors.New("puzzle id does not match current session puzzle")
+	ErrInvalidMoves        = errors.New("invalid puzzle moves sequence")
+	ErrPuzzleNotFound      = errors.New("puzzle not found")
 )
 
 type Handler struct {
@@ -20,18 +32,37 @@ func NewHandler(service PuzzleService) *Handler {
 	}
 }
 
+func handlePuzzleError(c *gin.Context, err error, action string) {
+	switch {
+	case errors.Is(err, ErrPuzzleNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": ErrPuzzleNotFound.Error()})
+	case errors.Is(err, ErrSessionNotFound):
+		c.JSON(http.StatusNotFound, gin.H{"error": ErrSessionNotFound.Error()})
+	case errors.Is(err, ErrUnauthorizedSession):
+		c.JSON(http.StatusForbidden, gin.H{"error": ErrUnauthorizedSession.Error()})
+	case errors.Is(err, ErrInvalidMode):
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrInvalidMode.Error()})
+	case errors.Is(err, ErrPuzzleMismatch):
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrPuzzleMismatch.Error()})
+	case errors.Is(err, ErrInvalidMoves):
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrInvalidMoves.Error()})
+	default:
+		slog.ErrorContext(c.Request.Context(), action+" failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to " + action})
+	}
+}
+
 func (h *Handler) GetDailyPuzzle(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, ok := middleware.GetUserID(c)
 	if !ok || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthorized.Error()})
 		return
 	}
 
 	res, err := h.Service.GetDailyPuzzle(ctx, userID)
 	if err != nil {
-		slog.ErrorContext(ctx, "get daily puzzle failed", "user_id", userID, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get daily puzzle"})
+		handlePuzzleError(c, err, "get daily puzzle")
 		return
 	}
 
@@ -42,20 +73,19 @@ func (h *Handler) SubmitAttempt(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, ok := middleware.GetUserID(c)
 	if !ok || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthorized.Error()})
 		return
 	}
 
 	var req SubmitAttemptRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrInvalidRequestBody.Error()})
 		return
 	}
 
 	res, err := h.Service.SubmitAttempt(ctx, userID, req)
 	if err != nil {
-		slog.ErrorContext(ctx, "submit puzzle attempt failed", "user_id", userID, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to submit attempt"})
+		handlePuzzleError(c, err, "submit attempt")
 		return
 	}
 
@@ -66,20 +96,19 @@ func (h *Handler) GetHint(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, ok := middleware.GetUserID(c)
 	if !ok || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthorized.Error()})
 		return
 	}
 
 	var req HintRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrInvalidRequestBody.Error()})
 		return
 	}
 
 	res, err := h.Service.GetHint(ctx, userID, req)
 	if err != nil {
-		slog.ErrorContext(ctx, "get puzzle hint failed", "user_id", userID, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get hint"})
+		handlePuzzleError(c, err, "get hint")
 		return
 	}
 
@@ -90,20 +119,19 @@ func (h *Handler) GetSolution(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, ok := middleware.GetUserID(c)
 	if !ok || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthorized.Error()})
 		return
 	}
 
 	var req SolutionRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrInvalidRequestBody.Error()})
 		return
 	}
 
 	res, err := h.Service.GetSolution(ctx, userID, req)
 	if err != nil {
-		slog.ErrorContext(ctx, "get puzzle solution failed", "user_id", userID, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get solution"})
+		handlePuzzleError(c, err, "get solution")
 		return
 	}
 
@@ -114,7 +142,7 @@ func (h *Handler) GetNextPuzzle(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, ok := middleware.GetUserID(c)
 	if !ok || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthorized.Error()})
 		return
 	}
 
@@ -122,8 +150,7 @@ func (h *Handler) GetNextPuzzle(c *gin.Context) {
 
 	res, err := h.Service.GetNextPuzzle(ctx, userID, theme)
 	if err != nil {
-		slog.ErrorContext(ctx, "get next puzzle failed", "user_id", userID, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get puzzle"})
+		handlePuzzleError(c, err, "get puzzle")
 		return
 	}
 
@@ -134,14 +161,13 @@ func (h *Handler) GetUserStats(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, ok := middleware.GetUserID(c)
 	if !ok || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthorized.Error()})
 		return
 	}
 
 	res, err := h.Service.GetUserStats(ctx, userID)
 	if err != nil {
-		slog.ErrorContext(ctx, "get user puzzle stats failed", "user_id", userID, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get puzzle stats"})
+		handlePuzzleError(c, err, "get puzzle stats")
 		return
 	}
 
@@ -152,7 +178,7 @@ func (h *Handler) GetUserHistory(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, ok := middleware.GetUserID(c)
 	if !ok || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthorized.Error()})
 		return
 	}
 
@@ -168,8 +194,7 @@ func (h *Handler) GetUserHistory(c *gin.Context) {
 
 	res, err := h.Service.GetUserHistory(ctx, userID, limit, offset)
 	if err != nil {
-		slog.ErrorContext(ctx, "get user puzzle history failed", "user_id", userID, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get puzzle history"})
+		handlePuzzleError(c, err, "get puzzle history")
 		return
 	}
 
@@ -180,20 +205,19 @@ func (h *Handler) StartRush(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, ok := middleware.GetUserID(c)
 	if !ok || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthorized.Error()})
 		return
 	}
 
 	var req StartRushRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrInvalidRequestBody.Error()})
 		return
 	}
 
 	res, err := h.Service.StartRush(ctx, userID, req)
 	if err != nil {
-		slog.ErrorContext(ctx, "start rush failed", "user_id", userID, "error", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		handlePuzzleError(c, err, "start rush")
 		return
 	}
 
@@ -204,20 +228,19 @@ func (h *Handler) SubmitRushMove(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, ok := middleware.GetUserID(c)
 	if !ok || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthorized.Error()})
 		return
 	}
 
 	var req SubmitRushMoveRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrInvalidRequestBody.Error()})
 		return
 	}
 
 	res, err := h.Service.SubmitRushMove(ctx, userID, req)
 	if err != nil {
-		slog.ErrorContext(ctx, "submit rush move failed", "user_id", userID, "error", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		handlePuzzleError(c, err, "submit rush move")
 		return
 	}
 
@@ -228,20 +251,19 @@ func (h *Handler) EndRush(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, ok := middleware.GetUserID(c)
 	if !ok || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthorized.Error()})
 		return
 	}
 
 	var req EndRushRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrInvalidRequestBody.Error()})
 		return
 	}
 
 	res, err := h.Service.EndRush(ctx, userID, req)
 	if err != nil {
-		slog.ErrorContext(ctx, "end rush failed", "user_id", userID, "error", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		handlePuzzleError(c, err, "end rush")
 		return
 	}
 
@@ -258,8 +280,7 @@ func (h *Handler) GetRushLeaderboard(c *gin.Context) {
 
 	res, err := h.Service.GetRushLeaderboard(ctx, mode, limit)
 	if err != nil {
-		slog.ErrorContext(ctx, "get rush leaderboard failed", "mode", mode, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get leaderboard"})
+		handlePuzzleError(c, err, "get leaderboard")
 		return
 	}
 
@@ -270,14 +291,13 @@ func (h *Handler) GetUserRushStats(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, ok := middleware.GetUserID(c)
 	if !ok || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthorized.Error()})
 		return
 	}
 
 	res, err := h.Service.GetUserRushStats(ctx, userID)
 	if err != nil {
-		slog.ErrorContext(ctx, "get user rush stats failed", "user_id", userID, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get rush stats"})
+		handlePuzzleError(c, err, "get rush stats")
 		return
 	}
 
@@ -288,7 +308,7 @@ func (h *Handler) GetUserRushHistory(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, ok := middleware.GetUserID(c)
 	if !ok || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthorized.Error()})
 		return
 	}
 
@@ -305,8 +325,7 @@ func (h *Handler) GetUserRushHistory(c *gin.Context) {
 
 	res, err := h.Service.GetUserRushHistory(ctx, userID, mode, limit, offset)
 	if err != nil {
-		slog.ErrorContext(ctx, "get user rush history failed", "user_id", userID, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get rush history"})
+		handlePuzzleError(c, err, "get rush history")
 		return
 	}
 
@@ -317,8 +336,7 @@ func (h *Handler) GetThemes(c *gin.Context) {
 	ctx := c.Request.Context()
 	res, err := h.Service.GetThemes(ctx)
 	if err != nil {
-		slog.ErrorContext(ctx, "get puzzle themes failed", "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get puzzle themes"})
+		handlePuzzleError(c, err, "get puzzle themes")
 		return
 	}
 
@@ -329,7 +347,7 @@ func (h *Handler) GetCustomPuzzle(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, ok := middleware.GetUserID(c)
 	if !ok || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthorized.Error()})
 		return
 	}
 
@@ -364,8 +382,7 @@ func (h *Handler) GetCustomPuzzle(c *gin.Context) {
 
 	res, err := h.Service.GetCustomPuzzle(ctx, userID, filter)
 	if err != nil {
-		slog.ErrorContext(ctx, "get custom puzzle failed", "user_id", userID, "error", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get custom puzzle"})
+		handlePuzzleError(c, err, "get custom puzzle")
 		return
 	}
 
@@ -376,20 +393,19 @@ func (h *Handler) SubmitCustomAttempt(c *gin.Context) {
 	ctx := c.Request.Context()
 	userID, ok := middleware.GetUserID(c)
 	if !ok || userID <= 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": ErrUnauthorized.Error()})
 		return
 	}
 
 	var req SubmitCustomAttemptRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": ErrInvalidRequestBody.Error()})
 		return
 	}
 
 	res, err := h.Service.SubmitCustomAttempt(ctx, userID, req)
 	if err != nil {
-		slog.ErrorContext(ctx, "submit custom attempt failed", "user_id", userID, "error", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		handlePuzzleError(c, err, "submit custom attempt")
 		return
 	}
 
