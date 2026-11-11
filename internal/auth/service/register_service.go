@@ -116,7 +116,7 @@ func (s *RegisterService) Register(ctx context.Context, req dto.RegisterData) er
 		slog.Error("save pending user to redis failed", "error", err)
 		return ErrInternal
 	}
-	slog.Info("generated registration OTP", "email", req.Email)
+	slog.Info("generated registration OTP")
 
 	task, err := worker.NewEmailRegistrationTask(req.Email, code)
 	if err != nil {

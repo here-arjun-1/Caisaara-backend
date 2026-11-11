@@ -103,7 +103,7 @@ func (s *PasswordResetService) ForgotPassword(ctx context.Context, req dto.Forgo
 		slog.Error("save otp to redis failed", "error", err)
 		return ErrInternal
 	}
-	slog.Info("generated password reset OTP", "email", userEmail)
+	slog.Info("generated password reset OTP")
 
 	task, err := worker.NewEmailPasswordResetTask(userEmail, otp)
 	if err != nil {
