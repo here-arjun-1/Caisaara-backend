@@ -203,6 +203,9 @@ func (r *Repository) FindPuzzleByID(ctx context.Context, id string) (*Puzzle, er
 		&p.CreatedAt,
 	)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrPuzzleNotFound
+		}
 		return nil, err
 	}
 
@@ -817,9 +820,15 @@ func (r *Repository) FindRushPuzzle(ctx context.Context, minRating, maxRating in
 			&p.CreatedAt,
 		)
 		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, ErrPuzzleNotFound
+			}
 			return nil, err
 		}
 	} else if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrPuzzleNotFound
+		}
 		return nil, err
 	}
 
@@ -1139,9 +1148,15 @@ func (r *Repository) FindCustomPuzzle(ctx context.Context, filter CustomPuzzleFi
 			&p.CreatedAt,
 		)
 		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, ErrPuzzleNotFound
+			}
 			return nil, err
 		}
 	} else if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrPuzzleNotFound
+		}
 		return nil, err
 	}
 
