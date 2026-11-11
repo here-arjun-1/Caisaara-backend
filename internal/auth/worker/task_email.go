@@ -29,7 +29,13 @@ func NewEmailRegistrationTask(to, code string) (*asynq.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	return asynq.NewTask(TypeEmailRegistration, payload, asynq.Queue("email")), nil
+	return asynq.NewTask(
+		TypeEmailRegistration,
+		payload,
+		asynq.Queue("email"),
+		asynq.MaxRetry(3),
+		asynq.Deadline(time.Now().Add(15*time.Minute)),
+	), nil
 }
 
 func NewEmailPasswordResetTask(to, code string) (*asynq.Task, error) {
@@ -37,7 +43,13 @@ func NewEmailPasswordResetTask(to, code string) (*asynq.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	return asynq.NewTask(TypeEmailPasswordReset, payload, asynq.Queue("email")), nil
+	return asynq.NewTask(
+		TypeEmailPasswordReset,
+		payload,
+		asynq.Queue("email"),
+		asynq.MaxRetry(3),
+		asynq.Deadline(time.Now().Add(15*time.Minute)),
+	), nil
 }
 
 type AdminLoginPayload struct {
