@@ -80,13 +80,6 @@ func (h *Handler) CreateGame(c *gin.Context) {
 		return
 	}
 
-	if errors.Is(err, ErrTooManyActiveGames) {
-		c.JSON(http.StatusConflict, gin.H{
-			"error": err.Error(),
-		})
-		return
-	}
-
 	if err != nil {
 		slog.ErrorContext(ctx, "create bot game handler failed", "player_id", userID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{

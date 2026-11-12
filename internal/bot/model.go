@@ -26,6 +26,7 @@ const (
 	EndReason50MoveRule           = "50_move_rule"
 	EndReason75MoveRule           = "75_move_rule"
 	EndReasonInsufficientMaterial = "insufficient_material"
+	EndReasonAbandoned            = "abandoned"
 )
 
 type Game struct {

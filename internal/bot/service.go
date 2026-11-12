@@ -66,7 +66,9 @@ func (s *Service) CreateGame(
 		return nil, err
 	}
 	if activeGames >= MaxActiveGames {
-		return nil, ErrTooManyActiveGames
+		if err := s.Repository.AbandonOldActiveGames(ctx, playerID, MaxActiveGames-1); err != nil {
+			return nil, err
+		}
 	}
 
 	game := &Game{
