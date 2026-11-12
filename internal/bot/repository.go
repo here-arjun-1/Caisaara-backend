@@ -18,6 +18,7 @@ type GameRepository interface {
 	UpdateGame(ctx context.Context, game *Game, previousMoves []string) error
 	FindBeatenBots(ctx context.Context, playerID int64) (map[string]bool, error)
 	ListGames(ctx context.Context, playerID int64, limit int) ([]*Game, error)
+	AbandonOldActiveGames(ctx context.Context, playerID int64, keep int) error
 }
 
 type Repository struct {
@@ -112,6 +113,36 @@ func (r *Repository) CountActiveGames(ctx context.Context, playerID int64) (int,
 	}
 
 	return count, nil
+}
+
+func (r *Repository) AbandonOldActiveGames(ctx context.Context, playerID int64, keep int) error {
+	_, err := r.DB.Exec(
+		ctx,
+		`UPDATE bot_games
+		SET status = $3,
+			end_reason = $4,
+			result = CASE WHEN player_color = 'white' THEN $5 ELSE $6 END,
+			ended_at = NOW()
+		WHERE id IN (
+			SELECT id FROM bot_games
+			WHERE player_id = $1 AND status = 'active'
+			ORDER BY created_at DESC
+			OFFSET $2
+		)
+		AND status = 'active'`,
+		playerID,
+		keep,
+		StatusFinished,
+		EndReasonAbandoned,
+		ResultBlackWin,
+		ResultWhiteWin,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "abandon old bot games failed", "player_id", playerID, "error", err)
+		return err
+	}
+
+	return nil
 }
 
 func (r *Repository) FindBeatenBots(ctx context.Context, playerID int64) (map[string]bool, error) {
