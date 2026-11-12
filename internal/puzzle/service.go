@@ -178,16 +178,38 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 
 	playedMove := strings.TrimSpace(req.Move)
 	recordedMoves := []string{playedMove}
+	expectedPly := 1
 	if session != nil {
+		for ply := 1; ply < len(moves); ply += 2 {
+			matched := false
+			for _, m := range session.AttemptedMoves {
+				if strings.EqualFold(m, moves[ply]) {
+					matched = true
+					break
+				}
+			}
+			if matched {
+				expectedPly = ply + 2
+			} else {
+				break
+			}
+		}
 		session.AttemptedMoves = append(session.AttemptedMoves, playedMove)
 		recordedMoves = session.AttemptedMoves
 	}
 
-	correctMove := moves[1]
+	if expectedPly >= len(moves) {
+		expectedPly = len(moves) - 1
+		if expectedPly%2 == 0 {
+			expectedPly--
+		}
+	}
+
+	correctMove := moves[expectedPly]
 	isCorrect := strings.EqualFold(playedMove, correctMove)
 
 	if !isCorrect && strings.Contains(playedMove, " ") {
-		fullExpected := strings.Join(moves[1:], " ")
+		fullExpected := strings.Join(moves[expectedPly:], " ")
 		isCorrect = strings.EqualFold(playedMove, fullExpected)
 	}
 
@@ -235,7 +257,7 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 				UserRatingBefore: beforeRating,
 				UserRatingAfter:  ratingProfile.Rating,
 				CurrentStreak:    ratingProfile.CurrentStreak,
-				AttemptedMoves:   session.AttemptedMoves,
+				AttemptedMoves:   recordedMoves,
 				Message:          "No attempts remaining. You can view the solution.",
 			}, nil
 		}
@@ -248,91 +270,112 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 			UserRatingBefore: ratingProfile.Rating,
 			UserRatingAfter:  ratingProfile.Rating,
 			CurrentStreak:    ratingProfile.CurrentStreak,
-			AttemptedMoves:   session.AttemptedMoves,
+			AttemptedMoves:   recordedMoves,
 			Message:          fmt.Sprintf("Incorrect move. %d attempts remaining.", attemptsLeft),
 		}, nil
 	}
 
 	nextMove := ""
 	isFullySolved := true
-	if len(moves) > 2 && !strings.Contains(playedMove, " ") {
-		nextMove = moves[2]
-		if len(moves) > 3 {
-			isFullySolved = true
+	if strings.Contains(playedMove, " ") {
+		isFullySolved = true
+	} else if expectedPly+1 < len(moves) {
+		nextMove = moves[expectedPly+1]
+		if expectedPly+2 < len(moves) {
+			isFullySolved = false
 		}
 	}
 
 	beforeRating := ratingProfile.Rating
 
 	if session != nil && session.SolutionViewed {
-		session.Solved = true
+		session.Solved = isFullySolved
 		session.RatingEarned = 0
 		_ = s.repo.UpdateDailySession(ctx, session)
 
-		attempt := &UserPuzzleAttempt{
-			UserID:           userID,
-			PuzzleID:         puzzleRecord.ID,
-			Solved:           true,
-			UserRatingBefore: beforeRating,
-			UserRatingAfter:  beforeRating,
-			TimeTakenMs:      req.TimeTakenMs,
-			AttemptedMoves:   recordedMoves,
+		if isFullySolved {
+			attempt := &UserPuzzleAttempt{
+				UserID:           userID,
+				PuzzleID:         puzzleRecord.ID,
+				Solved:           true,
+				UserRatingBefore: beforeRating,
+				UserRatingAfter:  beforeRating,
+				TimeTakenMs:      req.TimeTakenMs,
+				AttemptedMoves:   recordedMoves,
+			}
+			_ = s.repo.RecordAttempt(ctx, attempt)
 		}
-		_ = s.repo.RecordAttempt(ctx, attempt)
+
+		msg := "Correct move! However, no rating points are awarded because the solution was viewed."
+		if !isFullySolved {
+			msg = "Best move! Keep going..."
+		}
 
 		return &SubmitAttemptResponse{
 			Correct:          true,
-			Solved:           true,
+			Solved:           isFullySolved,
 			NextMove:         nextMove,
 			AttemptsLeft:     attemptsLeft,
 			RatingChange:     0,
 			UserRatingBefore: beforeRating,
 			UserRatingAfter:  beforeRating,
 			CurrentStreak:    ratingProfile.CurrentStreak,
-			AttemptedMoves:   session.AttemptedMoves,
-			Message:          "Correct move! However, no rating points are awarded because the solution was viewed.",
+			AttemptedMoves:   recordedMoves,
+			Message:          msg,
 		}, nil
 	}
 
-	ratingChange := calculateRatingChange(ratingProfile.Rating, puzzleRecord.Rating, true, attemptsLeft)
-	ratingProfile.Rating += ratingChange
-	if ratingProfile.Rating > ratingProfile.BestRating {
-		ratingProfile.BestRating = ratingProfile.Rating
-		now := time.Now()
-		ratingProfile.BestRatingAt = now
-	}
-	ratingProfile.PuzzlesSolved++
-
-	if ratingProfile.LastPlayedDate != today {
-		if ratingProfile.LastPlayedDate == yesterday {
-			ratingProfile.CurrentStreak++
-		} else {
-			ratingProfile.CurrentStreak = 1
+	ratingChange := 0
+	if isFullySolved {
+		ratingChange = calculateRatingChange(ratingProfile.Rating, puzzleRecord.Rating, true, attemptsLeft)
+		ratingProfile.Rating += ratingChange
+		if ratingProfile.Rating > ratingProfile.BestRating {
+			ratingProfile.BestRating = ratingProfile.Rating
+			now := time.Now()
+			ratingProfile.BestRatingAt = now
 		}
-		if ratingProfile.CurrentStreak > ratingProfile.MaxStreak {
-			ratingProfile.MaxStreak = ratingProfile.CurrentStreak
-		}
-		ratingProfile.LastPlayedDate = today
-	}
+		ratingProfile.PuzzlesSolved++
 
-	_ = s.repo.UpdateUserRating(ctx, ratingProfile)
+		if ratingProfile.LastPlayedDate != today {
+			if ratingProfile.LastPlayedDate == yesterday {
+				ratingProfile.CurrentStreak++
+			} else {
+				ratingProfile.CurrentStreak = 1
+			}
+			if ratingProfile.CurrentStreak > ratingProfile.MaxStreak {
+				ratingProfile.MaxStreak = ratingProfile.CurrentStreak
+			}
+			ratingProfile.LastPlayedDate = today
+		}
+
+		_ = s.repo.UpdateUserRating(ctx, ratingProfile)
+	}
 
 	if session != nil {
-		session.Solved = true
-		session.RatingEarned = ratingChange
+		session.Solved = isFullySolved
+		if isFullySolved {
+			session.RatingEarned = ratingChange
+		}
 		_ = s.repo.UpdateDailySession(ctx, session)
 	}
 
-	attempt := &UserPuzzleAttempt{
-		UserID:           userID,
-		PuzzleID:         puzzleRecord.ID,
-		Solved:           true,
-		UserRatingBefore: beforeRating,
-		UserRatingAfter:  ratingProfile.Rating,
-		TimeTakenMs:      req.TimeTakenMs,
-		AttemptedMoves:   recordedMoves,
+	if isFullySolved {
+		attempt := &UserPuzzleAttempt{
+			UserID:           userID,
+			PuzzleID:         puzzleRecord.ID,
+			Solved:           true,
+			UserRatingBefore: beforeRating,
+			UserRatingAfter:  ratingProfile.Rating,
+			TimeTakenMs:      req.TimeTakenMs,
+			AttemptedMoves:   recordedMoves,
+		}
+		_ = s.repo.RecordAttempt(ctx, attempt)
 	}
-	_ = s.repo.RecordAttempt(ctx, attempt)
+
+	msg := "Puzzle solved successfully!"
+	if !isFullySolved {
+		msg = "Best move! Keep going..."
+	}
 
 	return &SubmitAttemptResponse{
 		Correct:          true,
@@ -343,8 +386,8 @@ func (s *Service) SubmitAttempt(ctx context.Context, userID int64, req SubmitAtt
 		UserRatingBefore: beforeRating,
 		UserRatingAfter:  ratingProfile.Rating,
 		CurrentStreak:    ratingProfile.CurrentStreak,
-		AttemptedMoves:   session.AttemptedMoves,
-		Message:          "Puzzle solved successfully!",
+		AttemptedMoves:   recordedMoves,
+		Message:          msg,
 	}, nil
 }
 
