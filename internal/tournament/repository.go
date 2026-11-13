@@ -1340,7 +1340,7 @@ func (r *Repository) GetRoundWinners(ctx context.Context, tournamentID int64, ro
 				if bID != nil {
 					winners = append(winners, *bID)
 				}
-			case ResultDraw:
+			case ResultDraw, ResultAborted:
 				if bID != nil && blackRating > whiteRating {
 					winners = append(winners, *bID)
 				} else if wID != nil {

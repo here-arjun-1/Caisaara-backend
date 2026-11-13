@@ -38,6 +38,7 @@ const (
 	ResultBlackWin = "black_win"
 	ResultDraw     = "draw"
 	ResultBye      = "bye"
+	ResultAborted  = "aborted"
 )
 
 type Tournament struct {

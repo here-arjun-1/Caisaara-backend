@@ -35,6 +35,7 @@ type Service interface {
 	CancelTournament(ctx context.Context, tournamentID int64, userID int64) error
 	GenerateRoundPairings(ctx context.Context, tournamentID int64, userID int64) ([]*TournamentPairing, error)
 	OnGameCompleted(ctx context.Context, gameID string, result string) error
+	OnGameAborted(ctx context.Context, gameID string) error
 	GetStandings(ctx context.Context, tournamentID int64) (*TournamentStandingsResponse, error)
 	GetRounds(ctx context.Context, tournamentID int64, roundNumber ...int) (*TournamentRoundsResponse, error)
 	GetGames(ctx context.Context, tournamentID int64, userID ...int64) (*TournamentGamesResponse, error)
@@ -560,8 +561,12 @@ func (s *TournamentService) generateNextPairings(ctx context.Context, tournament
 			return nil, err
 		}
 		winners, err := s.Repo.GetRoundWinners(ctx, tournamentID, rID)
-		if err != nil || len(winners) == 0 {
-			return nil, errors.New("no round winners found")
+		if err != nil {
+			return nil, err
+		}
+		if len(winners) == 0 {
+			slog.WarnContext(ctx, "no knockout round winners, finishing remaining rounds", "tournament_id", tournamentID, "round_id", rID)
+			return []SwissPairingResult{}, nil
 		}
 
 		activeWinners := make([]int64, 0, len(winners))
@@ -733,6 +738,10 @@ func (s *TournamentService) OnGameCompleted(ctx context.Context, gameID string, 
 	}
 
 	return nil
+}
+
+func (s *TournamentService) OnGameAborted(ctx context.Context, gameID string) error {
+	return s.OnGameCompleted(ctx, gameID, ResultAborted)
 }
 
 func (s *TournamentService) startNextRound(ctx context.Context, tournamentID int64) error {
