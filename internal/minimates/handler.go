@@ -136,6 +136,22 @@ func (h *Handler) SubmitMove(c *gin.Context) {
 		return
 	}
 
+	if moveIndexStr := c.Query("move_index"); moveIndexStr != "" && req.MoveIndex == 0 {
+		if idx, err := strconv.Atoi(moveIndexStr); err == nil && idx >= 0 {
+			req.MoveIndex = idx
+		}
+	}
+	if moveIndexStr := c.Query("moveIndex"); moveIndexStr != "" && req.MoveIndex == 0 {
+		if idx, err := strconv.Atoi(moveIndexStr); err == nil && idx >= 0 {
+			req.MoveIndex = idx
+		}
+	}
+	if stepStr := c.Query("step"); stepStr != "" && req.Step == nil {
+		if s, err := strconv.Atoi(stepStr); err == nil && s >= 1 {
+			req.Step = &s
+		}
+	}
+
 	res, err := h.Service.SubmitMove(ctx, userID, levelNumber, req)
 	if err != nil {
 		if errors.Is(err, ErrLevelLocked) {

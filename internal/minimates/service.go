@@ -667,9 +667,21 @@ func (s *Service) SubmitMove(ctx context.Context, userID int64, levelNumber int,
 		return nil, errors.New("invalid puzzle move sequence")
 	}
 
-	playerPly := 1 + req.MoveIndex*2
-	if playerPly >= len(movesList) && req.MoveIndex > 0 {
-		altPly := 1 + (req.MoveIndex-1)*2
+	moveIdx := req.MoveIndex
+	if req.AltMoveIndex != nil && moveIdx == 0 {
+		moveIdx = *req.AltMoveIndex
+	}
+	if req.Step != nil && moveIdx == 0 {
+		if *req.Step >= 1 {
+			moveIdx = *req.Step - 1
+		}
+	}
+
+	userMove := strings.TrimSpace(req.Move)
+
+	playerPly := 1 + moveIdx*2
+	if playerPly >= len(movesList) && moveIdx > 0 {
+		altPly := 1 + (moveIdx-1)*2
 		if altPly < len(movesList) {
 			playerPly = altPly
 		}
@@ -678,6 +690,46 @@ func (s *Service) SubmitMove(ctx context.Context, userID int64, levelNumber int,
 		playerPly = len(movesList) - 1
 		if playerPly%2 == 0 {
 			playerPly--
+		}
+	}
+
+	var allCompMoves []string
+	if fenOptTemp, errTemp := chess.FEN(lp.FEN); errTemp == nil && len(movesList) > 1 {
+		baseBoard := chess.NewGame(fenOptTemp)
+		_ = baseBoard.PushNotationMove(movesList[0], chess.UCINotation{}, nil)
+		_, _, allCompMoves = minimizeBoard(baseBoard.FEN(), movesList[1:])
+	}
+
+	for p := 1; p < len(movesList); p += 2 {
+		matchesOriginal := strings.EqualFold(userMove, movesList[p])
+		matchesCompressed := (p-1 < len(allCompMoves) && strings.EqualFold(userMove, allCompMoves[p-1]))
+		if matchesOriginal || matchesCompressed {
+			playerPly = p
+			break
+		}
+	}
+
+	if playerPly == 1 && moveIdx == 0 && len(movesList) > 2 {
+		testOpt, errT := chess.FEN(lp.FEN)
+		if errT == nil {
+			testGame := chess.NewGame(testOpt)
+			_ = testGame.PushNotationMove(movesList[0], chess.UCINotation{}, nil)
+			if errM := testGame.PushNotationMove(userMove, chess.UCINotation{}, nil); errM != nil {
+				for p := 3; p < len(movesList); p += 2 {
+					tGame := chess.NewGame(testOpt)
+					valid := true
+					for i := 0; i < p; i++ {
+						if errP := tGame.PushNotationMove(movesList[i], chess.UCINotation{}, nil); errP != nil {
+							valid = false
+							break
+						}
+					}
+					if valid && tGame.PushNotationMove(userMove, chess.UCINotation{}, nil) == nil {
+						playerPly = p
+						break
+					}
+				}
+			}
 		}
 	}
 
@@ -694,7 +746,7 @@ func (s *Service) SubmitMove(ctx context.Context, userID int64, levelNumber int,
 	}
 
 	expectedUCI := movesList[playerPly]
-	userMove := strings.TrimSpace(req.Move)
+	userMove = strings.TrimSpace(req.Move)
 
 	solutionMoves := movesList[playerPly:]
 	pocketFEN, _, compressedMoves := minimizeBoard(board.FEN(), solutionMoves)
@@ -741,9 +793,6 @@ func (s *Service) SubmitMove(ctx context.Context, userID int64, levelNumber int,
 
 	moveErr := board.PushNotationMove(userMove, chess.UCINotation{}, nil)
 	if moveErr != nil {
-		moveErr = board.PushNotationMove(userMove, chess.AlgebraicNotation{}, nil)
-	}
-	if moveErr != nil {
 		if pOpt, pErr := chess.FEN(pocketFEN); pErr == nil {
 			pBoard := chess.NewGame(pOpt)
 			if errP := pBoard.PushNotationMove(userMove, chess.UCINotation{}, nil); errP == nil {
@@ -751,6 +800,9 @@ func (s *Service) SubmitMove(ctx context.Context, userID int64, levelNumber int,
 				moveErr = nil
 			}
 		}
+	}
+	if moveErr != nil {
+		moveErr = board.PushNotationMove(userMove, chess.AlgebraicNotation{}, nil)
 	}
 	if moveErr != nil {
 		_ = s.repo.RecordFailedAttempt(ctx, userID, levelNumber)
@@ -765,9 +817,9 @@ func (s *Service) SubmitMove(ctx context.Context, userID int64, levelNumber int,
 	playedUCI := chess.UCINotation{}.Encode(nil, lastMove)
 
 	isFinalPlayerMove := (playerPly+1 >= len(movesList))
-	isAlternateCheckmate := isFinalPlayerMove && board.Method() == chess.Checkmate
+	isCheckmate := board.Method() == chess.Checkmate
 
-	if !strings.EqualFold(playedUCI, expectedUCI) && !isAlternateCheckmate {
+	if !strings.EqualFold(playedUCI, expectedUCI) && !isCheckmate {
 		_ = s.repo.RecordFailedAttempt(ctx, userID, levelNumber)
 		return &SubmitMiniMatesMoveResponse{
 			Correct:     false,
@@ -776,7 +828,7 @@ func (s *Service) SubmitMove(ctx context.Context, userID int64, levelNumber int,
 		}, nil
 	}
 
-	if isFinalPlayerMove || isAlternateCheckmate {
+	if isFinalPlayerMove || isCheckmate {
 		history, _ := s.repo.GetUserLevelHistory(ctx, userID, levelNumber)
 		attempts := 1
 		hintUsed := false

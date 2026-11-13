@@ -91,9 +91,11 @@ type MiniMatesHintRequest struct {
 }
 
 type SubmitMiniMatesMoveRequest struct {
-	Move        string `json:"move"`
-	MoveIndex   int    `json:"move_index"`
-	TimeTakenMs int    `json:"time_taken_ms"`
+	Move         string `json:"move"`
+	MoveIndex    int    `json:"move_index"`
+	AltMoveIndex *int   `json:"moveIndex,omitempty"`
+	Step         *int   `json:"step,omitempty"`
+	TimeTakenMs  int    `json:"time_taken_ms"`
 }
 
 type SubmitMiniMatesMoveResponse struct {
