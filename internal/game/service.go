@@ -26,6 +26,7 @@ type GameService interface {
 	GetPlayerGames(ctx context.Context, playerID int64) ([]Game, error)
 	SetGameCompletionListener(listener func(ctx context.Context, gameID string, result string))
 	SetGameStateUpdatedListener(listener func(ctx context.Context, g *Game))
+	SetGameAbortedListener(listener func(ctx context.Context, gameID string))
 	CheckGameTimeout(ctx context.Context, currentGame *Game) (bool, error)
 	CheckAllTimeouts(ctx context.Context) ([]*Game, error)
 	CheckLiveTimeouts(ctx context.Context) ([]*Game, error)
@@ -76,6 +77,7 @@ type Service struct {
 	StreakService      StreakService
 	OnGameCompleted    func(ctx context.Context, gameID string, result string)
 	OnGameStateUpdated func(ctx context.Context, g *Game)
+	OnGameAborted      func(ctx context.Context, gameID string)
 	drawOffers         sync.Map
 	gameLocks          sync.Map
 	moveQueues         [moveWorkerCount]chan movePersistTask
@@ -296,6 +298,10 @@ func (s *Service) notifyGameCompleted(ctx context.Context, g *Game) {
 
 func (s *Service) SetGameStateUpdatedListener(listener func(ctx context.Context, g *Game)) {
 	s.OnGameStateUpdated = listener
+}
+
+func (s *Service) SetGameAbortedListener(listener func(ctx context.Context, gameID string)) {
+	s.OnGameAborted = listener
 }
 
 func (s *Service) notifyGameStateUpdated(ctx context.Context, g *Game) {
@@ -880,6 +886,9 @@ func (s *Service) AbortGame(
 	currentGame.TurnStartedAt = &now
 	mu.Unlock()
 
+	if s.OnGameAborted != nil {
+		s.OnGameAborted(ctx, gameID)
+	}
 	s.notifyGameStateUpdated(ctx, currentGame)
 
 	return currentGame, nil

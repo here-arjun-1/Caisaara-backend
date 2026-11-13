@@ -220,6 +220,12 @@ func New(cfg *config.Config) (*App, error) {
 		_, _ = analysisService.TriggerAnalysis(ctx, gameID, 0)
 	})
 
+	gameService.SetGameAbortedListener(func(ctx context.Context, gameID string) {
+		if err := tournamentService.OnGameAborted(ctx, gameID); err != nil {
+			slog.ErrorContext(ctx, "tournament game abort failed", "game_id", gameID, "error", err)
+		}
+	})
+
 	gameService.SetGameStateUpdatedListener(func(ctx context.Context, g *game.Game) {
 		wsHandler.BroadcastGameState(g)
 	})
