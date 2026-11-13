@@ -204,6 +204,9 @@ func (p *AnalysisProcessor) ProcessTaskGameAnalysis(ctx context.Context, t *asyn
 		if cpl < 0 {
 			cpl = 0
 		}
+		if cpl > 1000 {
+			cpl = 1000
+		}
 
 		phase := DeterminePhase(posBeforeFEN, moveRecord.MoveNumber)
 		classification := classifyMoveWithThresholds(cpl, moveRecord.Move, bestMove, p.Thresholds)
@@ -375,12 +378,24 @@ func (p *AnalysisProcessor) ProcessTaskGameAnalysis(ctx context.Context, t *asyn
 
 	analysisRecord.AccuracyWhite = &accWhite
 	analysisRecord.AccuracyBlack = &accBlack
-	analysisRecord.OpeningAccuracyWhite = &openWhite
-	analysisRecord.OpeningAccuracyBlack = &openBlack
-	analysisRecord.MiddlegameAccuracyWhite = &midWhite
-	analysisRecord.MiddlegameAccuracyBlack = &midBlack
-	analysisRecord.EndgameAccuracyWhite = &endWhite
-	analysisRecord.EndgameAccuracyBlack = &endBlack
+	if len(whiteOpeningLosses) > 0 {
+		analysisRecord.OpeningAccuracyWhite = &openWhite
+	}
+	if len(blackOpeningLosses) > 0 {
+		analysisRecord.OpeningAccuracyBlack = &openBlack
+	}
+	if len(whiteMiddleLosses) > 0 {
+		analysisRecord.MiddlegameAccuracyWhite = &midWhite
+	}
+	if len(blackMiddleLosses) > 0 {
+		analysisRecord.MiddlegameAccuracyBlack = &midBlack
+	}
+	if len(whiteEndLosses) > 0 {
+		analysisRecord.EndgameAccuracyWhite = &endWhite
+	}
+	if len(blackEndLosses) > 0 {
+		analysisRecord.EndgameAccuracyBlack = &endBlack
+	}
 	analysisRecord.OpeningClassificationWhite = openClassWhite
 	analysisRecord.OpeningClassificationBlack = openClassBlack
 	analysisRecord.MiddlegameClassificationWhite = midClassWhite
