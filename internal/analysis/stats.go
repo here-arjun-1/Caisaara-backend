@@ -279,13 +279,19 @@ func CalculateAccuracyFormula(losses []float64) float64 {
 	if len(losses) == 0 {
 		return 100.0
 	}
-	var total float64
+	var totalAccuracy float64
 	for _, l := range losses {
-		total += l
+		if l < 0 {
+			l = 0
+		}
+		if l > 1000 {
+			l = 1000
+		}
+		moveAcc := 100.0 * math.Exp(-0.004*l)
+		totalAccuracy += moveAcc
 	}
-	avgLoss := total / float64(len(losses))
-
-	accuracy := math.Max(0.0, math.Min(100.0, 100.0-(avgLoss*0.4)))
+	avgAccuracy := totalAccuracy / float64(len(losses))
+	accuracy := math.Max(0.0, math.Min(100.0, avgAccuracy))
 	return math.Round(accuracy*100) / 100
 }
 
