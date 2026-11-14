@@ -362,3 +362,20 @@ func (r *Repository) FindRequestSenderID(ctx context.Context, requestID int64) (
 	}
 	return senderID, nil
 }
+
+func (r *Repository) AutoFollow(ctx context.Context, user1, user2 int64) error {
+	if user1 <= 0 || user2 <= 0 || user1 == user2 {
+		return nil
+	}
+	_, err := r.DB.Exec(ctx,
+		`INSERT INTO user_follows (follower_id, following_id)
+		VALUES ($1, $2), ($2, $1)
+		ON CONFLICT DO NOTHING`,
+		user1, user2,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "auto follow friends failed", "user1", user1, "user2", user2, "error", err)
+		return err
+	}
+	return nil
+}

@@ -152,16 +152,20 @@ func (r *PostRepository) FindPostByID(ctx context.Context, viewerID, postID int6
 	return scanPost(row)
 }
 
-func (r *PostRepository) ListPosts(ctx context.Context, viewerID, beforeID int64, limit int) ([]*model.Post, error) {
+func (r *PostRepository) ListPosts(ctx context.Context, viewerID, beforeID int64, limit int, following bool) ([]*model.Post, error) {
 	rows, err := r.DB.Query(
 		ctx,
 		`SELECT `+postColumns+`
 		WHERE ($2 = 0 OR p.id < $2)
+			AND ($4 = false OR EXISTS (
+				SELECT 1 FROM user_follows uf WHERE uf.follower_id = $1 AND uf.following_id = p.user_id
+			))
 		ORDER BY p.id DESC
 		LIMIT $3`,
 		viewerID,
 		beforeID,
 		limit,
+		following,
 	)
 	if err != nil {
 		return nil, err

@@ -154,4 +154,3 @@ func (h *FollowHandler) GetFollowing(c *gin.Context) {
 
 	response.Success(c, http.StatusOK, "following fetched successfully", res)
 }
-
