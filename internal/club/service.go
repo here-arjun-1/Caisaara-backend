@@ -23,6 +23,7 @@ const (
 	shareCodeLength   = 8
 	shareCodeChars    = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 	defaultBoardMode  = "blitz"
+	clubPushCooldown  = 5 * time.Minute
 )
 
 var likeEscaper = strings.NewReplacer(
@@ -63,6 +64,7 @@ type PrivacyChecker interface {
 
 type Notifier interface {
 	Send(ctx context.Context, userID int64, notificationType string, title string, body string, data map[string]any) error
+	SendPushOnly(ctx context.Context, userID int64, notificationType string, title string, body string, data map[string]any) error
 }
 
 type Service struct {
@@ -70,6 +72,7 @@ type Service struct {
 	RateLimiter    chat.RateLimiter
 	PrivacyChecker PrivacyChecker
 	Notifier       Notifier
+	PushLimiter    chat.RateLimiter
 }
 
 func (s *Service) SetPrivacyChecker(checker PrivacyChecker) {
@@ -84,6 +87,7 @@ func NewService(repository ClubRepository, rateLimiter chat.RateLimiter) ClubSer
 	return &Service{
 		Repository:  repository,
 		RateLimiter: rateLimiter,
+		PushLimiter: chat.NewTokenBucketRateLimiter(1, clubPushCooldown),
 	}
 }
 
@@ -245,6 +249,8 @@ func (s *Service) SendMessage(ctx context.Context, clubID string, userID int64, 
 	if err := s.Repository.CreateMessage(ctx, msg); err != nil {
 		return nil, err
 	}
+
+	go s.notifyClubMessage(context.WithoutCancel(ctx), msg)
 
 	return msg, nil
 }
@@ -546,4 +552,44 @@ func generateShareCode() (string, error) {
 		code[i] = shareCodeChars[num.Int64()]
 	}
 	return string(code), nil
+}
+
+func (s *Service) notifyClubMessage(ctx context.Context, msg *Message) {
+	if s.Notifier == nil {
+		return
+	}
+
+	club, err := s.Repository.FindClubByID(ctx, msg.ClubID)
+	if err != nil {
+		slog.ErrorContext(ctx, "find club for message push failed", "club_id", msg.ClubID, "error", err)
+		return
+	}
+
+	members, err := s.Repository.ListMembers(ctx, msg.ClubID)
+	if err != nil {
+		slog.ErrorContext(ctx, "list members for message push failed", "club_id", msg.ClubID, "error", err)
+		return
+	}
+
+	for _, member := range members {
+		if member.UserID == msg.UserID {
+			continue
+		}
+
+		if s.PushLimiter != nil {
+			allowed, _ := s.PushLimiter.Allow(ctx, msg.ClubID, member.UserID)
+			if !allowed {
+				continue
+			}
+		}
+
+		err := s.Notifier.SendPushOnly(ctx, member.UserID, notification.TypeClubMessage,
+			club.Name,
+			msg.Username+": "+msg.Message,
+			map[string]any{"club_id": msg.ClubID, "club_name": club.Name, "message_id": msg.ID},
+		)
+		if err != nil {
+			slog.ErrorContext(ctx, "send club message push failed", "club_id", msg.ClubID, "user_id", member.UserID, "error", err)
+		}
+	}
 }
