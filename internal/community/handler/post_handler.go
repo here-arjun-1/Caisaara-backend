@@ -15,7 +15,7 @@ import (
 type PostService interface {
 	CreatePost(ctx context.Context, userID int64, req dto.CreatePostData) (*dto.PostResponse, error)
 	GetPost(ctx context.Context, viewerID, postID int64) (*dto.PostResponse, error)
-	GetFeed(ctx context.Context, viewerID, beforeID int64, limit int) (*dto.FeedResponse, error)
+	GetFeed(ctx context.Context, viewerID, beforeID int64, limit int, following bool) (*dto.FeedResponse, error)
 	DeletePost(ctx context.Context, userID, postID int64) error
 	SetReaction(ctx context.Context, userID, postID int64, reaction string) (*dto.ReactionResponse, error)
 	DeleteReaction(ctx context.Context, userID, postID int64) (*dto.ReactionResponse, error)
@@ -83,7 +83,9 @@ func (h *PostHandler) GetFeed(c *gin.Context) {
 		return
 	}
 
-	feed, err := h.PostService.GetFeed(c.Request.Context(), c.GetInt64("user_id"), beforeID, int(limit))
+	following := c.Query("following") == "true" || c.Query("following") == "1"
+
+	feed, err := h.PostService.GetFeed(c.Request.Context(), c.GetInt64("user_id"), beforeID, int(limit), following)
 	if err != nil {
 		writeError(c, err)
 		return
