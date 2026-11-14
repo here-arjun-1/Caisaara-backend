@@ -56,8 +56,11 @@ func (m *Module) RegisterRoutes(public *gin.RouterGroup, protected *gin.RouterGr
 	followLimiter := middleware.NewTokenBucketLimiter(30, time.Minute)
 
 	public.GET("/posts", readLimiter.Limit, m.postHandler.GetFeed)
+	public.GET("/api/posts", readLimiter.Limit, m.postHandler.GetFeed)
 	public.GET("/posts/:id", readLimiter.Limit, m.postHandler.GetPost)
+	public.GET("/api/posts/:id", readLimiter.Limit, m.postHandler.GetPost)
 	public.GET("/posts/:id/comments", readLimiter.Limit, m.commentHandler.ListComments)
+	public.GET("/api/posts/:id/comments", readLimiter.Limit, m.commentHandler.ListComments)
 
 	registered := protected.Group("")
 	registered.Use(middleware.RequireRegisteredUser())

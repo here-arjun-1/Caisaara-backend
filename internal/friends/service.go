@@ -97,6 +97,10 @@ func (s *Service) AcceptRequest(ctx context.Context, userID int64, requestID int
 		return ErrRequestNotFound
 	}
 
+	if senderID, err := s.Repository.FindRequestSenderID(ctx, requestID); err == nil {
+		_ = s.Repository.AutoFollow(ctx, userID, senderID)
+	}
+
 	s.notifyRequestAccepted(ctx, userID, requestID)
 	return nil
 }

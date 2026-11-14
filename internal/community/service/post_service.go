@@ -24,7 +24,7 @@ const (
 type PostRepository interface {
 	CreatePost(ctx context.Context, post *model.Post) (int64, error)
 	FindPostByID(ctx context.Context, viewerID, postID int64) (*model.Post, error)
-	ListPosts(ctx context.Context, viewerID, beforeID int64, limit int) ([]*model.Post, error)
+	ListPosts(ctx context.Context, viewerID, beforeID int64, limit int, following bool) ([]*model.Post, error)
 	FindPostOwner(ctx context.Context, postID int64) (int64, error)
 	DeletePost(ctx context.Context, postID int64) error
 	CountReactions(ctx context.Context, postIDs []int64) (map[int64]map[string]int, error)
@@ -127,10 +127,16 @@ func (s *PostService) GetPost(ctx context.Context, viewerID, postID int64) (*dto
 	return &response, nil
 }
 
-func (s *PostService) GetFeed(ctx context.Context, viewerID, beforeID int64, limit int) (*dto.FeedResponse, error) {
+func (s *PostService) GetFeed(ctx context.Context, viewerID, beforeID int64, limit int, following bool) (*dto.FeedResponse, error) {
+	if following && viewerID <= 0 {
+		return &dto.FeedResponse{
+			Posts: []dto.PostResponse{},
+		}, nil
+	}
+
 	limit = clampLimit(limit)
 
-	posts, err := s.PostRepository.ListPosts(ctx, viewerID, beforeID, limit)
+	posts, err := s.PostRepository.ListPosts(ctx, viewerID, beforeID, limit, following)
 	if err != nil {
 		slog.Error("list posts failed", "error", err)
 		return nil, ErrInternal

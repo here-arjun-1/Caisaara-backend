@@ -11,5 +11,5 @@ type FollowStatusResponse struct {
 
 type UserListResponse struct {
 	Users        []AuthorResponse `json:"users"`
-	NextBeforeID *int64          `json:"next_before_id,omitempty"`
+	NextBeforeID *int64           `json:"next_before_id,omitempty"`
 }
