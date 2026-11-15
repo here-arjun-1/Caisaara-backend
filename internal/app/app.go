@@ -98,7 +98,9 @@ func New(cfg *config.Config) (*App, error) {
 		friendsRepository,
 	)
 	invitationService.SetNotifier(notificationService)
+	invitationService.SetFollowChecker(communityModule.FollowService())
 	communityModule.SetNotifier(notificationService)
+	communityModule.SetWatchInviteCreator(invitationService)
 	invitationHandler := invitation.NewHandler(invitationService)
 
 	tiltRepository := tilt.NewRepository(inf.db)

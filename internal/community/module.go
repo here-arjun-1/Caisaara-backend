@@ -46,6 +46,14 @@ func (m *Module) SetNotifier(notifier service.Notifier) {
 	m.followService.SetNotifier(notifier)
 }
 
+func (m *Module) FollowService() *service.FollowService {
+	return m.followService
+}
+
+func (m *Module) SetWatchInviteCreator(creator service.WatchInviteCreator) {
+	m.followService.SetWatchInviteCreator(creator)
+}
+
 func (m *Module) RegisterRoutes(public *gin.RouterGroup, protected *gin.RouterGroup) {
 	readLimiter := middleware.NewTokenBucketLimiter(60, time.Minute)
 	createPostLimiter := middleware.NewTokenBucketLimiter(5, time.Minute)
@@ -84,5 +92,6 @@ func (m *Module) RegisterRoutes(public *gin.RouterGroup, protected *gin.RouterGr
 		registered.GET("/users/:id/follow-counts", followLimiter.Limit, m.followHandler.GetCounts)
 		registered.GET("/users/:id/followers", followLimiter.Limit, m.followHandler.GetFollowers)
 		registered.GET("/users/:id/following", followLimiter.Limit, m.followHandler.GetFollowing)
+		registered.GET("/users/me/following/live-games", followLimiter.Limit, m.followHandler.GetFollowingLiveGames)
 	}
 }
