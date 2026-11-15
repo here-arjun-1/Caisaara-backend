@@ -21,6 +21,7 @@ type ChatRepository interface {
 	GetConversations(ctx context.Context, userID int64) ([]Conversation, error)
 	UserExists(ctx context.Context, userID int64) (bool, error)
 	FindUsernameByID(ctx context.Context, userID int64) (string, error)
+	IsBlockedEitherWay(ctx context.Context, userID, otherID int64) (bool, error)
 }
 
 type Repository struct {
@@ -182,6 +183,11 @@ func (r *Repository) GetConversations(ctx context.Context, userID int64) ([]Conv
 		JOIN users u ON u.id = uc.other_user_id
 		LEFT JOIN player_profiles p ON p.user_id = uc.other_user_id
 		LEFT JOIN unread_counts un ON un.other_user_id = uc.other_user_id
+		WHERE NOT EXISTS (
+			SELECT 1 FROM user_blocks ub
+			WHERE (ub.blocker_id = $1 AND ub.blocked_id = uc.other_user_id)
+			   OR (ub.blocker_id = uc.other_user_id AND ub.blocked_id = $1)
+		)
 		ORDER BY uc.created_at DESC`,
 		userID,
 	)
@@ -219,6 +225,21 @@ func (r *Repository) UserExists(ctx context.Context, userID int64) (bool, error)
 		return false, err
 	}
 	return true, nil
+}
+
+func (r *Repository) IsBlockedEitherWay(ctx context.Context, userID, otherID int64) (bool, error) {
+	var blocked bool
+	err := r.DB.QueryRow(
+		ctx,
+		`SELECT EXISTS (
+			SELECT 1 FROM user_blocks
+			WHERE (blocker_id = $1 AND blocked_id = $2)
+			   OR (blocker_id = $2 AND blocked_id = $1)
+		)`,
+		userID,
+		otherID,
+	).Scan(&blocked)
+	return blocked, err
 }
 
 func (r *Repository) FindUsernameByID(ctx context.Context, userID int64) (string, error) {
