@@ -40,13 +40,26 @@ const postColumns = `
 	u.username,
 	pr.display_name,
 	pr.avatar_url,
-	(SELECT COUNT(*) FROM post_comments c WHERE c.post_id = p.id),
+	(SELECT COUNT(*) FROM post_comments c
+		WHERE c.post_id = p.id
+		AND NOT EXISTS (
+			SELECT 1 FROM user_blocks ub
+			WHERE (ub.blocker_id = $1 AND ub.blocked_id = c.user_id)
+			   OR (ub.blocker_id = c.user_id AND ub.blocked_id = $1)
+		)),
 	(SELECT r.reaction FROM post_reactions r WHERE r.post_id = p.id AND r.user_id = $1),
 	EXISTS (SELECT 1 FROM post_bookmarks b WHERE b.post_id = p.id AND b.user_id = $1),
 	EXISTS (SELECT 1 FROM user_follows f WHERE f.follower_id = $1 AND f.following_id = p.user_id)
 FROM posts p
 JOIN users u ON u.id = p.user_id
 LEFT JOIN player_profiles pr ON pr.user_id = p.user_id`
+
+const notBlockedWithViewer = `
+	NOT EXISTS (
+		SELECT 1 FROM user_blocks ub
+		WHERE (ub.blocker_id = $1 AND ub.blocked_id = p.user_id)
+		   OR (ub.blocker_id = p.user_id AND ub.blocked_id = $1)
+	)`
 
 func scanPost(row pgx.Row) (*model.Post, error) {
 	var p model.Post
@@ -144,7 +157,7 @@ func (r *PostRepository) FindPostByID(ctx context.Context, viewerID, postID int6
 	row := r.DB.QueryRow(
 		ctx,
 		`SELECT `+postColumns+`
-		WHERE p.id = $2`,
+		WHERE p.id = $2 AND `+notBlockedWithViewer,
 		viewerID,
 		postID,
 	)
@@ -160,6 +173,7 @@ func (r *PostRepository) ListPosts(ctx context.Context, viewerID, beforeID int64
 			AND ($4 = false OR EXISTS (
 				SELECT 1 FROM user_follows uf WHERE uf.follower_id = $1 AND uf.following_id = p.user_id
 			))
+			AND `+notBlockedWithViewer+`
 		ORDER BY p.id DESC
 		LIMIT $3`,
 		viewerID,
@@ -180,7 +194,7 @@ func (r *PostRepository) ListBookmarkedPosts(ctx context.Context, userID, before
 		ctx,
 		`SELECT `+postColumns+`
 		JOIN post_bookmarks pb ON pb.post_id = p.id AND pb.user_id = $1
-		WHERE ($2 = 0 OR p.id < $2)
+		WHERE ($2 = 0 OR p.id < $2) AND `+notBlockedWithViewer+`
 		ORDER BY p.id DESC
 		LIMIT $3`,
 		userID,
@@ -218,6 +232,23 @@ func (r *PostRepository) FindPostOwner(ctx context.Context, postID int64) (int64
 	).Scan(&ownerID)
 
 	return ownerID, err
+}
+
+func (r *PostRepository) IsBlockedEitherWay(ctx context.Context, userID, otherID int64) (bool, error) {
+	var blocked bool
+
+	err := r.DB.QueryRow(
+		ctx,
+		`SELECT EXISTS (
+			SELECT 1 FROM user_blocks
+			WHERE (blocker_id = $1 AND blocked_id = $2)
+			   OR (blocker_id = $2 AND blocked_id = $1)
+		)`,
+		userID,
+		otherID,
+	).Scan(&blocked)
+
+	return blocked, err
 }
 
 func (r *PostRepository) DeletePost(ctx context.Context, postID int64) error {
