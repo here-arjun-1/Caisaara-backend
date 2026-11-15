@@ -35,6 +35,7 @@ type PostRepository interface {
 	AddBookmark(ctx context.Context, postID, userID int64) error
 	RemoveBookmark(ctx context.Context, postID, userID int64) error
 	FindUsernameByID(ctx context.Context, userID int64) (string, error)
+	IsBlockedEitherWay(ctx context.Context, userID, otherID int64) (bool, error)
 }
 
 type Notifier interface {
@@ -211,7 +212,37 @@ func (s *PostService) SetNotifier(notifier Notifier) {
 	s.Notifier = notifier
 }
 
+func checkPostAccess(ctx context.Context, postRepository PostRepository, userID, postID int64) error {
+	ownerID, err := postRepository.FindPostOwner(ctx, postID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return ErrPostNotFound
+	}
+	if err != nil {
+		slog.Error("find post owner failed", "error", err)
+		return ErrInternal
+	}
+
+	if userID == 0 || userID == ownerID {
+		return nil
+	}
+
+	blocked, err := postRepository.IsBlockedEitherWay(ctx, userID, ownerID)
+	if err != nil {
+		slog.Error("check block failed", "user_id", userID, "owner_id", ownerID, "error", err)
+		return ErrInternal
+	}
+	if blocked {
+		return ErrPostNotFound
+	}
+
+	return nil
+}
+
 func (s *PostService) SetReaction(ctx context.Context, userID, postID int64, reaction string) (*dto.ReactionResponse, error) {
+	if err := checkPostAccess(ctx, s.PostRepository, userID, postID); err != nil {
+		return nil, err
+	}
+
 	isNew, err := s.PostRepository.SetReaction(ctx, postID, userID, reaction)
 	if isForeignKeyError(err) {
 		return nil, ErrPostNotFound
@@ -352,6 +383,10 @@ func isForeignKeyError(err error) bool {
 }
 
 func (s *PostService) AddBookmark(ctx context.Context, userID, postID int64) (*dto.BookmarkResponse, error) {
+	if err := checkPostAccess(ctx, s.PostRepository, userID, postID); err != nil {
+		return nil, err
+	}
+
 	err := s.PostRepository.AddBookmark(ctx, postID, userID)
 	if isForeignKeyError(err) {
 		return nil, ErrPostNotFound

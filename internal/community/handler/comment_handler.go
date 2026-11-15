@@ -11,7 +11,7 @@ import (
 
 type CommentService interface {
 	CreateComment(ctx context.Context, userID, postID int64, req dto.CreateCommentData) (*dto.CommentResponse, error)
-	ListComments(ctx context.Context, postID, afterID int64, limit int) (*dto.CommentListResponse, error)
+	ListComments(ctx context.Context, viewerID, postID, afterID int64, limit int) (*dto.CommentListResponse, error)
 	DeleteComment(ctx context.Context, userID, commentID int64) error
 }
 
@@ -68,7 +68,7 @@ func (h *CommentHandler) ListComments(c *gin.Context) {
 		return
 	}
 
-	comments, err := h.CommentService.ListComments(c.Request.Context(), postID, afterID, int(limit))
+	comments, err := h.CommentService.ListComments(c.Request.Context(), c.GetInt64("user_id"), postID, afterID, int(limit))
 	if err != nil {
 		writeError(c, err)
 		return
