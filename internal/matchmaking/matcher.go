@@ -71,29 +71,40 @@ func (m *Matcher) matchQueue(ctx context.Context, timeControlMinutes int, increm
 	}
 
 	now := time.Now()
-	i := 0
-	for i+1 < len(entries) {
+	matched := make(map[int64]bool)
+
+	for i := 0; i < len(entries); i++ {
 		a := entries[i]
-		b := entries[i+1]
-
-		if !canMatch(a, b, now) {
-			i++
+		if matched[a.UserID] {
 			continue
 		}
 
-		blocked, err := m.BlockChecker.IsBlockedEitherWay(ctx, a.UserID, b.UserID)
-		if err != nil {
-			slog.ErrorContext(ctx, "check block for matchmaking failed", "error", err, "user_id", a.UserID, "other_id", b.UserID)
-			i++
-			continue
-		}
-		if blocked {
-			i++
-			continue
-		}
+		for j := i + 1; j < len(entries); j++ {
+			b := entries[j]
+			if matched[b.UserID] {
+				continue
+			}
+			if b.Rating-a.Rating > maxRatingRange {
+				break
+			}
+			if !canMatch(a, b, now) {
+				continue
+			}
 
-		m.pair(ctx, a, b)
-		i += 2
+			blocked, err := m.BlockChecker.IsBlockedEitherWay(ctx, a.UserID, b.UserID)
+			if err != nil {
+				slog.ErrorContext(ctx, "check block for matchmaking failed", "error", err, "user_id", a.UserID, "other_id", b.UserID)
+				continue
+			}
+			if blocked {
+				continue
+			}
+
+			m.pair(ctx, a, b)
+			matched[a.UserID] = true
+			matched[b.UserID] = true
+			break
+		}
 	}
 }
 
