@@ -34,6 +34,10 @@ type PrivacyChecker interface {
 	CheckInviteFriend(ctx context.Context, senderID, opponentID int64) error
 }
 
+type FollowChecker interface {
+	IsFollowing(ctx context.Context, followerID, targetID int64) (bool, error)
+}
+
 type InvitationService interface {
 	CreateInvite(ctx context.Context, userID int64, timeControlMinutes int, incrementSeconds int, color string, opponentID int64, rated ...bool) (*Invite, error)
 	GetInvite(ctx context.Context, code string) (*Invite, error)
@@ -49,6 +53,7 @@ type InvitationService interface {
 	DeleteWatchInvite(ctx context.Context, gameID string) error
 	SetNotifier(notifier Notifier)
 	SetPrivacyChecker(checker PrivacyChecker)
+	SetFollowChecker(checker FollowChecker)
 }
 
 type Service struct {
@@ -58,10 +63,15 @@ type Service struct {
 	BlockChecker   BlockChecker
 	Notifier       Notifier
 	PrivacyChecker PrivacyChecker
+	FollowChecker  FollowChecker
 }
 
 func (s *Service) SetPrivacyChecker(checker PrivacyChecker) {
 	s.PrivacyChecker = checker
+}
+
+func (s *Service) SetFollowChecker(checker FollowChecker) {
+	s.FollowChecker = checker
 }
 
 func NewService(
@@ -752,8 +762,19 @@ func (s *Service) CreateWatchInvite(ctx context.Context, userID int64, gameID st
 		return nil, ErrInternal
 	}
 
-	if userID != currentGame.WhitePlayerID && userID != currentGame.BlackPlayerID {
-		return nil, ErrNotYourGame
+	isPlayer := userID == currentGame.WhitePlayerID || userID == currentGame.BlackPlayerID
+	if !isPlayer {
+		allowed := false
+		if s.FollowChecker != nil {
+			if fWhite, _ := s.FollowChecker.IsFollowing(ctx, userID, currentGame.WhitePlayerID); fWhite {
+				allowed = true
+			} else if fBlack, _ := s.FollowChecker.IsFollowing(ctx, userID, currentGame.BlackPlayerID); fBlack {
+				allowed = true
+			}
+		}
+		if !allowed {
+			return nil, ErrNotYourGame
+		}
 	}
 
 	if currentGame.Status != game.StatusActive {
