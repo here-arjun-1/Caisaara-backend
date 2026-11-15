@@ -254,6 +254,16 @@ func (r *Repository) BlockUser(ctx context.Context, blockerID int64, blockedID i
 		return err
 	}
 
+	_, err = tx.Exec(ctx,
+		`DELETE FROM user_follows
+		WHERE (follower_id = $1 AND following_id = $2) OR (follower_id = $2 AND following_id = $1)`,
+		blockerID, blockedID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete follows on block failed", "blocker_id", blockerID, "blocked_id", blockedID, "error", err)
+		return err
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		slog.ErrorContext(ctx, "commit block user tx failed", "blocker_id", blockerID, "error", err)
 		return err
