@@ -7,6 +7,7 @@ import (
 
 	"github.com/here-arjun-1/Caisaara-backend/internal/community/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/community/model"
+	"github.com/here-arjun-1/Caisaara-backend/internal/invitation"
 	"github.com/here-arjun-1/Caisaara-backend/internal/notification"
 )
 
@@ -17,14 +18,20 @@ type FollowRepository interface {
 	GetCounts(ctx context.Context, userID int64) (int, int, error)
 	GetFollowers(ctx context.Context, userID int64, limit int, beforeID int64) ([]model.Author, error)
 	GetFollowing(ctx context.Context, userID int64, limit int, beforeID int64) ([]model.Author, error)
+	GetFollowingLiveGames(ctx context.Context, viewerID int64) ([]dto.FollowingLiveGame, error)
 	UserExists(ctx context.Context, userID int64) (bool, error)
 	IsBlocked(ctx context.Context, userID, otherID int64) (bool, error)
 	FindUsernameByID(ctx context.Context, userID int64) (string, error)
 }
 
+type WatchInviteCreator interface {
+	CreateWatchInvite(ctx context.Context, userID int64, gameID string) (*invitation.WatchInvite, error)
+}
+
 type FollowService struct {
-	followRepository FollowRepository
-	Notifier         Notifier
+	followRepository   FollowRepository
+	Notifier           Notifier
+	WatchInviteCreator WatchInviteCreator
 }
 
 func NewFollowService(followRepository FollowRepository) *FollowService {
@@ -35,6 +42,10 @@ func NewFollowService(followRepository FollowRepository) *FollowService {
 
 func (s *FollowService) SetNotifier(notifier Notifier) {
 	s.Notifier = notifier
+}
+
+func (s *FollowService) SetWatchInviteCreator(creator WatchInviteCreator) {
+	s.WatchInviteCreator = creator
 }
 
 func (s *FollowService) Follow(ctx context.Context, followerID, targetID int64) error {
@@ -225,4 +236,26 @@ func toAuthorDTO(a model.Author) dto.AuthorResponse {
 		AvatarURL:   a.AvatarURL,
 		IsFollowing: a.IsFollowing,
 	}
+}
+
+func (s *FollowService) GetFollowingLiveGames(ctx context.Context, viewerID int64) (*dto.FollowingLiveGamesResponse, error) {
+	if viewerID <= 0 {
+		return &dto.FollowingLiveGamesResponse{Games: []dto.FollowingLiveGame{}}, nil
+	}
+
+	games, err := s.followRepository.GetFollowingLiveGames(ctx, viewerID)
+	if err != nil {
+		slog.ErrorContext(ctx, "get following live games failed", "viewer_id", viewerID, "error", err)
+		return nil, ErrInternal
+	}
+
+	if s.WatchInviteCreator != nil {
+		for i := range games {
+			if invite, err := s.WatchInviteCreator.CreateWatchInvite(ctx, viewerID, games[i].GameID); err == nil && invite != nil {
+				games[i].WatchCode = invite.Code
+			}
+		}
+	}
+
+	return &dto.FollowingLiveGamesResponse{Games: games}, nil
 }

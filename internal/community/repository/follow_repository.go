@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/here-arjun-1/Caisaara-backend/internal/community/dto"
 	"github.com/here-arjun-1/Caisaara-backend/internal/community/model"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -164,4 +165,71 @@ func (r *FollowRepository) FindUsernameByID(ctx context.Context, userID int64) (
 	var username string
 	err := r.DB.QueryRow(ctx, `SELECT username FROM users WHERE id = $1`, userID).Scan(&username)
 	return username, err
+}
+
+func (r *FollowRepository) GetFollowingLiveGames(ctx context.Context, viewerID int64) ([]dto.FollowingLiveGame, error) {
+	rows, err := r.DB.Query(ctx,
+		`SELECT
+			g.id::text,
+			g.white_player_id,
+			wu.username,
+			wprof.avatar_url,
+			COALESCE(wpr.rating, wu.rating, 1200),
+			g.black_player_id,
+			bu.username,
+			bprof.avatar_url,
+			COALESCE(bpr.rating, bu.rating, 1200),
+			COALESCE(g.time_control_mode, 'rapid'),
+			g.started_at
+		FROM games g
+		JOIN users wu ON wu.id = g.white_player_id
+		JOIN users bu ON bu.id = g.black_player_id
+		LEFT JOIN player_profiles wprof ON wprof.user_id = g.white_player_id
+		LEFT JOIN player_profiles bprof ON bprof.user_id = g.black_player_id
+		LEFT JOIN player_ratings wpr ON wpr.user_id = g.white_player_id AND wpr.mode = g.time_control_mode
+		LEFT JOIN player_ratings bpr ON bpr.user_id = g.black_player_id AND bpr.mode = g.time_control_mode
+		WHERE g.status = 'active'
+			AND (
+				EXISTS (SELECT 1 FROM user_follows uf WHERE uf.follower_id = $1 AND uf.following_id = g.white_player_id)
+				OR
+				EXISTS (SELECT 1 FROM user_follows uf WHERE uf.follower_id = $1 AND uf.following_id = g.black_player_id)
+			)
+		ORDER BY g.started_at DESC NULLS LAST, g.created_at DESC
+		LIMIT 50`,
+		viewerID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "query following live games failed", "viewer_id", viewerID, "error", err)
+		return nil, err
+	}
+	defer rows.Close()
+
+	games := []dto.FollowingLiveGame{}
+	for rows.Next() {
+		var g dto.FollowingLiveGame
+		if err := rows.Scan(
+			&g.GameID,
+			&g.White.ID,
+			&g.White.Username,
+			&g.White.AvatarURL,
+			&g.White.Rating,
+			&g.Black.ID,
+			&g.Black.Username,
+			&g.Black.AvatarURL,
+			&g.Black.Rating,
+			&g.Mode,
+			&g.StartedAt,
+		); err != nil {
+			slog.ErrorContext(ctx, "scan following live game row failed", "viewer_id", viewerID, "error", err)
+			return nil, err
+		}
+		games = append(games, g)
+	}
+
+	if err := rows.Err(); err != nil {
+		slog.ErrorContext(ctx, "following live games rows error", "viewer_id", viewerID, "error", err)
+		return nil, err
+	}
+
+	return games, nil
 }

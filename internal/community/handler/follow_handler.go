@@ -17,6 +17,7 @@ type FollowService interface {
 	GetCounts(ctx context.Context, userID int64) (*dto.FollowCountsResponse, error)
 	GetFollowers(ctx context.Context, userID int64, beforeID int64, limit int) (*dto.UserListResponse, error)
 	GetFollowing(ctx context.Context, userID int64, beforeID int64, limit int) (*dto.UserListResponse, error)
+	GetFollowingLiveGames(ctx context.Context, viewerID int64) (*dto.FollowingLiveGamesResponse, error)
 }
 
 type FollowHandler struct {
@@ -153,4 +154,20 @@ func (h *FollowHandler) GetFollowing(c *gin.Context) {
 	}
 
 	response.Success(c, http.StatusOK, "following fetched successfully", res)
+}
+
+func (h *FollowHandler) GetFollowingLiveGames(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok || userID <= 0 {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	res, err := h.FollowService.GetFollowingLiveGames(c.Request.Context(), userID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "following live games fetched successfully", res)
 }
