@@ -87,7 +87,7 @@ func (h *Handler) SendMessage(c *gin.Context) {
 	msg, err := h.Service.SendDirectMessage(ctx, userID, receiverID, strings.TrimSpace(req.Message))
 	if err != nil {
 		slog.WarnContext(ctx, "send direct message failed", "sender_id", userID, "receiver_id", receiverID, "error", err)
-		if errors.Is(err, privacy.ErrNotAllowed) {
+		if errors.Is(err, privacy.ErrNotAllowed) || errors.Is(err, ErrBlocked) {
 			response.Error(c, http.StatusForbidden, err.Error())
 			return
 		}
@@ -148,6 +148,10 @@ func (h *Handler) GetMessages(c *gin.Context) {
 		if err != nil {
 			if err.Error() == "invalid user id" {
 				response.Error(c, http.StatusBadRequest, "invalid user id")
+				return
+			}
+			if errors.Is(err, ErrBlocked) {
+				response.Error(c, http.StatusForbidden, err.Error())
 				return
 			}
 			response.Error(c, http.StatusInternalServerError, "failed to get messages")
