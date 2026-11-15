@@ -4,7 +4,7 @@ import "time"
 
 type Level struct {
 	LevelNumber int       `json:"level_number"`
-	PuzzleID    string    `json:"puzzle_id"`
+	PuzzleID    *string   `json:"puzzle_id,omitempty"`
 	Chapter     int       `json:"chapter"`
 	TargetMoves int       `json:"target_moves"`
 	Title       string    `json:"title"`
@@ -118,7 +118,7 @@ type MiniMatesHintResponse struct {
 
 type LevelWithPuzzle struct {
 	LevelNumber int
-	PuzzleID    string
+	PuzzleID    *string
 	Chapter     int
 	TargetMoves int
 	Title       string
