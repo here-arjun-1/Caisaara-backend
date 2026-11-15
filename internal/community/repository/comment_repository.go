@@ -53,7 +53,7 @@ func (r *CommentRepository) CreateComment(ctx context.Context, postID, userID in
 	return &c, nil
 }
 
-func (r *CommentRepository) ListComments(ctx context.Context, postID, afterID int64, limit int) ([]*model.Comment, error) {
+func (r *CommentRepository) ListComments(ctx context.Context, viewerID, postID, afterID int64, limit int) ([]*model.Comment, error) {
 	rows, err := r.DB.Query(
 		ctx,
 		`SELECT c.id, c.post_id, c.user_id, c.body, c.created_at,
@@ -62,11 +62,17 @@ func (r *CommentRepository) ListComments(ctx context.Context, postID, afterID in
 		JOIN users u ON u.id = c.user_id
 		LEFT JOIN player_profiles pr ON pr.user_id = c.user_id
 		WHERE c.post_id = $1 AND c.id > $2
+		AND NOT EXISTS (
+			SELECT 1 FROM user_blocks ub
+			WHERE (ub.blocker_id = $4 AND ub.blocked_id = c.user_id)
+			   OR (ub.blocker_id = c.user_id AND ub.blocked_id = $4)
+		)
 		ORDER BY c.id
 		LIMIT $3`,
 		postID,
 		afterID,
 		limit,
+		viewerID,
 	)
 	if err != nil {
 		return nil, err

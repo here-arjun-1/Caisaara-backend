@@ -15,7 +15,7 @@ import (
 
 type CommentRepository interface {
 	CreateComment(ctx context.Context, postID, userID int64, body string) (*model.Comment, error)
-	ListComments(ctx context.Context, postID, afterID int64, limit int) ([]*model.Comment, error)
+	ListComments(ctx context.Context, viewerID, postID, afterID int64, limit int) ([]*model.Comment, error)
 	FindCommentOwners(ctx context.Context, commentID int64) (int64, int64, error)
 	DeleteComment(ctx context.Context, commentID int64) error
 }
@@ -42,6 +42,10 @@ func (s *CommentService) CreateComment(ctx context.Context, userID, postID int64
 	length := utf8.RuneCountInString(body)
 	if length < 1 || length > 500 {
 		return nil, ErrInvalidComment
+	}
+
+	if err := checkPostAccess(ctx, s.PostRepository, userID, postID); err != nil {
+		return nil, err
 	}
 
 	c, err := s.CommentRepository.CreateComment(ctx, postID, userID, body)
@@ -79,18 +83,14 @@ func (s *CommentService) notifyComment(ctx context.Context, c *model.Comment) {
 	}
 }
 
-func (s *CommentService) ListComments(ctx context.Context, postID, afterID int64, limit int) (*dto.CommentListResponse, error) {
+func (s *CommentService) ListComments(ctx context.Context, viewerID, postID, afterID int64, limit int) (*dto.CommentListResponse, error) {
 	limit = clampLimit(limit)
 
-	if _, err := s.PostRepository.FindPostOwner(ctx, postID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrPostNotFound
-		}
-		slog.Error("find post owner failed", "error", err)
-		return nil, ErrInternal
+	if err := checkPostAccess(ctx, s.PostRepository, viewerID, postID); err != nil {
+		return nil, err
 	}
 
-	comments, err := s.CommentRepository.ListComments(ctx, postID, afterID, limit)
+	comments, err := s.CommentRepository.ListComments(ctx, viewerID, postID, afterID, limit)
 	if err != nil {
 		slog.Error("list comments failed", "error", err)
 		return nil, ErrInternal
