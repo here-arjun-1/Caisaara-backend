@@ -13,6 +13,8 @@ import (
 	"github.com/here-arjun-1/Caisaara-backend/internal/notification"
 )
 
+var ErrBlocked = errors.New("you can't message this player")
+
 type ChatService interface {
 	SendMessage(ctx context.Context, gameID string, userID int64, message string) (*ChatMessage, error)
 	GetMessages(ctx context.Context, gameID string, userID int64) ([]ChatMessage, error)
@@ -176,6 +178,10 @@ func (s *Service) SendDirectMessage(ctx context.Context, senderID, receiverID in
 		return nil, errors.New("recipient user not found")
 	}
 
+	if err := s.checkBlocked(ctx, senderID, receiverID); err != nil {
+		return nil, err
+	}
+
 	if s.PrivacyChecker != nil {
 		if err := s.PrivacyChecker.CheckDirectMessage(ctx, senderID, receiverID); err != nil {
 			return nil, err
@@ -195,6 +201,18 @@ func (s *Service) SendDirectMessage(ctx context.Context, senderID, receiverID in
 
 	s.notifyDirectMessage(ctx, msg)
 	return msg, nil
+}
+
+func (s *Service) checkBlocked(ctx context.Context, userID, otherUserID int64) error {
+	blocked, err := s.ChatRepo.IsBlockedEitherWay(ctx, userID, otherUserID)
+	if err != nil {
+		slog.ErrorContext(ctx, "check block failed", "user_id", userID, "other_user_id", otherUserID, "error", err)
+		return errors.New("internal server error")
+	}
+	if blocked {
+		return ErrBlocked
+	}
+	return nil
 }
 
 func (s *Service) notifyDirectMessage(ctx context.Context, msg *DirectMessage) {
@@ -225,6 +243,10 @@ func (s *Service) notifyDirectMessage(ctx context.Context, msg *DirectMessage) {
 func (s *Service) GetDirectMessages(ctx context.Context, currentUserID, otherUserID int64) ([]DirectMessage, error) {
 	if currentUserID == otherUserID {
 		return nil, errors.New("invalid user id")
+	}
+
+	if err := s.checkBlocked(ctx, currentUserID, otherUserID); err != nil {
+		return nil, err
 	}
 
 	messages, err := s.ChatRepo.GetDirectMessages(ctx, currentUserID, otherUserID)
