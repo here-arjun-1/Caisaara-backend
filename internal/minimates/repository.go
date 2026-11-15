@@ -22,31 +22,26 @@ func NewRepository(db *pgxpool.Pool) *Repository {
 	}
 }
 
-func (r *Repository) GetMiniMatesLevel(ctx context.Context, levelNumber int) (*LevelWithPuzzle, error) {
-	var lp LevelWithPuzzle
+func (r *Repository) GetMiniMatesLevel(ctx context.Context, levelNumber int) (*Level, error) {
+	var l Level
 	err := r.DB.QueryRow(ctx,
 		`SELECT 
-			l.level_number,
-			l.puzzle_id,
-			l.chapter,
-			l.target_moves,
-			l.title,
-			p.fen,
-			p.moves,
-			p.rating
-		FROM mini_mates_levels l
-		JOIN puzzles p ON l.puzzle_id = p.id
-		WHERE l.level_number = $1`,
+			level_number,
+			puzzle_id,
+			chapter,
+			target_moves,
+			title,
+			created_at
+		FROM mini_mates_levels
+		WHERE level_number = $1`,
 		levelNumber,
 	).Scan(
-		&lp.LevelNumber,
-		&lp.PuzzleID,
-		&lp.Chapter,
-		&lp.TargetMoves,
-		&lp.Title,
-		&lp.FEN,
-		&lp.Moves,
-		&lp.Rating,
+		&l.LevelNumber,
+		&l.PuzzleID,
+		&l.Chapter,
+		&l.TargetMoves,
+		&l.Title,
+		&l.CreatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -54,10 +49,10 @@ func (r *Repository) GetMiniMatesLevel(ctx context.Context, levelNumber int) (*L
 		}
 		return nil, fmt.Errorf("get mini mates level: %w", err)
 	}
-	return &lp, nil
+	return &l, nil
 }
 
-func (r *Repository) GetLevel(ctx context.Context, levelNumber int) (*LevelWithPuzzle, error) {
+func (r *Repository) GetLevel(ctx context.Context, levelNumber int) (*Level, error) {
 	return r.GetMiniMatesLevel(ctx, levelNumber)
 }
 
@@ -159,10 +154,10 @@ func (r *Repository) SaveLevelCompletion(ctx context.Context, userID int64, leve
 		return nil, fmt.Errorf("save level history: %w", err)
 	}
 
-	var maxLevel int
-	err = tx.QueryRow(ctx, `SELECT COALESCE(MAX(level_number), 150) FROM mini_mates_levels`).Scan(&maxLevel)
-	if err != nil {
-		maxLevel = 150
+	maxLevel := len(Levels)
+	var dbMax int
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(MAX(level_number), 0) FROM mini_mates_levels`).Scan(&dbMax); err == nil && dbMax > 0 {
+		maxLevel = dbMax
 	}
 
 	nextLevel := levelNumber + 1
