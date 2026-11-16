@@ -106,6 +106,42 @@ func (h *Handler) MarkAllRead(c *gin.Context) {
 	response.Success(c, http.StatusOK, "all notifications marked as read", nil)
 }
 
+func (h *Handler) DeleteNotification(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	notificationID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || notificationID <= 0 {
+		response.Error(c, http.StatusBadRequest, "invalid notification id")
+		return
+	}
+
+	if err := h.Service.DeleteNotification(c.Request.Context(), userID, notificationID); err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "notification deleted", nil)
+}
+
+func (h *Handler) DeleteAllNotifications(c *gin.Context) {
+	userID, ok := middleware.GetUserID(c)
+	if !ok {
+		response.Error(c, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	if err := h.Service.DeleteAllNotifications(c.Request.Context(), userID); err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "all notifications deleted", nil)
+}
+
 func handleError(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, ErrNotificationNotFound):

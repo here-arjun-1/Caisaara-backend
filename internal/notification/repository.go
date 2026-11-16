@@ -109,6 +109,27 @@ func (r *Repository) MarkAllRead(ctx context.Context, userID int64) error {
 	return nil
 }
 
+func (r *Repository) DeleteNotification(ctx context.Context, notificationID int64, userID int64) (bool, error) {
+	result, err := r.DB.Exec(ctx,
+		`DELETE FROM notifications WHERE id = $1 AND user_id = $2`,
+		notificationID, userID,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete notification failed", "notification_id", notificationID, "error", err)
+		return false, err
+	}
+	return result.RowsAffected() > 0, nil
+}
+
+func (r *Repository) DeleteAllNotifications(ctx context.Context, userID int64) error {
+	_, err := r.DB.Exec(ctx, `DELETE FROM notifications WHERE user_id = $1`, userID)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete all notifications failed", "user_id", userID, "error", err)
+		return err
+	}
+	return nil
+}
+
 func (r *Repository) SaveDeviceToken(ctx context.Context, userID int64, token string, platform string) error {
 	_, err := r.DB.Exec(ctx,
 		`INSERT INTO device_tokens (user_id, token, platform) VALUES ($1, $2, $3)
