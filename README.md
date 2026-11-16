@@ -8,10 +8,11 @@ What it does:
 - Player profiles, avatars and Glicko-2 ratings per time control
 - Live games over websockets, matchmaking, invite links, challenges and spectating
 - Bots and post-game analysis using Stockfish
-- Daily puzzles, puzzle training and puzzle rush (lichess puzzle db)
+- Daily puzzles, puzzle training, puzzle rush (lichess puzzle db) and mini mates levels
 - Tournaments (swiss, round robin, knockout)
-- Friends, DMs, clubs with chat, community posts, notifications (in-app + push), nearby players
-- Leaderboard, tilt detection, privacy settings and account deletion
+- Friends, DMs, clubs with chat, community posts, following players, notifications (in-app + push), nearby players
+- Leaderboard, daily streak, news, tilt detection, player reports, privacy settings and account deletion
+- Admin routes for moderation
 
 Each feature has its own folder in `internal/` with its own `routes.go`, `handler.go`, `service.go` and `repository.go`. Everything gets wired up in `internal/router/router.go`.
 
@@ -27,6 +28,7 @@ docker compose up -d --build
 The server won't start unless `dbURL`, `JWT_SECRET`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `AWS_REGION`, `S3_BUCKET` and `S3_PUBLIC_URL` are set. For compose also fill `POSTGRES_*` and `GRAFANA_ADMIN_*`. The rest are optional:
 
 - `PORT` (8050), `REDIS_URL` (localhost:6379), `STOCKFISH_PATH` (stockfish)
+- `APP_BASE_URL` (https://caisaara.app) used in invite/share links, `SMTP_HOST` (smtp.gmail.com), `SMTP_PORT` (587)
 - `FIREBASE_CREDENTIALS_BASE64` for push notifications (base64 of the firebase service account json). If empty, push is off but everything else works
 - `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` only if the machine has no AWS credentials already
 
@@ -117,7 +119,10 @@ The `/players` routes also work under `/api`.
 | POST | `/api/invite/:code/join` | Join invite game |
 | GET | `/play/:code` | Invite link opened in browser/app |
 | GET | `/api/challenges` | My incoming challenges |
+| GET | `/api/challenges/sent` | Challenges I sent |
+| POST | `/api/challenges/:code/accept` | Accept challenge |
 | POST | `/api/challenges/:code/decline` | Decline challenge |
+| POST | `/api/challenges/:code/cancel` | Cancel my challenge |
 | POST | `/api/games/:gameID/watch-invite` | Link for others to watch |
 
 ### Bots and analysis
@@ -170,6 +175,7 @@ All need login.
 | POST | `/api/tournaments` | Create |
 | POST | `/api/tournaments/:id/start` | Start (creator) |
 | POST | `/api/tournaments/:id/end` | End (creator) |
+| POST | `/api/tournaments/:id/cancel` | Cancel (creator) |
 | POST | `/api/tournaments/:id/join` | Join |
 | POST | `/api/tournaments/:id/leave` | Leave |
 | POST | `/api/tournaments/invite/:code/join` | Join with invite code |
@@ -181,6 +187,7 @@ All need login.
 | Method | Route | Use |
 |---|---|---|
 | GET | `/api/friends` | Friend list |
+| GET | `/api/friends/online` | Friends online now |
 | DELETE | `/api/friends/:userID` | Remove friend |
 | POST | `/api/friends/requests` | Send request |
 | GET | `/api/friends/requests` | Incoming requests |
@@ -229,8 +236,14 @@ All need login.
 | DELETE | `/api/comments/:id` | Delete comment |
 | GET | `/api/bookmarks` | My bookmarks |
 | PUT / DELETE | `/api/posts/:id/bookmark` | Bookmark / remove |
+| PUT / DELETE | `/api/users/:id/follow` | Follow / unfollow |
+| GET | `/api/users/:id/follow-status` | Do I follow them |
+| GET | `/api/users/:id/follow-counts` | Follower / following count |
+| GET | `/api/users/:id/followers` | Followers |
+| GET | `/api/users/:id/following` | Following |
+| GET | `/api/users/me/following/live-games` | Live games of people I follow |
 
-### Notifications, nearby, leaderboard
+### Notifications, nearby, leaderboard and more
 
 | Method | Route | Use |
 |---|---|---|
@@ -238,11 +251,33 @@ All need login.
 | GET | `/api/notifications/unread-count` | Unread count |
 | POST | `/api/notifications/:id/read` | Mark one read |
 | POST | `/api/notifications/read-all` | Mark all read |
+| DELETE | `/api/notifications/:id` | Delete one |
+| DELETE | `/api/notifications` | Delete all |
+| GET / PUT | `/api/notifications/preferences` | Get / update notification settings |
 | POST / DELETE | `/api/notifications/devices` | Register / remove push device token |
 | PUT | `/api/nearby/location` | Update my location |
 | PATCH | `/api/nearby/visibility` | Show/hide me in nearby |
 | GET | `/api/nearby/players` | Players near me |
 | GET | `/api/leaderboard` | Global leaderboard |
+| GET | `/api/leaderboard/local` | Leaderboard near me |
+| GET | `/streak` | My daily streak |
+| GET | `/api/news` | News |
+| POST | `/api/reports` | Report a player |
+
+### Mini mates
+
+All need login.
+
+| Method | Route | Use |
+|---|---|---|
+| GET | `/mini-mates/overview` | Levels and my progress |
+| GET | `/mini-mates/levels/:level` | One level |
+| POST | `/mini-mates/levels/:level/hint` | Hint |
+| POST | `/mini-mates/levels/:level/move` | Submit move |
+
+### Admin
+
+Everything is under `/api/admin` and needs an admin account. There are routes to search and ban/unban users, force logout, close reports, view or abort live games, check matchmaking queues, search and delete posts/comments/clubs, cancel tournaments and see the admin action log. Check `internal/admin/routes.go` for the full list.
 
 ### Websockets
 
