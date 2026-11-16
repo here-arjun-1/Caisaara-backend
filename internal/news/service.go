@@ -9,6 +9,8 @@ import (
 
 const newsPageSize = 20
 
+const newsKeepTime = 7 * 24 * time.Hour
+
 type Service struct {
 	Repository *Repository
 	Client     *http.Client
@@ -24,6 +26,8 @@ func NewService(repository *Repository) *Service {
 }
 
 func (s *Service) RefreshNews(ctx context.Context) error {
+	cutoff := time.Now().Add(-newsKeepTime)
+
 	for _, source := range feedSources {
 		articles, err := fetchFeed(ctx, s.Client, source)
 		if err != nil {
@@ -32,6 +36,10 @@ func (s *Service) RefreshNews(ctx context.Context) error {
 		}
 
 		for _, article := range articles {
+			if article.PublishedAt.Before(cutoff) {
+				continue
+			}
+
 			err := s.Repository.Save(ctx, article)
 			if err != nil {
 				return err
@@ -64,6 +72,11 @@ func (s *Service) refreshAndLog(ctx context.Context) {
 	err := s.RefreshNews(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "refresh news failed", "error", err)
+	}
+
+	deleted, err := s.Repository.DeleteOldArticles(ctx, newsKeepTime)
+	if err == nil && deleted > 0 {
+		slog.InfoContext(ctx, "cleaned up old news articles", "count", deleted)
 	}
 }
 
