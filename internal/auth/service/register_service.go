@@ -109,16 +109,16 @@ func (s *RegisterService) Register(ctx context.Context, req dto.RegisterData) er
 		Req:       req,
 		CodeHash:  codeHash,
 		Attempts:  oldAttempts,
-		ExpiresAt: time.Now().Add(15 * time.Minute),
+		ExpiresAt: time.Now().Add(5 * time.Minute),
 	}
 	pUserJSON, _ := json.Marshal(pUser)
-	if err := s.RedisClient.Set(ctx, key, pUserJSON, 15*time.Minute).Err(); err != nil {
+	if err := s.RedisClient.Set(ctx, key, pUserJSON, 5*time.Minute).Err(); err != nil {
 		slog.Error("save pending user to redis failed", "error", err)
 		return ErrInternal
 	}
 	slog.Info("generated registration OTP")
 
-	task, err := worker.NewEmailRegistrationTask(req.Email, code)
+	task, err := worker.NewEmailRegistrationTask(req.Email, req.Username, code)
 	if err != nil {
 		slog.Error("could not create email task", "error", err)
 	} else {
