@@ -51,16 +51,19 @@ func (s *Service) applyLazyEvaluation(ctx context.Context, streak *UserStreak, t
 			streak.StreakStatus = StreakActive
 			_ = s.repo.UpdateStreak(ctx, streak)
 		}
-	case days <= 3:
-		if streak.StreakStatus != StreakPaused {
-			streak.StreakStatus = StreakPaused
-			_ = s.repo.UpdateStreak(ctx, streak)
-		}
 	default:
-		if streak.CurrentStreak != 0 || streak.StreakStatus != StreakBroken {
-			streak.CurrentStreak = 0
-			streak.StreakStatus = StreakBroken
-			_ = s.repo.UpdateStreak(ctx, streak)
+		missedDays := days - 1
+		if missedDays > 0 && streak.FreezesAvailable >= missedDays {
+			if streak.StreakStatus != StreakPaused {
+				streak.StreakStatus = StreakPaused
+				_ = s.repo.UpdateStreak(ctx, streak)
+			}
+		} else {
+			if streak.CurrentStreak != 0 || streak.StreakStatus != StreakBroken {
+				streak.CurrentStreak = 0
+				streak.StreakStatus = StreakBroken
+				_ = s.repo.UpdateStreak(ctx, streak)
+			}
 		}
 	}
 }
@@ -103,32 +106,29 @@ func (s *Service) RecordActivity(ctx context.Context, userID int64, activityType
 		streak.CurrentStreak++
 		streak.StreakStatus = StreakActive
 		incremented = true
-	case days <= 3:
-		streak.CurrentStreak++
-		streak.StreakStatus = StreakActive
-		incremented = true
-		loc, _ := time.LoadLocation(streak.Timezone)
-		if loc == nil {
-			loc = time.UTC
-		}
-		tLast, parseErr := time.ParseInLocation("2006-01-02", streak.LastActivityDate, loc)
-		if parseErr == nil {
-			for d := 1; d < days; d++ {
-				gapDate := tLast.AddDate(0, 0, d).Format("2006-01-02")
-				_ = s.repo.RecordActivityDay(ctx, userID, gapDate, "freeze")
-			}
-		}
-		missedDays := days - 1
-		if streak.FreezesAvailable > 0 {
-			streak.FreezesAvailable -= missedDays
-			if streak.FreezesAvailable < 0 {
-				streak.FreezesAvailable = 0
-			}
-		}
 	default:
-		streak.CurrentStreak = 1
-		streak.StreakStatus = StreakActive
-		incremented = true
+		missedDays := days - 1
+		if missedDays > 0 && streak.FreezesAvailable >= missedDays {
+			streak.CurrentStreak++
+			streak.StreakStatus = StreakActive
+			incremented = true
+			loc, _ := time.LoadLocation(streak.Timezone)
+			if loc == nil {
+				loc = time.UTC
+			}
+			tLast, parseErr := time.ParseInLocation("2006-01-02", streak.LastActivityDate, loc)
+			if parseErr == nil {
+				for d := 1; d < days; d++ {
+					gapDate := tLast.AddDate(0, 0, d).Format("2006-01-02")
+					_ = s.repo.RecordActivityDay(ctx, userID, gapDate, "freeze")
+				}
+			}
+			streak.FreezesAvailable -= missedDays
+		} else {
+			streak.CurrentStreak = 1
+			streak.StreakStatus = StreakActive
+			incremented = true
+		}
 	}
 
 	if streak.CurrentStreak > streak.BestStreak {
@@ -136,6 +136,10 @@ func (s *Service) RecordActivity(ctx context.Context, userID int64, activityType
 	}
 	streak.MaxStreak = streak.BestStreak
 	streak.LastActivityDate = today
+
+	if incremented && streak.CurrentStreak > 0 && streak.CurrentStreak%5 == 0 {
+		streak.FreezesAvailable += 2
+	}
 
 	_ = s.repo.RecordActivityDay(ctx, userID, today, activityType)
 	_ = s.repo.UpdateStreak(ctx, streak)
@@ -177,7 +181,7 @@ func (s *Service) GetStreak(ctx context.Context, userID int64, tz string) (*Stre
 	freezes := streak.FreezesAvailable
 	if streak.LastActivityDate != "" {
 		days := daysDiff(streak.LastActivityDate, today)
-		if days > 1 && days <= 3 {
+		if days > 1 {
 			used := days - 1
 			if used <= freezes {
 				freezes -= used
@@ -244,7 +248,7 @@ func (s *Service) buildWeek(ctx context.Context, streak *UserStreak, loc *time.L
 				} else {
 					status = StatusPlayed
 				}
-			} else if streak.CurrentStreak > 0 && streak.LastActivityDate != "" && dStr > streak.LastActivityDate && daysDiff(streak.LastActivityDate, dStr) <= 2 {
+			} else if streak.CurrentStreak > 0 && streak.LastActivityDate != "" && dStr > streak.LastActivityDate && daysDiff(streak.LastActivityDate, dStr) <= streak.FreezesAvailable {
 				status = StatusFrozen
 			} else {
 				status = StatusMissed
