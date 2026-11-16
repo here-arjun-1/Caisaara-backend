@@ -3,6 +3,7 @@ package news
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -29,6 +30,17 @@ func (r *Repository) Save(ctx context.Context, article Article) error {
 		return err
 	}
 	return nil
+}
+
+func (r *Repository) DeleteOldArticles(ctx context.Context, olderThan time.Duration) (int64, error) {
+	cutoff := time.Now().Add(-olderThan)
+
+	result, err := r.DB.Exec(ctx, `DELETE FROM news_articles WHERE published_at < $1`, cutoff)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete old news articles failed", "error", err)
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 func (r *Repository) List(ctx context.Context, limit int, offset int) ([]Article, error) {

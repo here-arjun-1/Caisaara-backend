@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -140,6 +141,33 @@ func (r *Repository) DeleteDeadToken(ctx context.Context, token string) error {
 		return err
 	}
 	return nil
+}
+
+func (r *Repository) DeleteOldNotifications(ctx context.Context, readOlderThan time.Duration, unreadOlderThan time.Duration) (int64, error) {
+	readCutoff := time.Now().Add(-readOlderThan)
+	unreadCutoff := time.Now().Add(-unreadOlderThan)
+
+	result, err := r.DB.Exec(ctx,
+		`DELETE FROM notifications
+		WHERE (is_read = true AND created_at < $1) OR created_at < $2`,
+		readCutoff, unreadCutoff,
+	)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete old notifications failed", "error", err)
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+func (r *Repository) DeleteOldDeviceTokens(ctx context.Context, olderThan time.Duration) (int64, error) {
+	cutoff := time.Now().Add(-olderThan)
+
+	result, err := r.DB.Exec(ctx, `DELETE FROM device_tokens WHERE updated_at < $1`, cutoff)
+	if err != nil {
+		slog.ErrorContext(ctx, "delete old device tokens failed", "error", err)
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 func (r *Repository) FindDeviceTokens(ctx context.Context, userID int64) ([]string, error) {
