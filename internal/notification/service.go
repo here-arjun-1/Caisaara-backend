@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"math"
 	"slices"
+	"time"
 
 	"github.com/hibiken/asynq"
 )
@@ -132,6 +133,34 @@ func (s *Service) RegisterDevice(ctx context.Context, userID int64, token string
 
 func (s *Service) UnregisterDevice(ctx context.Context, userID int64, token string) error {
 	return s.Repository.DeleteDeviceToken(ctx, userID, token)
+}
+
+func (s *Service) StartCleanup(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	go func() {
+		s.cleanOldData(ctx)
+		for {
+			select {
+			case <-ctx.Done():
+				ticker.Stop()
+				return
+			case <-ticker.C:
+				s.cleanOldData(ctx)
+			}
+		}
+	}()
+}
+
+func (s *Service) cleanOldData(ctx context.Context) {
+	deletedNotifications, err := s.Repository.DeleteOldNotifications(ctx, 24*time.Hour, 7*24*time.Hour)
+	if err == nil && deletedNotifications > 0 {
+		slog.InfoContext(ctx, "cleaned up old notifications", "count", deletedNotifications)
+	}
+
+	deletedTokens, err := s.Repository.DeleteOldDeviceTokens(ctx, 60*24*time.Hour)
+	if err == nil && deletedTokens > 0 {
+		slog.InfoContext(ctx, "cleaned up old device tokens", "count", deletedTokens)
+	}
 }
 
 func (s *Service) isTypeEnabled(ctx context.Context, userID int64, notificationType string) bool {

@@ -46,6 +46,7 @@ func (a *App) Run() error {
 	a.ratingService.StartMissedRatingsChecker(appCtx, 1*time.Minute)
 	a.wsHandler.StartActiveAuthChecker(appCtx, 30*time.Second)
 	a.newsService.StartNewsFetcher(appCtx, 30*time.Minute)
+	a.notificationService.StartCleanup(appCtx, 1*time.Hour)
 
 	srv := newHTTPServer(":"+a.cfg.Port, a.router)
 
