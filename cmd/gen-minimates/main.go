@@ -253,11 +253,11 @@ func writeMigrationSQL(levels []LevelDef) {
 	sb.WriteString("    title = EXCLUDED.title;\n\n")
 	sb.WriteString("DELETE FROM mini_mates_levels WHERE level_number > 150;\n")
 
-	pathUp := filepath.Join("migrations", "sql", "000053_pocket_mini_mates.up.sql")
+	pathUp := filepath.Join("migrations", "sql", "000054_pocket_mini_mates.up.sql")
 	_ = os.WriteFile(pathUp, []byte(sb.String()), 0600)
 
 	var downSb strings.Builder
 	downSb.WriteString("DELETE FROM mini_mates_levels WHERE level_number <= 150;\n")
-	pathDown := filepath.Join("migrations", "sql", "000053_pocket_mini_mates.down.sql")
+	pathDown := filepath.Join("migrations", "sql", "000054_pocket_mini_mates.down.sql")
 	_ = os.WriteFile(pathDown, []byte(downSb.String()), 0600)
 }
