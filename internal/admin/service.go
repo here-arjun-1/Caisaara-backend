@@ -178,6 +178,26 @@ func (s *Service) CloseReport(ctx context.Context, adminID int64, reportID int64
 	return s.Repository.CloseReport(ctx, adminID, reportID, status, note)
 }
 
+func (s *Service) SearchPosts(ctx context.Context, search string, userID int64, limit int, offset int) ([]Post, error) {
+	search = strings.TrimSpace(search)
+	limit, offset = fixPagination(limit, offset)
+
+	return s.Repository.SearchPosts(ctx, search, userID, limit, offset)
+}
+
+func (s *Service) GetPostComments(ctx context.Context, postID int64, limit int, offset int) ([]Comment, error) {
+	limit, offset = fixPagination(limit, offset)
+
+	return s.Repository.GetPostComments(ctx, postID, limit, offset)
+}
+
+func (s *Service) SearchClubs(ctx context.Context, search string, limit int, offset int) ([]Club, error) {
+	search = strings.TrimSpace(search)
+	limit, offset = fixPagination(limit, offset)
+
+	return s.Repository.SearchClubs(ctx, search, limit, offset)
+}
+
 func (s *Service) DeletePost(ctx context.Context, adminID int64, postID int64) error {
 	return s.Repository.DeletePost(ctx, adminID, postID)
 }

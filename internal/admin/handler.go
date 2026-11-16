@@ -205,6 +205,60 @@ func (h *Handler) CloseReport(c *gin.Context) {
 	response.Success(c, http.StatusOK, "report closed", nil)
 }
 
+func (h *Handler) SearchPosts(c *gin.Context) {
+	var userID int64
+	if c.Query("user_id") != "" {
+		parsedID, err := strconv.ParseInt(c.Query("user_id"), 10, 64)
+		if err != nil || parsedID <= 0 {
+			response.Error(c, http.StatusBadRequest, "invalid user id")
+			return
+		}
+		userID = parsedID
+	}
+
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+
+	posts, err := h.Service.SearchPosts(c.Request.Context(), c.Query("q"), userID, limit, offset)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "posts fetched", posts)
+}
+
+func (h *Handler) GetPostComments(c *gin.Context) {
+	postID, ok := getIDParam(c)
+	if !ok {
+		return
+	}
+
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+
+	comments, err := h.Service.GetPostComments(c.Request.Context(), postID, limit, offset)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "comments fetched", comments)
+}
+
+func (h *Handler) SearchClubs(c *gin.Context) {
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	offset, _ := strconv.Atoi(c.Query("offset"))
+
+	clubs, err := h.Service.SearchClubs(c.Request.Context(), c.Query("q"), limit, offset)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "clubs fetched", clubs)
+}
+
 func (h *Handler) DeletePost(c *gin.Context) {
 	adminID, ok := middleware.GetUserID(c)
 	if !ok {

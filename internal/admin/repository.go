@@ -395,6 +395,163 @@ func (r *Repository) CloseReport(ctx context.Context, adminID int64, reportID in
 	return tx.Commit(ctx)
 }
 
+func (r *Repository) SearchPosts(ctx context.Context, search string, userID int64, limit int, offset int) ([]Post, error) {
+	pattern := "%" + search + "%"
+
+	rows, err := r.DB.Query(ctx,
+		`SELECT
+			p.id,
+			p.user_id,
+			u.username,
+			p.kind,
+			p.body,
+			(SELECT COUNT(*) FROM post_comments c WHERE c.post_id = p.id),
+			p.created_at
+		FROM posts p
+		JOIN users u ON u.id = p.user_id
+		WHERE p.body ILIKE $1
+			AND ($2::BIGINT = 0 OR p.user_id = $2)
+		ORDER BY p.id DESC
+		LIMIT $3 OFFSET $4`,
+		pattern,
+		userID,
+		limit,
+		offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	posts := []Post{}
+	for rows.Next() {
+		var post Post
+		err := rows.Scan(
+			&post.ID,
+			&post.UserID,
+			&post.Username,
+			&post.Kind,
+			&post.Body,
+			&post.CommentsCount,
+			&post.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		posts = append(posts, post)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return posts, nil
+}
+
+func (r *Repository) GetPostComments(ctx context.Context, postID int64, limit int, offset int) ([]Comment, error) {
+	var postExists bool
+	err := r.DB.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM posts WHERE id = $1)`, postID).Scan(&postExists)
+	if err != nil {
+		return nil, err
+	}
+	if !postExists {
+		return nil, ErrPostNotFound
+	}
+
+	rows, err := r.DB.Query(ctx,
+		`SELECT
+			c.id,
+			c.post_id,
+			c.user_id,
+			u.username,
+			c.body,
+			c.created_at
+		FROM post_comments c
+		JOIN users u ON u.id = c.user_id
+		WHERE c.post_id = $1
+		ORDER BY c.id
+		LIMIT $2 OFFSET $3`,
+		postID,
+		limit,
+		offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	comments := []Comment{}
+	for rows.Next() {
+		var comment Comment
+		err := rows.Scan(
+			&comment.ID,
+			&comment.PostID,
+			&comment.UserID,
+			&comment.Username,
+			&comment.Body,
+			&comment.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		comments = append(comments, comment)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return comments, nil
+}
+
+func (r *Repository) SearchClubs(ctx context.Context, search string, limit int, offset int) ([]Club, error) {
+	pattern := "%" + search + "%"
+
+	rows, err := r.DB.Query(ctx,
+		`SELECT
+			c.id,
+			c.name,
+			c.description,
+			c.owner_id,
+			u.username,
+			(SELECT COUNT(*) FROM club_members m WHERE m.club_id = c.id),
+			c.created_at
+		FROM clubs c
+		JOIN users u ON u.id = c.owner_id
+		WHERE c.name ILIKE $1
+		ORDER BY c.created_at DESC
+		LIMIT $2 OFFSET $3`,
+		pattern,
+		limit,
+		offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	clubs := []Club{}
+	for rows.Next() {
+		var club Club
+		err := rows.Scan(
+			&club.ID,
+			&club.Name,
+			&club.Description,
+			&club.OwnerID,
+			&club.OwnerUsername,
+			&club.MembersCount,
+			&club.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		clubs = append(clubs, club)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return clubs, nil
+}
+
 func (r *Repository) DeletePost(ctx context.Context, adminID int64, postID int64) error {
 	tx, err := r.DB.Begin(ctx)
 	if err != nil {

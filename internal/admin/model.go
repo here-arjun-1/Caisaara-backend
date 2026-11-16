@@ -56,6 +56,35 @@ type Action struct {
 	CreatedAt     time.Time `json:"created_at"`
 }
 
+type Post struct {
+	ID            int64     `json:"id"`
+	UserID        int64     `json:"user_id"`
+	Username      string    `json:"username"`
+	Kind          string    `json:"kind"`
+	Body          string    `json:"body"`
+	CommentsCount int       `json:"comments_count"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+type Comment struct {
+	ID        int64     `json:"id"`
+	PostID    int64     `json:"post_id"`
+	UserID    int64     `json:"user_id"`
+	Username  string    `json:"username"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type Club struct {
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	Description   string    `json:"description"`
+	OwnerID       int64     `json:"owner_id"`
+	OwnerUsername string    `json:"owner_username"`
+	MembersCount  int       `json:"members_count"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
 type Stats struct {
 	TotalUsers         int `json:"total_users"`
 	NewUsersToday      int `json:"new_users_today"`

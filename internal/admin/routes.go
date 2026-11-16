@@ -29,6 +29,10 @@ func RegisterRoutes(handler *Handler, adminRoutes *gin.RouterGroup) {
 	adminRoutes.POST("/games/:gameID/abort", actionLimiter.Limit, handler.AbortGame)
 	adminRoutes.GET("/matchmaking", readLimiter.Limit, handler.GetMatchmakingQueues)
 
+	adminRoutes.GET("/posts", readLimiter.Limit, handler.SearchPosts)
+	adminRoutes.GET("/posts/:id/comments", readLimiter.Limit, handler.GetPostComments)
+	adminRoutes.GET("/clubs", readLimiter.Limit, handler.SearchClubs)
+
 	adminRoutes.DELETE("/posts/:id", actionLimiter.Limit, handler.DeletePost)
 	adminRoutes.DELETE("/comments/:id", actionLimiter.Limit, handler.DeleteComment)
 	adminRoutes.DELETE("/clubs/:id", actionLimiter.Limit, handler.DeleteClub)
