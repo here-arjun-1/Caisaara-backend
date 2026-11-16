@@ -20,12 +20,13 @@ const (
 )
 
 type EmailPayload struct {
-	To   string `json:"to"`
-	Code string `json:"code"`
+	To       string `json:"to"`
+	Code     string `json:"code"`
+	Username string `json:"username,omitempty"`
 }
 
-func NewEmailRegistrationTask(to, code string) (*asynq.Task, error) {
-	payload, err := json.Marshal(EmailPayload{To: to, Code: code})
+func NewEmailRegistrationTask(to, username, code string) (*asynq.Task, error) {
+	payload, err := json.Marshal(EmailPayload{To: to, Code: code, Username: username})
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +35,7 @@ func NewEmailRegistrationTask(to, code string) (*asynq.Task, error) {
 		payload,
 		asynq.Queue("email"),
 		asynq.MaxRetry(3),
-		asynq.Deadline(time.Now().Add(15*time.Minute)),
+		asynq.Deadline(time.Now().Add(5*time.Minute)),
 	), nil
 }
 
@@ -48,7 +49,7 @@ func NewEmailPasswordResetTask(to, code string) (*asynq.Task, error) {
 		payload,
 		asynq.Queue("email"),
 		asynq.MaxRetry(3),
-		asynq.Deadline(time.Now().Add(15*time.Minute)),
+		asynq.Deadline(time.Now().Add(5*time.Minute)),
 	), nil
 }
 
@@ -93,7 +94,7 @@ func (p *EmailTaskProcessor) ProcessTaskEmailRegistration(ctx context.Context, t
 		return fmt.Errorf("find user by email failed: %w", err)
 	}
 
-	err = p.sender.SendRegistrationEmail(pld.To, pld.Code)
+	err = p.sender.SendRegistrationEmail(pld.To, pld.Username, pld.Code)
 	if err != nil {
 		return fmt.Errorf("could not send registration email: %w", err)
 	}
@@ -119,7 +120,7 @@ func (p *EmailTaskProcessor) ProcessTaskEmailPasswordReset(ctx context.Context, 
 		return nil
 	}
 
-	err = p.sender.SendPasswordResetEmail(pld.To, pld.Code)
+	err = p.sender.SendPasswordResetEmail(pld.To, user.Username, pld.Code)
 	if err != nil {
 		return fmt.Errorf("could not send password reset email: %w", err)
 	}

@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="supported-color-schemes" content="dark" />
+    <title>{{.Subject}}</title>
+  </head>
+  <body style="margin: 0; padding: 0; background-color: #101923">
+    <table
+      role="presentation"
+      width="100%"
+      cellpadding="0"
+      cellspacing="0"
+      border="0"
+      style="background-color: #101923"
+    >
+      <tr>
+        <td align="center" style="padding: 32px 16px">
+          <table
+            role="presentation"
+            width="100%"
+            cellpadding="0"
+            cellspacing="0"
+            border="0"
+            style="
+              max-width: 576px;
+              font-family:
+                -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto,
+                Helvetica, Arial, sans-serif;
+            "
+          >
+            <tr>
+              <td
+                style="
+                  padding: 0 4px 24px 4px;
+                  font-size: 13px;
+                  font-weight: 700;
+                  letter-spacing: 1.5px;
+                  color: #ffffff;
+                "
+              >
+                MOSAIC
+              </td>
+            </tr>
+
+            <tr>
+              <td
+                style="
+                  background-color: #162330;
+                  border: 1px solid #233547;
+                  border-radius: 20px;
+                  padding: 0;
+                "
+              >
+                <table
+                  role="presentation"
+                  width="100%"
+                  cellpadding="0"
+                  cellspacing="0"
+                  border="0"
+                >
+                  <tr>
+                    <td
+                      style="padding: 28px 28px 20px 28px; vertical-align: top"
+                    >
+                      <div
+                        style="
+                          font-size: 10px;
+                          font-weight: 700;
+                          letter-spacing: 1.5px;
+                          color: #5ed3e3;
+                          text-transform: uppercase;
+                        "
+                      >
+                        {{.Eyebrow}}
+                      </div>
+                      <div
+                        style="
+                          padding-top: 16px;
+                          font-size: 26px;
+                          line-height: 32px;
+                          font-weight: 700;
+                          color: #ffffff;
+                        "
+                      >
+                        {{.TitleLine1}}<br />{{.TitleLine2}}
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 0 28px">
+                      <div
+                        style="
+                          border-top: 3px dashed #3fb8c9;
+                          font-size: 0;
+                          line-height: 0;
+                        "
+                      >
+                        &nbsp;
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+
+                <table
+                  role="presentation"
+                  width="100%"
+                  cellpadding="0"
+                  cellspacing="0"
+                  border="0"
+                >
+                  <tr>
+                    <td
+                      style="
+                        padding: 24px 28px 0 28px;
+                        font-size: 14px;
+                        font-weight: 600;
+                        color: #ffffff;
+                      "
+                    >
+                      {{if .Username}}Hi {{.Username}},{{else}}Hi,{{end}}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td
+                      style="
+                        padding: 10px 28px 0 28px;
+                        font-size: 13px;
+                        line-height: 20px;
+                        color: #9aa8b6;
+                      "
+                    >
+                      {{.Intro}}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td style="padding: 24px 28px 0 28px">
+                      <table
+                        role="presentation"
+                        width="100%"
+                        cellpadding="0"
+                        cellspacing="0"
+                        border="0"
+                        style="
+                          background-color: #0e1822;
+                          border: 1px solid #1f3142;
+                          border-radius: 14px;
+                        "
+                      >
+                        <tr>
+                          <td
+                            align="center"
+                            style="
+                              padding: 22px 16px 6px 16px;
+                              font-size: 10px;
+                              font-weight: 700;
+                              letter-spacing: 1.5px;
+                              color: #5ed3e3;
+                              text-transform: uppercase;
+                            "
+                          >
+                            {{.CodeLabel}}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td
+                            align="center"
+                            style="
+                              padding: 8px 16px;
+                              font-family:
+                                &quot;SF Mono&quot;, Menlo, Consolas,
+                                &quot;Courier New&quot;, monospace;
+                              font-size: 34px;
+                              font-weight: 600;
+                              letter-spacing: 6px;
+                              color: #ffffff;
+                            "
+                          >
+                            {{.Code}}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td
+                            align="center"
+                            style="
+                              padding: 6px 16px 22px 16px;
+                              font-size: 11px;
+                              color: #7d8b99;
+                            "
+                          >
+                            Single use &middot; Expires in {{.ExpiresIn}}
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td
+                      align="center"
+                      style="
+                        padding: 16px 28px 0 28px;
+                        font-size: 12px;
+                        color: #7d8b99;
+                      "
+                    >
+                      {{.Hint}}
+                    </td>
+                  </tr>
+
+                  <tr>
+                    <td style="padding: 24px 28px 28px 28px">
+                      <table
+                        role="presentation"
+                        width="100%"
+                        cellpadding="0"
+                        cellspacing="0"
+                        border="0"
+                        style="
+                          background-color: #0e1822;
+                          border: 1px solid #1f3142;
+                          border-radius: 14px;
+                        "
+                      >
+                        <tr>
+                          <td
+                            style="
+                              padding: 18px 20px 4px 20px;
+                              font-size: 13px;
+                              font-weight: 700;
+                              color: #ffffff;
+                            "
+                          >
+                            {{.NoteTitle}}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td
+                            style="
+                              padding: 0 20px 18px 20px;
+                              font-size: 12px;
+                              line-height: 18px;
+                              color: #9aa8b6;
+                            "
+                          >
+                            {{.NoteText}}
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

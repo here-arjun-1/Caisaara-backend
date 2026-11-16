@@ -95,11 +95,11 @@ func (s *PasswordResetService) ForgotPassword(ctx context.Context, req dto.Forgo
 	data := OTPData{
 		CodeHash:  otpHash,
 		Attempts:  oldAttempts,
-		ExpiresAt: time.Now().Add(15 * time.Minute),
+		ExpiresAt: time.Now().Add(5 * time.Minute),
 	}
 	dataJSON, _ := json.Marshal(data)
 
-	if err := s.RedisClient.Set(ctx, key, dataJSON, 15*time.Minute).Err(); err != nil {
+	if err := s.RedisClient.Set(ctx, key, dataJSON, 5*time.Minute).Err(); err != nil {
 		slog.Error("save otp to redis failed", "error", err)
 		return ErrInternal
 	}
