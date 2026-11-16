@@ -17,6 +17,8 @@ func RegisterRoutes(handler *Handler, protected *gin.RouterGroup) {
 	notifications.GET("/unread-count", limiter.Limit, handler.GetUnreadCount)
 	notifications.POST("/read-all", limiter.Limit, handler.MarkAllRead)
 	notifications.POST("/:id/read", limiter.Limit, handler.MarkRead)
+	notifications.DELETE("", limiter.Limit, handler.DeleteAllNotifications)
+	notifications.DELETE("/:id", limiter.Limit, handler.DeleteNotification)
 	notifications.POST("/devices", limiter.Limit, handler.RegisterDevice)
 	notifications.DELETE("/devices", limiter.Limit, handler.UnregisterDevice)
 	notifications.GET("/preferences", limiter.Limit, handler.GetPreferences)

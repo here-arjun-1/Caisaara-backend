@@ -127,6 +127,21 @@ func (s *Service) MarkAllRead(ctx context.Context, userID int64) error {
 	return s.Repository.MarkAllRead(ctx, userID)
 }
 
+func (s *Service) DeleteNotification(ctx context.Context, userID int64, notificationID int64) error {
+	found, err := s.Repository.DeleteNotification(ctx, notificationID, userID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return ErrNotificationNotFound
+	}
+	return nil
+}
+
+func (s *Service) DeleteAllNotifications(ctx context.Context, userID int64) error {
+	return s.Repository.DeleteAllNotifications(ctx, userID)
+}
+
 func (s *Service) RegisterDevice(ctx context.Context, userID int64, token string, platform string) error {
 	return s.Repository.SaveDeviceToken(ctx, userID, token, platform)
 }
